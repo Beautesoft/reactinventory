@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from "axios";
 
 // Cookie Helpers
 const setCookie = (name, value, days = 7) => {
@@ -10,7 +10,7 @@ const setCookie = (name, value, days = 7) => {
 const getCookie = (name) => {
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop().split(';').shift() || null;
+  if (parts.length === 2) return parts.pop().split(";").shift() || null;
   return null;
 };
 
@@ -24,16 +24,16 @@ export class ApiService {
     // const baseURL = import.meta.env.DEV
     //   ? ''
     //   : window.APP_CONFIG?.API_BASE_URL || '';
-    const baseURL = window.APP_CONFIG?.API_BASE_URL || '';
+    const baseURL = window.APP_CONFIG?.API_BASE_URL || "";
 
     this.instance = axios.create({
       baseURL,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
-    this.token = getCookie('token');
+    this.token = getCookie("token");
     if (this.token) {
       this.setToken(this.token);
     }
@@ -62,16 +62,16 @@ export class ApiService {
   setToken(token) {
     this.token = token;
     if (token) {
-      setCookie('token', token);
+      setCookie("token", token);
       this.instance.defaults.headers.common.Authorization = `token ${token}`;
     } else {
-      removeCookie('token');
+      removeCookie("token");
       delete this.instance.defaults.headers.common.Authorization;
     }
   }
 
   async get(url, config) {
-    console.log(config, 'config');
+    console.log(config, "config");
     return this.instance.get(url, config);
   }
 
@@ -83,7 +83,6 @@ export class ApiService {
     return this.instance.put(url, data, config);
   }
 
-
   async patch(url, data, config) {
     return this.instance.patch(url, data, config);
   }
@@ -94,18 +93,19 @@ export class ApiService {
 
   async login(url, data, config = {}) {
     // Create a new instance without auth headers for login
-    const baseURL = window.APP_CONFIG?.API_LOGIN_URL || '';
+    // const baseURL = window.APP_CONFIG?.API_LOGIN_URL || '';
+    const baseURL = window.APP_CONFIG?.API_LOGIN_URL || "";
 
     const loginInstance = axios.create({
       baseURL: baseURL,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
     });
 
     try {
       const response = await loginInstance.post(url, data, config);
-      console.log(response, 'response');
+      console.log(response, "response");
       // If login successful, set the token for future requests
       // if (response.data?.data?.token) {
       //   this.setToken(response.data.data.token);

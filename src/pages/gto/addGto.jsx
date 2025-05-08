@@ -70,7 +70,7 @@ import useDebounce from "@/hooks/useDebounce";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
-import qs from "qs";
+import qs from 'qs';
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -153,7 +153,7 @@ const EditDialog = memo(
   )
 );
 
-function AddGrn({ docData }) {
+function AddGto({ docData }) {
   const { docNo } = useParams();
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
@@ -390,20 +390,10 @@ function AddGrn({ docData }) {
         value: item.itmCode,
         label: item.itmDesc,
       }));
-     // Remove duplicates from ranges based on itmCode
-     const uniqueRanges = ranges.reduce((acc, current) => {
-      const x = acc.find(item => item.itmCode === current.itmCode);
-      if (!x) {
-        acc.push(current);
-      }
-      return acc;
-    }, []);
-
-    const rangeOp = uniqueRanges.map((item) => ({
-      value: item.itmCode,
-      label: item.itmDesc,
-    }));
-
+      const rangeOp = ranges.map((item) => ({
+        value: item.itmCode,
+        label: item.itmDesc,
+      }));
 
       setBrandOption(brandOp);
       setRangeOptions(rangeOp);
@@ -412,13 +402,11 @@ function AddGrn({ docData }) {
 
   const getStockDetails = async () => {
     const filter = buildFilterObject(itemFilter);
-    const countFilter = buildCountObject(itemFilter);
-    console.log(countFilter, "filial");
+    const countFilter=buildCountObject(itemFilter)
+    console.log(countFilter,'filial')
     // const query = `?${qs.stringify({ filter }, { encode: false })}`;
     const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-    const countQuery = `?where=${encodeURIComponent(
-      JSON.stringify(countFilter.where)
-    )}`;
+    const countQuery = `?where=${encodeURIComponent(JSON.stringify(countFilter.where))}`;
 
     Promise.all([
       apiService.get(`PackageItemDetails${query}`),
@@ -512,34 +500,6 @@ function AddGrn({ docData }) {
     }
   };
 
-  const addNewControlNumber = async (controlData) => {
-    try {
-      const controlNo = controlData.RunningNo;
-      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
-
-      const controlNosUpdate = {
-        controldescription: "Goods Receive Note",
-        sitecode: "MCHQ",
-        controlnumber: newControlNo,
-      };
-
-      const response = await apiService.post(
-        "ControlNos/updatecontrol",
-        controlNosUpdate
-      );
-
-      if (!response) {
-        throw new Error("Failed to update control number");
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Error updating control number:", error);
-      toast.error("Failed to update control number");
-      throw error;
-    }
-  };
-
   const getStockHdrDetails = async (filter) => {
     try {
       const response = await apiService.get(
@@ -547,7 +507,6 @@ function AddGrn({ docData }) {
       );
       setCartItems(response);
       setCartData(response);
-      setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
     }
@@ -609,7 +568,7 @@ function AddGrn({ docData }) {
         );
       }
 
-      // toast.success("All items processed successfully");
+      toast.success("All items processed successfully");
       return true;
     } catch (error) {
       console.error("Error during stock details processing:", error);
@@ -943,8 +902,6 @@ function AddGrn({ docData }) {
         if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
           await postStockHdr(data, "create");
           await postStockDetails();
-          await addNewControlNumber(controlData);
-
           message = "Note created successfully";
         } else if (type === "save" && urlDocNo) {
           await postStockHdr(data, "update");
@@ -961,7 +918,7 @@ function AddGrn({ docData }) {
         }
 
         toast.success(message);
-        navigate("/goods-receive-note?tab=all"); // Navigate back to list
+        navigateTo("/goods-receive-note"); // Navigate back to list
       } catch (error) {
         console.error("Submit error:", error);
         toast.error("Failed to submit form");
@@ -1008,7 +965,7 @@ function AddGrn({ docData }) {
               <Button
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
-                onClick={() => navigateTo("/goods-receive-note?tab=all")}
+                onClick={() => navigateTo("/goods-receive-note")}
               >
                 Cancel
               </Button>
@@ -1016,7 +973,6 @@ function AddGrn({ docData }) {
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
@@ -1065,7 +1021,6 @@ function AddGrn({ docData }) {
                     <Label>GR Ref 1</Label>
                     <Input
                       placeholder="Enter GR Ref 1"
-                      disabled={urlStatus==7}
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1084,8 +1039,6 @@ function AddGrn({ docData }) {
                       Supply No<span className="text-red-500">*</span>
                     </Label>
                     <Select
-                                          disabled={urlStatus==7}
-
                       value={stockHdrs.supplyNo}
                       onValueChange={(value) =>
                         setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
@@ -1108,8 +1061,6 @@ function AddGrn({ docData }) {
                       Delivery Date<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                                          disabled={urlStatus==7}
-
                       type="date"
                       value={stockHdrs.postDate}
                       onChange={(e) => handleDateChange(e, "postDate")}
@@ -1118,8 +1069,6 @@ function AddGrn({ docData }) {
                   <div className="space-y-2">
                     <Label>GR Ref 2</Label>
                     <Input
-                                          disabled={urlStatus==7}
-
                       placeholder="Enter GR Ref 2"
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
@@ -1157,8 +1106,6 @@ function AddGrn({ docData }) {
                     </Label>
                     <Input
                       type="number"
-                      disabled={urlStatus==7}
-
                       placeholder="Enter term"
                       value={stockHdrs.docTerm}
                       onChange={(e) =>
@@ -1198,8 +1145,6 @@ function AddGrn({ docData }) {
                   <Label>Remarks</Label>
                   <Input
                     placeholder="Enter remarks"
-                                        disabled={urlStatus==7}
-
                     value={stockHdrs.docRemk1}
                     onChange={(e) =>
                       setStockHdrs((prev) => ({
@@ -1555,7 +1500,7 @@ function AddGrn({ docData }) {
                     </TableHead>
                     <TableHead>Expiry Date</TableHead>
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 && <TableHead>Action</TableHead>}
+                    <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1593,28 +1538,26 @@ function AddGrn({ docData }) {
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
                           <TableCell>{item.itemRemark}</TableCell>
 
-                          {urlStatus != 7 && (
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => editPopup(item, index)}
-                                  className="cursor-pointer hover:bg-slate-200 hover:text-blue-600 transition-colors duration-150"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          )}
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => editPopup(item, index)}
+                                className="cursor-pointer hover:bg-slate-200 hover:text-blue-600 transition-colors duration-150"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => onDeleteCart(item, index)}
+                                className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                       {/* Totals Row */}
@@ -1705,4 +1648,4 @@ function AddGrn({ docData }) {
   );
 }
 
-export default AddGrn;
+export default AddGto;

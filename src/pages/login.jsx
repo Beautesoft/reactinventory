@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import blogo from "@/assets/beatesoftlogo1.png";
 import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
+import axios from "axios";
 
 const Login = () => {
   let navigate = useNavigate();
@@ -25,39 +26,77 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [salonOptions, setSalonOptions] = useState([]);
-  const [selectedSalon, setSelectedSalon] = useState(0);
+  const [selectedSalon, setSelectedSalon] = useState({});
   const [salon, setSalon] = useState(null);
 
   useEffect(() => {
     console.log("salon", salon);
-    if (salon !== null) {
-      handleSubmit();
+    // if (salon !== null) {
+    //   handleSubmit();
+    // }
+
+    getSiteList();
+  }, []);
+
+  const getSiteList = async () => {
+    try {
+      const response = await axios.get(
+        `${window.APP_CONFIG?.API_BASE_URL}/ItemSitelists`
+      );
+      const sites = response.data.map((item) => ({
+        label: item.itemsiteDesc,
+        value: item.itemsiteCode,
+      }));
+      setSalonOptions(sites);
+    } catch (err) {
+      toast.error(err.message || "sitesList failed");
     }
-  }, [salon]);
+  };
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
     setIsLoading(true);
 
+    if (!username || !password || !salon) {
+      setIsLoading(false);
+      toast.error("Please fill the fields");
+      return;
+    }
+
     const data = {
-      username: username,
+      userName: username,
       password: password,
-      salon: salon ?? 0,
+      site: salon ,
     };
+    // const data = {
+    //   salon: "1",
+    //   username: "nick",
+    //   password: "123123"
+    // };
 
     try {
-      const response = await apiService.login("/login", data);
+      const response = await apiService.login("api/webBI_Login", data);
+      // const response = await apiService.login("login", data);
 
-      const sites = response.data.sites.map((item) => ({
-        label: item.itemsite_desc,
-        value: item.id,
-      }));
+      // const sites = response.data.sites.map((item) => ({
+      //   label: item.itemsite_desc,
+      //   value: item.id,
+      // }));
 
-      setSalonOptions(sites);
+      console.log(response);
+      if (response.success === "1") {
+        const successData = {
+          // emp_code: data.emp_code ?? "",
+          username: username,
+          // token: data.token,
+          siteCode: selectedSalon.value,
+          siteName: selectedSalon.label,
+          // role: data.role,
+        };
+        // setSalonOptions(sites);
 
-      if (salon != null) {
         // First update auth state
-       const success= await loginSuccess(response.data);
+        const success = await loginSuccess(successData);
         // Then show toast
         // navigate("/dashboard");
         console.log("success", success);
@@ -66,11 +105,20 @@ const Login = () => {
           duration: 2000,
           onDismiss: () => {
             // Navigate after toast is shown
-           success  && navigate("/dashboard", { replace: true });
+            success && navigate("/dashboard", { replace: true });
           },
         });
-      }
-    } catch (error) {
+      } else if (response.success === "2") {
+         toast.error("User Name and Password does not match");
+         return
+      } else if (response.success === "3") {
+         toast.error("Outlet Aecess Denied");
+         return
+        } else if (response.success === "0") {
+          toast.error(response.error);
+
+        }
+        } catch (error) {
       toast.error(error.message || "Login failed");
     } finally {
       setIsLoading(false);
@@ -93,7 +141,7 @@ const Login = () => {
         />
       </div>
 
-      <div className="flex items-center justify-center p-8">
+      <div className="flex mt-10 justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center">
             <h2 className="text-3xl font-bold">
@@ -146,16 +194,24 @@ const Login = () => {
               <div className="space-y-2 w-full">
                 <Label>Select Outlet</Label>
                 <Select
-                  value={salon} // Add value prop
+                placeholder='Select outlet'
+                  value={salon}
                   onValueChange={(value) => {
-                    const numericValue = parseInt(value, 10);
-                    setSalon(numericValue);
+                    console.log(value);
+                    setSalon(value);
+                    // Find and set the complete salon object
+                    const selectedOption = salonOptions.find(
+                      (opt) => opt.value === value
+                    );
+                    if (selectedOption) {
+                      setSelectedSalon(selectedOption);
+                    }
                   }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select an outlet">
                       {salonOptions.find((opt) => opt.value === salon)?.label}
-                    </SelectValue>{" "}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {salonOptions.map((option) => (

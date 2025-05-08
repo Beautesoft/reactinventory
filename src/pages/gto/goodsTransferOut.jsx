@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, {useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -19,11 +19,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import useDebounce from "@/hooks/useDebounce";
-import { useSearchParams,useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-function GoodsReceiveNote() {
+function GoodsTransferOut() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchValue, setSearchValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -43,10 +42,10 @@ function GoodsReceiveNote() {
   } = useGrn();
 
   useEffect(() => {
-
-      console.log("pagination", pagination);
-      setIsLoading(true);
-      getNoteTable();
+    console.log("pagination", pagination);
+    // setDefaultdata()
+    setIsLoading(true);
+    getNoteTable();
   }, [
     debouncedSearchValue,
     pagination.where.docStatus,
@@ -114,25 +113,17 @@ function GoodsReceiveNote() {
 
   const handleRoute = () => {
     console.log("Create New clicked");
-    setDefaultdata()
     navigate("/goods-receive-note/add/"); // Navigate to the add page
     // Add your routing logic here
-  };
+  }
 
   return (
-    <div className="h-screen w-full mt-6 light">
-      <div className="ml-2 mb-7">
-        <h1 className="text-2xl font-bold text-gray-900">Goods Receive Note</h1>
-        {/* <p className="mt-1 text-sm text-gray-500">
-          Manage and track all incoming inventory items
-        </p> */}
-      </div>
-
+    <div className="h-screen w-full mt-8 light">
       <Tabs defaultValue="all" className="w-full   ">
         <div className="flex items-center justify-between space-x-2 mb-6">
           <div className="w-[30%] relative">
             <Input
-              placeholder="Search by DocNo, Ref, Supplier, Total Qty, DocDate "
+              placeholder="Search"
               onChange={(e) => {
                 handleSearch(e);
               }}
@@ -159,12 +150,7 @@ function GoodsReceiveNote() {
               Posted
             </TabsTrigger>
           </TabsList>
-          <Button
-            onClick={() => {
-              handleRoute();
-            }}
-            className="bg-blue-950 text-white hover:bg-blue-700  cursor-pointer"
-          >
+          <Button onClick={()=>{handleRoute()}} className="bg-blue-950 text-white hover:bg-blue-700  cursor-pointer">
             + Create New
           </Button>
         </div>
@@ -191,4 +177,4 @@ function GoodsReceiveNote() {
   );
 }
 
-export default GoodsReceiveNote;
+export default GoodsTransferOut;

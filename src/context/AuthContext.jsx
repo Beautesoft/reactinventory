@@ -79,37 +79,69 @@ export const AuthProvider = ({ children }) => {
   //   }
   // };
 
+  // const loginSuccess = async (data) => {
+  //   try {
+  //     setState((prev) => ({
+  //       ...prev,
+  //       isAuthenticated: true,
+  //       loginDetails: data,
+  //       token: data.token,
+  //     }));
+
+  //     const userDetails = {
+  //       emp_code: data.emp_code??'',
+  //       username: data.username,
+  //       token: data.token,
+  //       siteCode: data.branch,
+  //       siteName: data.salon,
+  //       role: data.role,
+  //       // backendauthorization: data.backendauthorization,
+  //     };
+
+  //     // Set local storage items
+  //     // localStorage.setItem("userId", data.emp_code);
+  //     // localStorage.setItem("username", data.username);
+  //     localStorage.setItem("userDetails", JSON.stringify(userDetails));
+
+  //     // Set cookie
+  //     setCookie("token", data.token);
+
+  //     return true; // Resolve with true on success
+  //   } catch (error) {
+  //     console.error("Login success error:", error);
+  //     return false; // Resolve with false on error
+  //   }
+  // };
+
   const loginSuccess = async (data) => {
     try {
+      // Generate a simple token from user data
+      const generatedToken = btoa(`${data.username}:${data.siteCode}:${Date.now()}`);
+  
       setState((prev) => ({
         ...prev,
         isAuthenticated: true,
         loginDetails: data,
-        token: data.token,
+        token: generatedToken,
       }));
-
+  
       const userDetails = {
-        emp_code: data.emp_code??'',
         username: data.username,
-        token: data.token,
-        siteCode: data.branch,
-        siteName: data.salon,
-        role: data.role,
-        backendauthorization: data.backendauthorization,
+        token: generatedToken,
+        siteCode: data.siteCode,
+        siteName: data.siteName,
       };
-
-      // Set local storage items
-      // localStorage.setItem("userId", data.emp_code);
-      // localStorage.setItem("username", data.username);
+  
+      // Store in localStorage
       localStorage.setItem("userDetails", JSON.stringify(userDetails));
-
+  
       // Set cookie
-      setCookie("token", data.token);
-
-      return true; // Resolve with true on success
+      setCookie("token", generatedToken);
+  
+      return true;
     } catch (error) {
       console.error("Login success error:", error);
-      return false; // Resolve with false on error
+      return false;
     }
   };
   const logout = () => {

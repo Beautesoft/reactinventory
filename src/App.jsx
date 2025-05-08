@@ -13,6 +13,8 @@ import DashBoard from "./pages/dashBoard";
 import GoodsReceiveNote from "./pages/grn/goodsReceiveNote";
 import AddGrn from "./pages/grn/addGrn";
 import PrintPreview from "./pages/grn/printPreview";
+import GoodsTransferOut from "./pages/gto/goodsTransferOut";
+import AddGto from "./pages/gto/addGto";
 
 function App() {
   return (
@@ -57,6 +59,26 @@ function App() {
                           />
                             <Route
                             path="/goods-receive-note/print/:docNo"
+                            element={<PrintPreview />}
+                          />
+                            <Route
+                            path="/goods-transfer-out"
+                            element={<GoodsTransferOut />}
+                          />
+                          <Route
+                            path="/goods-transfer-out/add"
+                            element={<AddGto />}
+                          />
+                              <Route
+                            path="/goods-transfer-out/details/:docNo"
+                            element={<AddGto />}
+                          />
+                          <Route
+                            path="/goods-transfer-out/edit/:docNo"
+                            element={<AddGto />}
+                          />
+                            <Route
+                            path="/goods-transfer-out/print/:docNo"
                             element={<PrintPreview />}
                           />
                           <Route

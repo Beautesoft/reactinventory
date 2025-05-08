@@ -70,7 +70,7 @@ export function AppSidebar() {
         },
         {
           title: "Goods Transfer Out",
-          url: "/stock-transfer",
+          url: "/goods-transfer-out",
           icon: FiArrowRightCircle,
         },
         {

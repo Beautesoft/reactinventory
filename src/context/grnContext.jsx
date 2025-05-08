@@ -70,7 +70,7 @@ const grnReducer = (state, action) => {
     case "SET_DEFAULT_DATA":
       return {
         ...state,
-        goodsData: [],
+        // goodsData: [],
         pagination: {
           ...state.pagination,
           where: { docStatus: null, movCode: "GRN" },

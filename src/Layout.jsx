@@ -5,7 +5,7 @@ import GoodsReceiveNote from "./pages/grn/goodsReceiveNote";
 import DashBoard from "./pages/dashBoard";
 import { AppSidebar } from "./components/app-sidebar";
 import { SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
-import { BreadcrumbDemo } from "./components/breadCrumbs";
+import { BreadcrumbNav } from "./components/breadCrumbs";
 import { Toaster } from "sonner";
 import { User,MapPin } from "lucide-react";
 
@@ -24,7 +24,7 @@ const Layout = ({ children }) => {
           <div className="flex items-center justify-between gap-3 py-3 px-3 bg-gradient-to-br from-white via-sky-50/30 to-indigo-50/20 dark:from-gray-900 dark:to-gray-800 border-b border-gray-200">
             <div className="flex items-center justify-start">
               <SidebarTrigger />
-              <BreadcrumbDemo />
+              <BreadcrumbNav />
             </div>
             <div className="flex items-center gap-12 justify-end">
               <div className="flex items-center gap-2">

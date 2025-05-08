@@ -2,8 +2,11 @@ import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export const buildFilterQuery = (pagination) => {
+  console.log(pagination, "pagina");
   const params = [];
-  console.log(pagination, "pagination");
+  let andIndex = 0;
+
+  // Handle regular where conditions
   if (pagination.where && typeof pagination.where === "object") {
     Object.entries(pagination.where).forEach(([key, value]) => {
       if (value !== null && value !== undefined) {
@@ -12,24 +15,120 @@ export const buildFilterQuery = (pagination) => {
             value
           )}`
         );
-        console.log(key, "key");
       }
     });
   }
-  if (pagination.like && typeof pagination.like === "object") {
-    Object.entries(pagination.like).forEach(([key,value],i) => {
-      if (value !== null && value !== undefined && value !== "") {
-      params.push(
-          `filter[where][or][${i}][${encodeURIComponent(key)}][like]=${encodeURIComponent(
-            `%${value}%`
-          )}`
-        );
-        console.log(key, "key");
-      }
-    });
-  }
-  console.log(params, "params");
 
+  // Handle whereArray conditions with AND
+  if (pagination.whereArray && typeof pagination.whereArray === "object") {
+    Object.entries(pagination.whereArray).forEach(([key, value]) => {
+      console.log(key, value, "key");
+
+      if (Array.isArray(value) && value.length > 0) {
+        console.log(key, value, "key");
+        if (key === "department") {
+          let inqIndex=0
+
+          if (value.length > 1) {
+            value.forEach((item, index) => {
+              params.push(
+                `filter[where][${encodeURIComponent(key)}][inq]=${encodeURIComponent(item)}`
+              );
+              inqIndex++
+            });
+          } else {
+            let val = value[0];
+
+            params.push(
+              `filter[where][${encodeURIComponent(key)}]=${encodeURIComponent(
+                val
+              )}`
+            );
+            // value.forEach((item, index) => {
+            //   params.push(
+            //     `filter[where][${key}][inq]=${encodeURIComponent(
+            //       item
+            //     )}`
+            //   );
+            // });
+          }
+          andIndex++;
+
+          // Handle department with OR inside AND
+          // value.forEach((item, index) => {
+          //   params.push(
+          //     `filter[where][and][${andIndex}][or][${index}][${key}]=${encodeURIComponent(
+          //       item
+          //     )}`
+          //   );
+          // });
+        } else if (key === "brand" || key === "range") {
+          let inqIndex=0
+
+          console.log(key, "key1");
+          if (value.length === 1) {
+            console.log(key, value, "key");
+
+            let val = value[0];
+            params.push(
+              `filter[where][${key}]=${encodeURIComponent(
+                val
+              )}`
+            );
+          } else {
+            value.forEach((item, index) => {
+              params.push(
+                `filter[where][${key}][inq]=${encodeURIComponent(
+                  item
+                )}`
+              );
+           inqIndex++
+
+            });
+          }
+
+          // Send full array as a JSON string for inq
+          // params.push(
+          //   `filter[where][and][${andIndex}][${key}][inq]=${encodeURIComponent(JSON.stringify(value))}`
+          // );
+          // params.push(
+          //   `filter[where][${key}][inq]=${encodeURIComponent(
+          //     value
+          //   )}`
+          // );
+          andIndex++;
+        } else {
+          // Handle other arrays with AND
+          value.forEach((item, index) => {
+            params.push(
+              `filter[where][and][${andIndex}][${key}]=${encodeURIComponent(
+                item
+              )}`
+            );
+          });
+          andIndex++;
+        }
+      }
+    });
+  }
+
+  // Handle like conditions
+  if (pagination.like && typeof pagination.like === "object") {
+    let orIndex = 0;
+    Object.entries(pagination.like).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") {
+        params.push(
+          `filter[where][or][${orIndex}][${encodeURIComponent(
+            key
+          )}][like]=${encodeURIComponent(`%${value}%`)}`
+        );
+      }
+      orIndex++;
+    });
+    andIndex++;
+  }
+
+  // Handle pagination
   if (pagination.skip !== null && pagination.skip !== undefined) {
     params.push(`filter[skip]=${encodeURIComponent(pagination.skip)}`);
   }
@@ -38,115 +137,137 @@ export const buildFilterQuery = (pagination) => {
     params.push(`filter[limit]=${encodeURIComponent(pagination.limit)}`);
   }
 
-  if (
-    pagination.order !== null &&
-    pagination.order !== undefined &&
-    pagination.order.toString().trim() !== ""
-  ) {
+  if (pagination.order?.toString().trim()) {
     params.push(`filter[order]=${encodeURIComponent(pagination.order)}`);
   }
-  console.log(params, "return");
 
   return params.length ? "?" + params.join("&") : "";
 };
 
 export const buildCountQuery = (pagination) => {
   const params = [];
-  console.log(pagination, "pagination");
+
   if (pagination.where && typeof pagination.where === "object") {
     Object.entries(pagination.where).forEach(([key, value]) => {
       if (value !== null && value !== undefined) {
-        params.push(
-          `[where][${encodeURIComponent(key)}]=${encodeURIComponent(
-            value
-          )}`
-        );
-        console.log(key, "key");
+        if (Array.isArray(value)) {
+          // Handle array values
+          if (value.length > 0) {
+            value.forEach((item, index) => {
+              params.push(
+                `[where][or][${index}][${encodeURIComponent(
+                  key
+                )}]=${encodeURIComponent(item)}`
+              );
+            });
+          }
+        } else {
+          // Handle non-array values
+          params.push(
+            `[where][${encodeURIComponent(key)}]=${encodeURIComponent(value)}`
+          );
+        }
       }
     });
   }
+
   if (pagination.like && typeof pagination.like === "object") {
-    Object.entries(pagination.like).forEach(([key,value],i) => {
+    Object.entries(pagination.like).forEach(([key, value], i) => {
       if (value !== null && value !== undefined && value !== "") {
-      params.push(
-          `[where][or][${i}][${encodeURIComponent(key)}][like]=${encodeURIComponent(
-            `%${value}%`
-          )}`
+        params.push(
+          `[where][or][${i}][${encodeURIComponent(
+            key
+          )}][like]=${encodeURIComponent(`%${value}%`)}`
         );
-        console.log(key, "key");
       }
     });
   }
-  console.log(params, "params");
-
-  // if (pagination.skip !== null && pagination.skip !== undefined) {
-  //   params.push(`filter[skip]=${encodeURIComponent(pagination.skip)}`);
-  // }
-
-  // if (pagination.limit !== null && pagination.limit !== undefined) {
-  //   params.push(`filter[limit]=${encodeURIComponent(pagination.limit)}`);
-  // }
-
-  // if (
-  //   pagination.sortBy !== null &&
-  //   pagination.sortBy !== undefined &&
-  //   pagination.sortBy.toString().trim() !== ""
-  // ) {
-  //   params.push(`filter[sort]=${encodeURIComponent(pagination.sortBy)}`);
-  // }
-  // console.log(params, "return");
 
   return params.length ? "?" + params.join("&") : "";
 };
 
-// Example usage:
-// const pagination = {
-//   where: { docStatus: 0, movCode: "GRN" },
-//   like: {
-//     docNo: "",
-//     docDate: "",
-//     docRef1: "",
-//     supplyNo: "",
-//     docAmt: "",
-//     docStatus: "",
-//   },
-//   skip: 0,
-//   limit: 5,
-//   sortBy: "",
-// };
-
-// console.log(buildFilterQuery(pagination));
-// Output: "?filter[where][docStatus]=0&filter[where][movCode]=GRN&filter[skip]=0&filter[limit]=5"
-
-// export const buildCountQuery = (filterObj) => {
-//   const parts = [];
-
-//   function recurse(obj, prefix = "") {
-//     Object.entries(obj).forEach(([key, value]) => {
-//       if (value === null || value === undefined || value === "") return;
-
-//       const currentKey = prefix
-//         ? `${prefix}[${encodeURIComponent(key)}]`
-//         : encodeURIComponent(key);
-
-//       if (typeof value === "object" && !Array.isArray(value)) {
-//         recurse(value, currentKey);
-//       } else {
-//         parts.push(`${currentKey}=${encodeURIComponent(value)}`);
-//       }
-//     });
-//   }
-
-//   if (filterObj.where && typeof filterObj.where === "object") {
-//     recurse(filterObj.where, "where");
-//   }
-
-//   return parts.length ? `?${parts.join("&")}` : "";
-// };
-
 export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
+
+
+export function buildFilterObject(itemFilter) {
+  const filter = { where: { and: [] } };
+
+  // Handle whereArray (for inq arrays)
+  if (itemFilter.whereArray) {
+    Object.entries(itemFilter.whereArray).forEach(([key, value]) => {
+      if (Array.isArray(value) && value.length > 0) {
+        filter.where.and.push({ [key]: { inq: value } });
+      }
+    });
+  }
+
+  // Handle like (for partial text search)
+  if (itemFilter.like) {
+    const orClauses = [];
+    Object.entries(itemFilter.like).forEach(([key, value]) => {
+      if (value) {
+        orClauses.push({ [key]: { like: `%${value}%` } });
+      }
+    });
+    if (orClauses.length > 0) {
+      filter.where.and.push({ or: orClauses });
+    }
+  }
+
+  // Handle other simple equality filters (optional)
+  if (itemFilter.splyCode) {
+    filter.where.and.push({ splyCode: itemFilter.splyCode });
+  }
+  if (itemFilter.docNo) {
+    filter.where.and.push({ docNo: itemFilter.docNo });
+  }
+
+  // Handle pagination
+  filter.skip = itemFilter.skip;
+  filter.limit = itemFilter.limit;
+
+  return filter;
+}
+
+export const buildCountObject = (pagination) => {
+  const filter = { where: { and: [] } };
+
+  // Handle whereArray (for inq arrays)
+  if (pagination.whereArray) {
+    Object.entries(pagination.whereArray).forEach(([key, value]) => {
+      if (Array.isArray(value) && value.length > 0) {
+        filter.where.and.push({ [key]: { inq: value } });
+      }
+    });
+  }
+
+  // Handle like (for partial text search)
+  if (pagination.like) {
+    const orClauses = [];
+    Object.entries(pagination.like).forEach(([key, value]) => {
+      if (value) {
+        orClauses.push({ [key]: { like: `%${value}%` } });
+      }
+    });
+    if (orClauses.length > 0) {
+      filter.where.and.push({ or: orClauses });
+    }
+  }
+
+  // Handle other simple equality filters (optional)
+  if (pagination.splyCode) {
+    filter.where.and.push({ splyCode: pagination.splyCode });
+  }
+  if (pagination.docNo) {
+    filter.where.and.push({ docNo: pagination.docNo });
+  }
+
+  // Skip and limit are NOT included in count queries
+  return filter;
+};
+
 
 // Set a cookie with a specified expiration date
 export const setCookie = (name, value, days = "3") => {
@@ -228,18 +349,17 @@ export const stockHdrs = {
   createUser: "kk",
 };
 
-
 export const format_Date = (dateString) => {
   if (!dateString) return "-";
-  
+
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return "-";
-    
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const year = date.getFullYear();
-    
+
     return `${day}-${month}-${year}`;
   } catch (error) {
     console.error("Date formatting error:", error);

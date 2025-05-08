@@ -11,15 +11,18 @@ import {
 import { FileText, PrinterIcon } from "lucide-react";
 import TableSpinner from "./tabelSpinner";
 import { useNavigate } from "react-router-dom";
+import { useGrn } from "@/context/grnContext";
 
 function GoodsReceiveTable({ data, isLoading }) {
   const navigate = useNavigate();
+  const { setDefaultdata } = useGrn();
   const dateConvert = (date) => {
     const options = { year: "numeric", month: "2-digit", day: "2-digit" };
     return new Date(date).toLocaleDateString(undefined, options);
   };
 
   const handleDetails = (item) => {
+    setDefaultdata();
     const status = item.docStatus === 7 ? "7" : "0";
     navigate(`/goods-receive-note/details/${item.docNo}?status=${status}`, {
       state: { item },
@@ -27,6 +30,8 @@ function GoodsReceiveTable({ data, isLoading }) {
   };
 
   const printNote = (item) => {
+    setDefaultdata();
+
     navigate(`/goods-receive-note/print/${item.docNo}`, { state: { item } });
   };
 
@@ -41,7 +46,7 @@ function GoodsReceiveTable({ data, isLoading }) {
             <TableHead>Supplier</TableHead>
             <TableHead>Total Quantity</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-right">Print</TableHead>
+            <TableHead className=" mr-5">Print</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody className="p-5">
@@ -69,7 +74,7 @@ function GoodsReceiveTable({ data, isLoading }) {
                 >
                   {item.docStatus === 7 ? "Posted" : "Open"}
                 </TableCell>
-                <TableCell className="text-left flex justify-end pr-4 ">
+                <TableCell className="text-left flex pr-4 ">
                   <PrinterIcon
                     onClick={() => printNote(item)}
                     className="icon-print cursor-pointer"
