@@ -27,14 +27,16 @@ export const buildFilterQuery = (pagination) => {
       if (Array.isArray(value) && value.length > 0) {
         console.log(key, value, "key");
         if (key === "department") {
-          let inqIndex=0
+          let inqIndex = 0;
 
           if (value.length > 1) {
             value.forEach((item, index) => {
               params.push(
-                `filter[where][${encodeURIComponent(key)}][inq]=${encodeURIComponent(item)}`
+                `filter[where][${encodeURIComponent(
+                  key
+                )}][inq]=${encodeURIComponent(item)}`
               );
-              inqIndex++
+              inqIndex++;
             });
           } else {
             let val = value[0];
@@ -63,27 +65,20 @@ export const buildFilterQuery = (pagination) => {
           //   );
           // });
         } else if (key === "brand" || key === "range") {
-          let inqIndex=0
+          let inqIndex = 0;
 
           console.log(key, "key1");
           if (value.length === 1) {
             console.log(key, value, "key");
 
             let val = value[0];
-            params.push(
-              `filter[where][${key}]=${encodeURIComponent(
-                val
-              )}`
-            );
+            params.push(`filter[where][${key}]=${encodeURIComponent(val)}`);
           } else {
             value.forEach((item, index) => {
               params.push(
-                `filter[where][${key}][inq]=${encodeURIComponent(
-                  item
-                )}`
+                `filter[where][${key}][inq]=${encodeURIComponent(item)}`
               );
-           inqIndex++
-
+              inqIndex++;
             });
           }
 
@@ -190,60 +185,40 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-
-export function buildFilterObject(itemFilter) {
+export function buildFilterObject(pagination) {
   const filter = { where: { and: [] } };
 
-  // Handle whereArray (for inq arrays)
-  if (itemFilter.whereArray) {
-    Object.entries(itemFilter.whereArray).forEach(([key, value]) => {
-      if (Array.isArray(value) && value.length > 0) {
-        filter.where.and.push({ [key]: { inq: value } });
+  // Handle regular where conditions first
+  if (pagination.where) {
+    Object.entries(pagination.where).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        filter.where.and.push({ [key]: value });
       }
     });
   }
 
-  // Handle like (for partial text search)
-  if (itemFilter.like) {
-    const orClauses = [];
-    Object.entries(itemFilter.like).forEach(([key, value]) => {
-      if (value) {
-        orClauses.push({ [key]: { like: `%${value}%` } });
-      }
-    });
-    if (orClauses.length > 0) {
-      filter.where.and.push({ or: orClauses });
-    }
-  }
-
-  // Handle other simple equality filters (optional)
-  if (itemFilter.splyCode) {
-    filter.where.and.push({ splyCode: itemFilter.splyCode });
-  }
-  if (itemFilter.docNo) {
-    filter.where.and.push({ docNo: itemFilter.docNo });
-  }
-
-  // Handle pagination
-  filter.skip = itemFilter.skip;
-  filter.limit = itemFilter.limit;
-
-  return filter;
-}
-
-export const buildCountObject = (pagination) => {
-  const filter = { where: { and: [] } };
-
-  // Handle whereArray (for inq arrays)
+  // Handle whereArray with AND and inq
   if (pagination.whereArray) {
     Object.entries(pagination.whereArray).forEach(([key, value]) => {
       if (Array.isArray(value) && value.length > 0) {
-        filter.where.and.push({ [key]: { inq: value } });
+        // For department, brand, or range
+        if (key === "department" || key === "brand" || key === "range") {
+          if (value.length === 1) {
+            filter.where.and.push({ [key]: value[0] });
+          } else {
+            filter.where.and.push({ [key]: { inq: value } });
+          }
+        } else {
+          // For other arrays, keep the original AND behavior
+          value.forEach((item) => {
+            filter.where.and.push({ [key]: item });
+          });
+        }
       }
     });
   }
 
-  // Handle like (for partial text search)
+  // Handle like conditions for search
   if (pagination.like) {
     const orClauses = [];
     Object.entries(pagination.like).forEach(([key, value]) => {
@@ -256,18 +231,68 @@ export const buildCountObject = (pagination) => {
     }
   }
 
-  // Handle other simple equality filters (optional)
-  if (pagination.splyCode) {
-    filter.where.and.push({ splyCode: pagination.splyCode });
+  // Handle pagination params
+  if (pagination.skip !== undefined) {
+    filter.skip = pagination.skip;
   }
-  if (pagination.docNo) {
-    filter.where.and.push({ docNo: pagination.docNo });
+  if (pagination.limit !== undefined) {
+    filter.limit = pagination.limit;
+  }
+  if (pagination.order) {
+    filter.order = pagination.order;
   }
 
-  // Skip and limit are NOT included in count queries
+  return filter;
+}
+
+export const buildCountObject = (pagination) => {
+  const filter = { where: { and: [] } };
+
+  // Handle regular where conditions first
+  if (pagination.where) {
+    Object.entries(pagination.where).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        filter.where.and.push({ [key]: value });
+      }
+    });
+  }
+
+  // Handle whereArray with AND and inq
+  if (pagination.whereArray) {
+    Object.entries(pagination.whereArray).forEach(([key, value]) => {
+      if (Array.isArray(value) && value.length > 0) {
+        // For department, brand, or range
+        if (key === "department" || key === "brand" || key === "range") {
+          if (value.length === 1) {
+            filter.where.and.push({ [key]: value[0] });
+          } else {
+            filter.where.and.push({ [key]: { inq: value } });
+          }
+        } else {
+          // For other arrays, keep the original AND behavior
+          value.forEach((item) => {
+            filter.where.and.push({ [key]: item });
+          });
+        }
+      }
+    });
+  }
+
+  // Handle like conditions for search
+  if (pagination.like) {
+    const orClauses = [];
+    Object.entries(pagination.like).forEach(([key, value]) => {
+      if (value) {
+        orClauses.push({ [key]: { like: `%${value}%` } });
+      }
+    });
+    if (orClauses.length > 0) {
+      filter.where.and.push({ or: orClauses });
+    }
+  }
+
   return filter;
 };
-
 
 // Set a cookie with a specified expiration date
 export const setCookie = (name, value, days = "3") => {

@@ -28,6 +28,7 @@ const Login = () => {
   const [salonOptions, setSalonOptions] = useState([]);
   const [selectedSalon, setSelectedSalon] = useState({});
   const [salon, setSalon] = useState(null);
+  const [salonDetail, setSalonDetail] = useState(null);
 
   useEffect(() => {
     console.log("salon", salon);
@@ -43,6 +44,8 @@ const Login = () => {
       const response = await axios.get(
         `${window.APP_CONFIG?.API_BASE_URL}/ItemSitelists`
       );
+
+      setSalonDetail(response.data);
       const sites = response.data.map((item) => ({
         label: item.itemsiteDesc,
         value: item.itemsiteCode,
@@ -66,7 +69,7 @@ const Login = () => {
     const data = {
       userName: username,
       password: password,
-      site: salon ,
+      site: salon,
     };
     // const data = {
     //   salon: "1",
@@ -84,13 +87,22 @@ const Login = () => {
       // }));
 
       console.log(response);
+      console.log(selectedSalon, "sadet");
+
       if (response.success === "1") {
         const successData = {
           // emp_code: data.emp_code ?? "",
           username: username,
           // token: data.token,
-          siteCode: selectedSalon.value,
-          siteName: selectedSalon.label,
+          siteCode: selectedSalon.itemsiteCode,
+          siteName: selectedSalon.itemsiteDesc,
+          siteAddress: selectedSalon.itemsiteAddress,
+          siteCity: selectedSalon.itemsiteCity,
+          siteCountry: selectedSalon.itemsiteCountry,
+          siteState: selectedSalon.itemsiteState,
+          sitePostCode: selectedSalon.itemsitePostcode,
+          sitePhone: selectedSalon.itemsitePhone1,
+
           // role: data.role,
         };
         // setSalonOptions(sites);
@@ -109,16 +121,15 @@ const Login = () => {
           },
         });
       } else if (response.success === "2") {
-         toast.error("User Name and Password does not match");
-         return
+        toast.error("User Name and Password does not match");
+        return;
       } else if (response.success === "3") {
-         toast.error("Outlet Aecess Denied");
-         return
-        } else if (response.success === "0") {
-          toast.error(response.error);
-
-        }
-        } catch (error) {
+        toast.error("Outlet Aecess Denied");
+        return;
+      } else if (response.success === "0") {
+        toast.error(response.error);
+      }
+    } catch (error) {
       toast.error(error.message || "Login failed");
     } finally {
       setIsLoading(false);
@@ -194,14 +205,17 @@ const Login = () => {
               <div className="space-y-2 w-full">
                 <Label>Select Outlet</Label>
                 <Select
-                placeholder='Select outlet'
+                  placeholder="Select outlet"
                   value={salon}
                   onValueChange={(value) => {
                     console.log(value);
                     setSalon(value);
                     // Find and set the complete salon object
-                    const selectedOption = salonOptions.find(
-                      (opt) => opt.value === value
+                    // const selectedOption = salonOptions.find(
+                    //   (opt) => opt.value === value
+                    // );
+                    const selectedOption = salonDetail.find(
+                      (opt) => opt.itemsiteCode === value
                     );
                     if (selectedOption) {
                       setSelectedSalon(selectedOption);

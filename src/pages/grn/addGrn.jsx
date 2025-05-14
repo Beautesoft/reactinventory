@@ -70,7 +70,6 @@ import useDebounce from "@/hooks/useDebounce";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
-import qs from "qs";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -373,6 +372,19 @@ function AddGrn({ docData }) {
         docRemk1: data.docRemk1,
         postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
+      setSupplierInfo({
+        Attn: data?.docAttn,
+        line1: data?.baddr1,
+        line2: data?.baddr2,
+        line3: data?.baddr3,
+        pcode: data?.bpostcode,
+        sline1: data?.daddr1,
+        sline2: data?.daddr2,
+        sline3: data?.daddr3,
+        spcode: data?.dpostcode,
+      });
+
+      console.log(supplierInfo, "ddd2");
     } catch (error) {
       console.error("Error fetching stock header data:", error);
       showError("Failed to fetch stock header data.");
@@ -390,20 +402,19 @@ function AddGrn({ docData }) {
         value: item.itmCode,
         label: item.itmDesc,
       }));
-     // Remove duplicates from ranges based on itmCode
-     const uniqueRanges = ranges.reduce((acc, current) => {
-      const x = acc.find(item => item.itmCode === current.itmCode);
-      if (!x) {
-        acc.push(current);
-      }
-      return acc;
-    }, []);
+      // Remove duplicates from ranges based on itmCode
+      const uniqueRanges = ranges.reduce((acc, current) => {
+        const x = acc.find((item) => item.itmCode === current.itmCode);
+        if (!x) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
 
-    const rangeOp = uniqueRanges.map((item) => ({
-      value: item.itmCode,
-      label: item.itmDesc,
-    }));
-
+      const rangeOp = uniqueRanges.map((item) => ({
+        value: item.itmCode,
+        label: item.itmDesc,
+      }));
 
       setBrandOption(brandOp);
       setRangeOptions(rangeOp);
@@ -465,7 +476,8 @@ function AddGrn({ docData }) {
 
       setSupplyOptions(supplyOption);
 
-      if (!docData) {
+      if (!urlDocNo) {
+        console.log("ddd1");
         setStockHdrs((prev) => ({
           ...prev,
           supplyNo: supplycode ? supplycode : supplyOption[0]?.value || null,
@@ -484,7 +496,7 @@ function AddGrn({ docData }) {
   const getDocNo = async () => {
     try {
       const codeDesc = "Goods Receive Note";
-      const siteCode = "MCHQ";
+      const siteCode = userDetails?.siteCode;
       const res = await apiService.get(
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
       );
@@ -721,7 +733,7 @@ function AddGrn({ docData }) {
     }
 
     if (!stockHdrs.postDate) {
-      errors.push("Post date is required");
+      errors.push("Delivery date is required");
     }
 
     // Cart Validation
@@ -1065,7 +1077,7 @@ function AddGrn({ docData }) {
                     <Label>GR Ref 1</Label>
                     <Input
                       placeholder="Enter GR Ref 1"
-                      disabled={urlStatus==7}
+                      disabled={urlStatus == 7}
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1084,8 +1096,7 @@ function AddGrn({ docData }) {
                       Supply No<span className="text-red-500">*</span>
                     </Label>
                     <Select
-                                          disabled={urlStatus==7}
-
+                      disabled={urlStatus == 7}
                       value={stockHdrs.supplyNo}
                       onValueChange={(value) =>
                         setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
@@ -1108,8 +1119,7 @@ function AddGrn({ docData }) {
                       Delivery Date<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                                          disabled={urlStatus==7}
-
+                      disabled={urlStatus == 7}
                       type="date"
                       value={stockHdrs.postDate}
                       onChange={(e) => handleDateChange(e, "postDate")}
@@ -1118,8 +1128,7 @@ function AddGrn({ docData }) {
                   <div className="space-y-2">
                     <Label>GR Ref 2</Label>
                     <Input
-                                          disabled={urlStatus==7}
-
+                      disabled={urlStatus == 7}
                       placeholder="Enter GR Ref 2"
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
@@ -1157,8 +1166,7 @@ function AddGrn({ docData }) {
                     </Label>
                     <Input
                       type="number"
-                      disabled={urlStatus==7}
-
+                      disabled={urlStatus == 7}
                       placeholder="Enter term"
                       value={stockHdrs.docTerm}
                       onChange={(e) =>
@@ -1174,7 +1182,7 @@ function AddGrn({ docData }) {
                       Store Code<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      value={stockHdrs.storeNo}
+                      value={userDetails.siteName}
                       disabled
                       className="bg-gray-50"
                     />
@@ -1198,8 +1206,7 @@ function AddGrn({ docData }) {
                   <Label>Remarks</Label>
                   <Input
                     placeholder="Enter remarks"
-                                        disabled={urlStatus==7}
-
+                    disabled={urlStatus == 7}
                     value={stockHdrs.docRemk1}
                     onChange={(e) =>
                       setStockHdrs((prev) => ({
@@ -1384,7 +1391,9 @@ function AddGrn({ docData }) {
                                 className="hover:bg-gray-50 transition-colors duration-150"
                               >
                                 <TableCell>{item.stockCode || "-"}</TableCell>
-                                <TableCell>{item.stockName || "-"}</TableCell>
+                                <TableCell className="max-w-[200px] whitespace-normal break-words">
+                                  {item.stockName || "-"}
+                                </TableCell>
                                 <TableCell>{item.itemUom || "-"}</TableCell>
                                 <TableCell>{item.brand || "-"}</TableCell>
                                 <TableCell>{item.linkCode || "-"}</TableCell>
@@ -1458,9 +1467,7 @@ function AddGrn({ docData }) {
                   {/* Attention To */}
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>
-                        Attn To<span className="text-red-500">*</span>
-                      </Label>
+                      <Label>Attn To</Label>
                       <Input
                         value={supplierInfo.Attn}
                         onChange={(e) => handleSupplierChange(e, "Attn")}
@@ -1472,9 +1479,7 @@ function AddGrn({ docData }) {
                   {/* Address and Ship To Address */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                     <div className="space-y-4">
-                      <Label>
-                        Address<span className="text-red-500">*</span>
-                      </Label>
+                      <Label>Address</Label>
                       <div className="space-y-2">
                         <Input
                           value={supplierInfo.line1}
@@ -1500,9 +1505,7 @@ function AddGrn({ docData }) {
                     </div>
 
                     <div className="space-y-4">
-                      <Label>
-                        Ship To Address<span className="text-red-500">*</span>
-                      </Label>
+                      <Label>Ship To Address</Label>
                       <div className="space-y-2">
                         <Input
                           value={supplierInfo.sline1}

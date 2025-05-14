@@ -116,28 +116,31 @@ export const AuthProvider = ({ children }) => {
   const loginSuccess = async (data) => {
     try {
       // Generate a simple token from user data
-      const generatedToken = btoa(`${data.username}:${data.siteCode}:${Date.now()}`);
-  
+      const generatedToken = btoa(
+        `${data.username}:${data.siteCode}:${Date.now()}`
+      );
+
       setState((prev) => ({
         ...prev,
         isAuthenticated: true,
         loginDetails: data,
         token: generatedToken,
       }));
-  
+
       const userDetails = {
-        username: data.username,
+        // username: data.username,
         token: generatedToken,
-        siteCode: data.siteCode,
-        siteName: data.siteName,
+        ...data,
+        // siteCode: data.siteCode,
+        // siteName: data.siteName,
       };
-  
+
       // Store in localStorage
       localStorage.setItem("userDetails", JSON.stringify(userDetails));
-  
+
       // Set cookie
       setCookie("token", generatedToken);
-  
+
       return true;
     } catch (error) {
       console.error("Login success error:", error);

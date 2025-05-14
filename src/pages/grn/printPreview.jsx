@@ -8,6 +8,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from "lucide-react";
 import {
   Select,
@@ -16,6 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import apiService from "@/services/apiService";
+import { buildFilterQuery } from "@/utils/utils";
+import * as XLSX from "xlsx";
+import html2canvas from "html2canvas-pro";
+import jsPDF from "jspdf";
+import { saveAs } from "file-saver";
+import { toast } from "sonner";
 
 const SAMPLE_DATA = {
   docNo: "WGRNMCHQ110012",
@@ -56,7 +64,6 @@ const SAMPLE_DATA = {
       docPrice: 110616,
       docAmt: -110616,
     },
-    // Add more items for pagination testing
     ...Array(20)
       .fill(null)
       .map((_, i) => ({
@@ -84,17 +91,30 @@ const ZOOM_OPTIONS = [
 function PrintPreview() {
   const location = useLocation();
   const navigate = useNavigate();
-  const List = location.state?.item || SAMPLE_DATA;
+  const data = location.state?.item || SAMPLE_DATA;
+  const userDetails = JSON.parse(localStorage.getItem("userDetails"));
 
-  const [data, setData] = useState(SAMPLE_DATA);
+  const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState("100");
   const [filteredItems, setFilteredItems] = useState([]);
+  const [exportFormat, setExportFormat] = useState("");
 
   useEffect(() => {
-    if (data?.items) {
-      const filtered = data.items.filter((item) =>
+    const filter = {
+      where: {
+        movCode: data.movCode,
+        docNo: data.docNo,
+      },
+    };
+
+    getDocumentDetails(filter);
+  }, [data.movCode, data.docNo]);
+
+  useEffect(() => {
+    if (items.length > 0) {
+      const filtered = items.filter((item) =>
         Object.values(item).some((val) =>
           val?.toString().toLowerCase().includes(searchTerm.toLowerCase())
         )
@@ -102,7 +122,18 @@ function PrintPreview() {
       setFilteredItems(filtered);
       setCurrentPage(1);
     }
-  }, [searchTerm, data]);
+  }, [searchTerm, items]);
+
+  const getDocumentDetails = async (filter) => {
+    try {
+      const response = await apiService.get(
+        `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
+      );
+      setItems(response);
+    } catch (err) {
+      console.error("Error fetching document details:", err);
+    }
+  };
 
   const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
   const currentItems = filteredItems.slice(
@@ -116,15 +147,166 @@ function PrintPreview() {
     if (value === "auto") {
       content.style.width = "100%";
     } else if (value === "page") {
-      content.style.width = "210mm"; // A4 width
+      content.style.width = "210mm";
     } else {
       content.style.transform = `scale(${parseInt(value) / 100})`;
       content.style.transformOrigin = "top center";
     }
   };
 
-  const handleExport = (format) => {
-    console.log(`Exporting as ${format}`, data);
+  const handleExport = async (format) => {
+    const fileName = `${data?.docNo || "GRN"}_${
+      new Date().toISOString().split("T")[0]
+    }`;
+
+    switch (format) {
+      case "excel":
+        const workbook = XLSX.utils.book_new();
+
+        // Add header information
+        const headerData = [
+          ["Company:", userDetails?.siteName],
+          ["Address:", userDetails?.siteAddress],
+          ["City:", `${userDetails?.siteCity} ${userDetails?.sitePostCode}`],
+          ["Phone:", userDetails?.sitePhone],
+          [""],
+          ["GRN No:", data?.docNo],
+          ["PO1 Reference:", data?.docRef1 || "-"],
+          ["GR1 Reference:", data?.docRef2 || "-"],
+          ["Staff Name:", data?.createUser || "Support"],
+          ["GRN Date:", new Date(data?.docDate).toLocaleDateString()],
+          [""],
+        ];
+
+        // Convert items to Excel format
+        const tableHeaders = [
+          [
+            "No",
+            "Item Code",
+            "Description",
+            "Quantity",
+            "Unit Price",
+            "Amount",
+          ],
+        ];
+
+        const itemsData = filteredItems.map((item, index) => [
+          index + 1,
+          item.itemcode,
+          item.itemdesc,
+          item.docQty,
+          item.docPrice,
+          item.docAmt,
+        ]);
+
+        // Add totals
+        const totalQty = filteredItems.reduce(
+          (sum, item) => sum + (item.docQty || 0),
+          0
+        );
+        const totalAmt = filteredItems.reduce(
+          (sum, item) => sum + (item.docAmt || 0),
+          0
+        );
+
+        const totalsData = [["", "", "Grand Total", totalQty, "", totalAmt]];
+
+        // Combine all data
+        const excelData = [
+          ...headerData,
+          ...tableHeaders,
+          ...itemsData,
+          [""],
+          ...totalsData,
+        ];
+
+        const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+
+        // Set column widths
+        const columnWidths = [
+          { wch: 5 }, // No
+          { wch: 15 }, // Item Code
+          { wch: 40 }, // Description
+          { wch: 10 }, // Quantity
+          { wch: 12 }, // Unit Price
+          { wch: 12 }, // Amount
+        ];
+        worksheet["!cols"] = columnWidths;
+
+        XLSX.utils.book_append_sheet(workbook, worksheet, "GRN Details");
+        XLSX.writeFile(workbook, `${fileName}.xlsx`);
+        break;
+
+      case "pdf":
+        try {
+          const printArea = document.querySelector("#printable-content");
+
+          const canvas = await html2canvas(printArea, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#ffffff",
+            removeContainer: true,
+            allowTaint: true,
+            onclone: (clonedDoc) => {
+              const clonedElement =
+                clonedDoc.querySelector("#printable-content");
+              if (clonedElement) {
+                // Apply any necessary style corrections to the clone
+                clonedElement.style.width = "210mm";
+                clonedElement.style.margin = "0";
+                clonedElement.style.padding = "10mm";
+              }
+            },
+          });
+
+          const imgData = canvas.toDataURL("image/png", 1.0);
+
+          const pdf = new jsPDF({
+            orientation: "portrait",
+            unit: "mm",
+            format: "a4",
+          });
+
+          const imgProps = pdf.getImageProperties(imgData);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+          pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+          pdf.save(`${fileName}.pdf`);
+
+          toast.success("PDF generated successfully");
+        } catch (error) {
+          console.error("PDF generation error:", error);
+          toast.error("Failed to generate PDF");
+        }
+        break;
+
+      case "word":
+        // Create HTML content for Word
+        const htmlContent = `
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid black; padding: 5px; }
+                th { background-color: #f0f0f0; }
+              </style>
+            </head>
+            <body>
+              ${document.querySelector("#printable-content").innerHTML}
+            </body>
+          </html>
+        `;
+
+        const blob = new Blob([htmlContent], { type: "application/msword" });
+        saveAs(blob, `${fileName}.doc`);
+        break;
+
+      default:
+        console.error("Unsupported format:", format);
+    }
   };
 
   const handlePrint = () => {
@@ -134,7 +316,6 @@ function PrintPreview() {
   return (
     <div className="container mx-auto p-4">
       <div className="print:hidden mb-6">
-        {/* Top Controls in single row */}
         <div className="flex items-center justify-between border-b pb-4">
           <Button
             variant="ghost"
@@ -166,16 +347,28 @@ function PrintPreview() {
               </SelectContent>
             </Select>
 
-            <Select onValueChange={handleExport}>
-              <SelectTrigger className="w-[100px]">
-                <SelectValue placeholder="Export" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="excel">Excel</SelectItem>
-                <SelectItem value="pdf">PDF</SelectItem>
-                <SelectItem value="word">Word</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select onValueChange={(value) => setExportFormat(value)}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue placeholder="Export" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="excel">Excel</SelectItem>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                  <SelectItem value="word">Word</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button
+                variant="outline"
+                onClick={() => handleExport(exportFormat)}
+                disabled={!exportFormat}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </Button>
+            </div>
 
             <div className="flex items-center gap-1 border-l pl-2">
               <Button
@@ -209,15 +402,17 @@ function PrintPreview() {
         </div>
       </div>
 
-      {/* Print Content */}
       <div
         id="printable-content"
         className="print-content max-w-4xl mx-auto p-4 border rounded-lg"
       >
         <div className="text-center mb-6">
-          <h2 className="font-bold">Beautesoft Salon</h2>
-          <p className="text-sm">BLK 111 Toa Payoh Central</p>
-          <p className="text-sm">#01-101 S310101</p>
+          <h2 className="font-bold">{userDetails?.siteName}</h2>
+          <p className="text-sm">{userDetails?.siteAddress}</p>
+          <p className="text-sm">
+            {userDetails?.siteCity} {userDetails?.sitePostCode}
+          </p>
+          <p className="text-sm">Tel: {userDetails?.sitePhone}</p>
         </div>
 
         <div className="bg-gray-100 py-1 px-2 mb-4">
@@ -240,6 +435,14 @@ function PrintPreview() {
             <p>
               <span className="w-32 inline-block">Staff Name</span>:{" "}
               {data?.createUser || "Support"}
+            </p>
+            <p>
+              <span className="w-32 inline-block">Remark 1</span>:{" "}
+              {data?.docRemk1 || "-"}
+            </p>
+            <p>
+              <span className="w-32 inline-block">Remark 2</span>:{" "}
+              {data?.docRemk2 || "-"}
             </p>
           </div>
           <div>
@@ -283,7 +486,6 @@ function PrintPreview() {
               </tr>
             ))}
 
-            {/* Page Total - show on all pages */}
             <tr className="border-t font-medium">
               <td colSpan={3} className="py-1 text-right">
                 Page Total:
@@ -303,7 +505,6 @@ function PrintPreview() {
               </td>
             </tr>
 
-            {/* Grand Total - show only on last page */}
             {currentPage === totalPages && (
               <tr className="border-t border-double border-black font-bold">
                 <td colSpan={3} className="py-1 text-right">
@@ -316,15 +517,6 @@ function PrintPreview() {
             )}
           </tbody>
         </table>
-
-        {/* Show remarks only on last page */}
-        {currentPage === totalPages && (
-          <div className="mt-4">
-            <p className="text-sm">
-              <strong>Remark 1:</strong> {data?.docRemk1 || "-"}
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );

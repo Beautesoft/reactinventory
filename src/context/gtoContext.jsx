@@ -6,7 +6,7 @@ const initialState = {
   error: null,
 };
 
-const grnReducer = (state, action) => {
+const gtoReducer = (state, action) => {
   switch (action.type) {
     case "SET_LOADING":
       return { ...state, isLoading: action.payload };
@@ -25,10 +25,10 @@ const grnReducer = (state, action) => {
   }
 };
 
-const GrnContext = createContext();
+const GtoContext = createContext();
 
-export const GrnProvider = ({ children }) => {
-  const [state, dispatch] = useReducer(grnReducer, initialState);
+export const GtoProvider = ({ children }) => {
+  const [state, dispatch] = useReducer(gtoReducer, initialState);
 
   const setLoading = (isLoading) =>
     dispatch({ type: "SET_LOADING", payload: isLoading });
@@ -41,7 +41,7 @@ export const GrnProvider = ({ children }) => {
   const resetData = () => dispatch({ type: "RESET_DATA" });
 
   return (
-    <GrnContext.Provider
+    <GtoContext.Provider
       value={{
         goodsData: state.goodsData,
         isLoading: state.isLoading,
@@ -53,14 +53,14 @@ export const GrnProvider = ({ children }) => {
       }}
     >
       {children}
-    </GrnContext.Provider>
+    </GtoContext.Provider>
   );
 };
 
-export const useGrn = () => {
-  const context = useContext(GrnContext);
+export const useGto = () => {
+  const context = useContext(GtoContext);
   if (!context) {
-    throw new Error("useGrn must be used within a GrnProvider");
+    throw new Error("useGto must be used within a GtoProvider");
   }
   return context;
 };

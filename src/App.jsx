@@ -1,6 +1,7 @@
 import { Toaster } from "sonner";
 import { AuthInitializer } from "./router/authInitializer";
 import { GrnProvider } from "./context/grnContext";
+import { GtoProvider } from "@/context/gtoContext";
 import { SidebarProvider } from "./components/ui/sidebar";
 import { AuthProvider } from "./context/AuthContext";
 import { Route, Routes } from "react-router-dom";
@@ -15,12 +16,15 @@ import AddGrn from "./pages/grn/addGrn";
 import PrintPreview from "./pages/grn/printPreview";
 import GoodsTransferOut from "./pages/gto/goodsTransferOut";
 import AddGto from "./pages/gto/addGto";
+import Settings from "./pages/settings";
 
 function App() {
   return (
     <AuthProvider>
       <AuthInitializer>
         <GrnProvider>
+        <GtoProvider>
+
           <SidebarProvider>
             <Toaster richColors />
             <Router>
@@ -93,6 +97,10 @@ function App() {
                             path="/stock-transfer"
                             element={<h1>Stock Transfer</h1>}
                           />
+                             <Route
+                            path="/settings"
+                            element={<Settings/>}
+                          />
                         </Routes>
                       </Layout>{" "}
                     </PrivateRoute>
@@ -101,6 +109,7 @@ function App() {
               </Routes>
             </Router>
           </SidebarProvider>
+          </GtoProvider>
         </GrnProvider>
       </AuthInitializer>
     </AuthProvider>
