@@ -68,8 +68,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import useDebounce from "@/hooks/useDebounce";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Badge } from "@/components/ui/badge";
-import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -152,7 +150,7 @@ const EditDialog = memo(
   )
 );
 
-function AddGrn({ docData }) {
+function AddGti({ docData }) {
   const { docNo } = useParams();
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
@@ -183,15 +181,12 @@ function AddGrn({ docData }) {
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [filter, setFilter] = useState({
-    movCode: "GRN",
+    movCode: "GTI",
     splyCode: "",
     docNo: "",
   });
 
   const [itemFilter, setItemFilter] = useState({
-    // where: {
-    //   movCode: "GRN",
-    // },
     whereArray: {
       department: ["RETAIL PRODUCT", "SALON PRODUCT"],
       brand: [],
@@ -209,26 +204,20 @@ function AddGrn({ docData }) {
     limit: 6,
   });
 
-  const [dropDownFilter, setDropDownFilter] = useState({
-    // like: {
-    //   range: "",
-    //   brand: "",
-    // },
-    // skip: 0,
-    // limit: 6,
-  });
+  const [dropDownFilter, setDropDownFilter] = useState({});
   const [stockHdrs, setStockHdrs] = useState({
     docNo: "",
     docDate: new Date().toISOString().split("T")[0],
     docStatus: 0,
-    supplyNo: "",
     docRef1: "",
     docRef2: "",
-    docTerm: "",
     storeNo: userDetails?.siteCode,
+    fstoreNo: "",
+    tstoreNo: userDetails?.siteCode,
     docRemk1: "",
-    postDate: "",
     createUser: userDetails?.username,
+    movCode: "GTI",
+    movType: "GTI",
   });
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
@@ -255,13 +244,13 @@ function AddGrn({ docData }) {
   const [rangeOptions, setRangeOptions] = useState([]);
   const [initial, setInitial] = useState(true);
 
-  // Add new state for temporary filter values
   const [tempFilters, setTempFilters] = useState({
     brand: [],
     range: [],
   });
 
-  // Add apply filters function
+  const [storeOptions, setStoreOptions] = useState([]);
+
   const handleApplyFilters = () => {
     setItemFilter((prev) => ({
       ...prev,
@@ -272,7 +261,6 @@ function AddGrn({ docData }) {
       },
       skip: 0,
     }));
-    // getStockDetails();
   };
 
   useEffect(() => {
@@ -282,10 +270,9 @@ function AddGrn({ docData }) {
 
       try {
         if (urlDocNo) {
-          // If editing existing document
           const filter = {
             where: {
-              movCode: "GRN",
+              movCode: "GTI",
               docNo: urlDocNo,
             },
           };
@@ -298,16 +285,17 @@ function AddGrn({ docData }) {
           }
 
           await getStockHdrDetails(filter);
-          await getSupplyList(stockHdrs.supplyNo);
+          await getStoreList();
+          // await getSupplyList(stockHdrs.supplyNo);
           setPageLoading(false);
+
           setInitial(false);
         } else {
-          // If creating new document
           await getDocNo();
-          await getSupplyList();
+          await getStoreList();
+          // await getSupplyList();
           await getStockDetails();
           await getOptions();
-
           setPageLoading(false);
           setInitial(false);
         }
@@ -319,8 +307,8 @@ function AddGrn({ docData }) {
           description: "Failed to load initial data",
         });
       } finally {
-        // setLoading(false);
         setPageLoading(false);
+        setLoading(false);
       }
     };
 
@@ -336,10 +324,6 @@ function AddGrn({ docData }) {
     );
     console.log(initial);
 
-    // if (stockList.length > 0 && itemFilter.whereArray.department.length >= 1) {
-    //   setLoading(true);
-    //   getStockDetails();
-    // }
     if (!initial) {
       setLoading(true);
       getStockDetails();
@@ -364,14 +348,17 @@ function AddGrn({ docData }) {
         docNo: data.docNo,
         docDate: moment(data.docDate).format("YYYY-MM-DD"),
         docStatus: data.docStatus,
-        supplyNo: data.supplyNo,
+        // supplyNo: data.supplyNo,
         docRef1: data.docRef1,
         docRef2: data.docRef2,
-        docTerm: data.docTerm,
+        // docTerm: data.docTerm,
         storeNo: data.storeNo,
+        tstoreNo: data.tstoreNo,
+        fstoreNo: data?.fstoreNo,
         docRemk1: data.docRemk1,
-        postDate: moment(data.postDate).format("YYYY-MM-DD"),
+        // postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
+
       setSupplierInfo({
         Attn: data?.docAttn,
         line1: data?.baddr1,
@@ -383,8 +370,6 @@ function AddGrn({ docData }) {
         sline3: data?.daddr3,
         spcode: data?.dpostcode,
       });
-
-      console.log(supplierInfo, "ddd2");
     } catch (error) {
       console.error("Error fetching stock header data:", error);
       showError("Failed to fetch stock header data.");
@@ -402,16 +387,7 @@ function AddGrn({ docData }) {
         value: item.itmCode,
         label: item.itmDesc,
       }));
-      // Remove duplicates from ranges based on itmCode
-      const uniqueRanges = ranges.reduce((acc, current) => {
-        const x = acc.find((item) => item.itmCode === current.itmCode);
-        if (!x) {
-          acc.push(current);
-        }
-        return acc;
-      }, []);
-
-      const rangeOp = uniqueRanges.map((item) => ({
+      const rangeOp = ranges.map((item) => ({
         value: item.itmCode,
         label: item.itmDesc,
       }));
@@ -425,7 +401,6 @@ function AddGrn({ docData }) {
     const filter = buildFilterObject(itemFilter);
     const countFilter = buildCountObject(itemFilter);
     console.log(countFilter, "filial");
-    // const query = `?${qs.stringify({ filter }, { encode: false })}`;
     const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
     const countQuery = `?where=${encodeURIComponent(
       JSON.stringify(countFilter.where)
@@ -461,41 +436,40 @@ function AddGrn({ docData }) {
       });
   };
 
-  const getSupplyList = async (supplycode) => {
-    try {
-      const res = await apiService.get(
-        `ItemSupplies${queryParamsGenerate(filter)}`
-      );
+  // const getSupplyList = async (supplycode) => {
+  //   try {
+  //     const res = await apiService.get(
+  //       `ItemSupplies${queryParamsGenerate(filter)}`
+  //     );
 
-      const supplyOption = res
-        .filter((item) => item.splyCode)
-        .map((item) => ({
-          label: item.supplydesc,
-          value: item.splyCode,
-        }));
+  //     const supplyOption = res
+  //       .filter((item) => item.splyCode)
+  //       .map((item) => ({
+  //         label: item.supplydesc,
+  //         value: item.splyCode,
+  //       }));
 
-      setSupplyOptions(supplyOption);
+  //     setSupplyOptions(supplyOption);
 
-      if (!urlDocNo) {
-        console.log("ddd1");
-        setStockHdrs((prev) => ({
-          ...prev,
-          supplyNo: supplycode ? supplycode : supplyOption[0]?.value || null,
-        }));
-      }
-    } catch (err) {
-      console.error("Error fetching supply list:", err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to fetch supply list",
-      });
-    }
-  };
+  //     if (!urlDocNo) {
+  //       setStockHdrs((prev) => ({
+  //         ...prev,
+  //         supplyNo: supplycode ? supplycode : supplyOption[0]?.value || null,
+  //       }));
+  //     }
+  //   } catch (err) {
+  //     console.error("Error fetching supply list:", err);
+  //     toast({
+  //       variant: "destructive",
+  //       title: "Error",
+  //       description: "Failed to fetch supply list",
+  //     });
+  //   }
+  // };
 
   const getDocNo = async () => {
     try {
-      const codeDesc = "Goods Receive Note";
+      const codeDesc = "Transfer To Other Store";
       const siteCode = userDetails?.siteCode;
       const res = await apiService.get(
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
@@ -524,34 +498,6 @@ function AddGrn({ docData }) {
     }
   };
 
-  const addNewControlNumber = async (controlData) => {
-    try {
-      const controlNo = controlData.RunningNo;
-      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
-
-      const controlNosUpdate = {
-        controldescription: "Goods Receive Note",
-        sitecode: userDetails.siteCode,
-        controlnumber: newControlNo,
-      };
-
-      const response = await apiService.post(
-        "ControlNos/updatecontrol",
-        controlNosUpdate
-      );
-
-      if (!response) {
-        throw new Error("Failed to update control number");
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Error updating control number:", error);
-      toast.error("Failed to update control number");
-      throw error;
-    }
-  };
-
   const getStockHdrDetails = async (filter) => {
     try {
       const response = await apiService.get(
@@ -559,24 +505,36 @@ function AddGrn({ docData }) {
       );
       setCartItems(response);
       setCartData(response);
-      setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
     }
   };
 
+  const getStoreList = async () => {
+    try {
+      const res = await apiService.get("/ItemSitelists");
+      const options = res
+        .filter((store) => store.itemsiteCode)
+        .map((store) => ({
+          label: store.itemsiteDesc,
+          value: store.itemsiteCode,
+        }));
+      setStoreOptions(options);
+    } catch (err) {
+      console.error("Error fetching stores:", err);
+      toast.error("Failed to fetch store list");
+    }
+  };
+
   const postStockDetails = async () => {
     try {
-      // First, find items to be deleted
       const itemsToDelete = cartItems.filter(
         (cartItem) => !cartData.some((item) => item.docId === cartItem.docId)
       );
 
-      // Group items by operation type
       const itemsToUpdate = cartData.filter((item) => item.docId);
       const itemsToCreate = cartData.filter((item) => !item.docId);
 
-      // Execute deletions first (in parallel)
       if (itemsToDelete > 0) {
         await Promise.all(
           itemsToDelete.map((item) =>
@@ -591,7 +549,6 @@ function AddGrn({ docData }) {
         );
       }
 
-      // Execute updates (in parallel)
       if (itemsToUpdate.length > 0) {
         await Promise.all(
           itemsToUpdate.map((item) =>
@@ -606,7 +563,6 @@ function AddGrn({ docData }) {
         );
       }
 
-      // Execute creates (in parallel)
       if (itemsToCreate.length > 0) {
         await Promise.all(
           itemsToCreate.map((item) =>
@@ -626,7 +582,7 @@ function AddGrn({ docData }) {
     } catch (error) {
       console.error("Error during stock details processing:", error);
       toast.error("Failed to process some items");
-      throw error; // Re-throw to handle in calling function
+      throw error;
     }
   };
 
@@ -671,9 +627,9 @@ function AddGrn({ docData }) {
   const handleSearch = (e) => {
     const searchValue = e.target.value.trim();
     console.log(searchValue, "searchValue");
-    setLoading(true); // Set loading to true
+    setLoading(true);
 
-    setSearchValue(searchValue); // Update the search value state
+    setSearchValue(searchValue);
 
     setItemFilter((prev) => ({
       ...prev,
@@ -682,14 +638,10 @@ function AddGrn({ docData }) {
         stockCode: searchValue,
         itemUom: searchValue,
         stockName: searchValue,
-        // range: searchValue,
-        // brand: searchValue,
         brandCode: searchValue,
       },
       skip: 0,
     }));
-    // updateLike(searchValue); // Update the like filter with the search value
-    // updatePagination({ skip: 0 }); // Reset pagination to the first page
   };
   const showError = (message) => {
     toast.error(message, {
@@ -715,7 +667,6 @@ function AddGrn({ docData }) {
   const validateForm = () => {
     const errors = [];
 
-    // Document Header Validations
     if (!stockHdrs.docNo) {
       errors.push("Document number is required");
     }
@@ -724,52 +675,22 @@ function AddGrn({ docData }) {
       errors.push("Document date is required");
     }
 
-    if (!stockHdrs.supplyNo) {
-      errors.push("Supply number is required");
+    if (!stockHdrs.storeNo) {
+      errors.push("storeNo is required");
     }
 
-    if (!stockHdrs.docTerm) {
-      errors.push("Document term is required");
+    if (!stockHdrs.tstoreNo) {
+      errors.push("To store is required");
+    }
+    if (!stockHdrs.fstoreNo) {
+      errors.push("From store is required");
     }
 
-    if (!stockHdrs.postDate) {
-      errors.push("Delivery date is required");
-    }
-
-    // Cart Validation
     if (cartData.length === 0) {
       errors.push("Cart shouldn't be empty");
     }
 
-    // Supplier Info Validations
-    // if (!supplierInfo.Attn) {
-    //   errors.push("Attention To is required");
-    // }
-
-    // if (!supplierInfo.line1) {
-    //   errors.push("Address is required");
-    // }
-
-    // if (!supplierInfo.sline1) {
-    //   errors.push("Shipping address is required");
-    // }
-
-    // if (!supplierInfo.spcode) {
-    //   errors.push("Shipping postal code is required");
-    // }
-
-    // if (!supplierInfo.pcode) {
-    //   errors.push("Postal code is required");
-    // }
-
-    // Show errors if any
     if (errors.length > 0) {
-      // Show first error in toast
-      toast.error(errors[0], {
-        duration: 3000,
-      });
-
-      // Show all errors in an alert dialog
       setValidationErrors(errors);
       setShowValidationDialog(true);
       return false;
@@ -864,8 +785,8 @@ function AddGrn({ docData }) {
       id: index + 1,
       docAmt: amount,
       docNo: stockHdrs.docNo,
-      movCode: "GRN",
-      movType: "GRN",
+      movCode: "GTI",
+      movType: "GTI",
       docLineno: null,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
@@ -915,17 +836,19 @@ function AddGrn({ docData }) {
 
       let data = {
         docNo: stockHdrs.docNo,
-        movCode: "GRN",
-        movType: "GRN",
+        movCode: "GTI",
+        movType: "GTI",
         storeNo: stockHdrs.storeNo,
-        supplyNo: stockHdrs.supplyNo,
+        tstoreNo: stockHdrs.tstoreNo,
+        fstoreNo: stockHdrs.fstoreNo,
+        // supplyNo: stockHdrs.supplyNo,
         docRef1: stockHdrs.docRef1,
         docRef2: stockHdrs.docRef2,
         docLines: null,
         docDate: stockHdrs.docDate,
-        postDate: stockHdrs.postDate,
+        // postDate: stockHdrs.postDate,
         docStatus: stockHdrs.docStatus,
-        docTerm: stockHdrs.docTerm,
+        // docTerm: stockHdrs.docTerm,
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
         docAttn: supplierInfo.Attn,
@@ -955,8 +878,6 @@ function AddGrn({ docData }) {
         if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
           await postStockHdr(data, "create");
           await postStockDetails();
-          await addNewControlNumber(controlData);
-
           message = "Note created successfully";
         } else if (type === "save" && urlDocNo) {
           await postStockHdr(data, "update");
@@ -973,7 +894,7 @@ function AddGrn({ docData }) {
         }
 
         toast.success(message);
-        navigate("/goods-receive-note?tab=all"); // Navigate back to list
+        navigateTo("/goods-transfer-in");
       } catch (error) {
         console.error("Submit error:", error);
         toast.error("Failed to submit form");
@@ -1007,28 +928,27 @@ function AddGrn({ docData }) {
         </div>
       ) : (
         <div className="container mx-auto p-6 space-y-6">
-          {/* Header Section */}
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
-                ? "View Goods Receive Note"
+                ? "View Goods Transfer In"
                 : urlStatus == 0
-                ? "Update Goods Receive Note"
-                : "Add Goods Receive Note"}
+                ? "Update Goods Transfer In"
+                : "Add Goods Transfer In"}
             </h1>
             <div className="flex gap-4">
               <Button
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
-                onClick={() => navigateTo("/goods-receive-note?tab=all")}
+                onClick={() => navigateTo("/goods-transfer-in")}
               >
                 Cancel
               </Button>
               <Button
+                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
@@ -1046,11 +966,9 @@ function AddGrn({ docData }) {
             </div>
           </div>
 
-          {/* Header Card */}
           <Card>
             <CardContent className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* First Column */}
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
@@ -1064,20 +982,40 @@ function AddGrn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      From Store<span className="text-red-500">*</span>
                     </Label>
-                    <Input
-                      type="date"
-                      value={stockHdrs.docDate}
-                      disabled
-                      className="bg-gray-50"
-                    />
+
+                    <Select
+                      value={stockHdrs.fstoreNo || ""} // Add fallback empty string
+                      disabled={urlStatus == 7}
+                      onValueChange={(value) =>
+                        setStockHdrs((prev) => ({ ...prev, fstoreNo: value }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select From store">
+                          {storeOptions.find(
+                            (store) => store.value === stockHdrs.fstoreNo
+                          )?.label || "Select From store"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {storeOptions
+                          .filter((store) => store.value !== stockHdrs.storeNo) // Filter out current store instead of selected store
+                          .map((store) => (
+                            <SelectItem key={store.value} value={store.value}>
+                              {store.label}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                
                   </div>
                   <div className="space-y-2">
                     <Label>GR Ref 1</Label>
                     <Input
-                      placeholder="Enter GR Ref 1"
                       disabled={urlStatus == 7}
+                      placeholder="Enter GR Ref 1"
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1089,47 +1027,33 @@ function AddGrn({ docData }) {
                   </div>
                 </div>
 
-                {/* Second Column */}
                 <div className="space-y-4">
-                  <div className="space-y-2 w-full">
+                  <div className="space-y-2">
                     <Label>
-                      Supply No<span className="text-red-500">*</span>
+                      Doc Date<span className="text-red-500">*</span>
                     </Label>
-                    <Select
-                      disabled={urlStatus == 7}
-                      value={stockHdrs.supplyNo}
-                      onValueChange={(value) =>
-                        setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select supplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supplyOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      type="date"
+                      value={stockHdrs.docDate}
+                      disabled
+                      className="bg-gray-50"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Delivery Date<span className="text-red-500">*</span>
+                      To Store<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      disabled={urlStatus == 7}
-                      type="date"
-                      value={stockHdrs.postDate}
-                      onChange={(e) => handleDateChange(e, "postDate")}
+                      value={userDetails?.siteName}
+                      disabled
+                      className="bg-gray-50"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>GR Ref 2</Label>
                     <Input
-                      disabled={urlStatus == 7}
                       placeholder="Enter GR Ref 2"
+                      disabled={urlStatus == 7}
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1141,7 +1065,6 @@ function AddGrn({ docData }) {
                   </div>
                 </div>
 
-                {/* Third Column */}
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
@@ -1162,47 +1085,26 @@ function AddGrn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Term<span className="text-red-500">*</span>
+                      Store code<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      type="number"
-                      disabled={urlStatus == 7}
-                      placeholder="Enter term"
-                      value={stockHdrs.docTerm}
-                      onChange={(e) =>
-                        setStockHdrs((prev) => ({
-                          ...prev,
-                          docTerm: e.target.value,
-                        }))
-                      }
+                      value={userDetails?.siteName}
+                      disabled
+                      className="bg-gray-50"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store Code<span className="text-red-500">*</span>
+                      Created By<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      value={userDetails.siteName}
+                      value={stockHdrs.createUser}
                       disabled
                       className="bg-gray-50"
                     />
                   </div>
                 </div>
-              </div>
-
-              {/* Additional Row for Created By and Remarks */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                <div className="space-y-2">
-                  <Label>
-                    Created By<span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    value={stockHdrs.createUser}
-                    disabled
-                    className="bg-gray-50"
-                  />
-                </div>
-                <div className="space-y-2">
+                <div className="space-y-2 w-[872px]">
                   <Label>Remarks</Label>
                   <Input
                     placeholder="Enter remarks"
@@ -1220,17 +1122,10 @@ function AddGrn({ docData }) {
             </CardContent>
           </Card>
 
-          {/* Tabs Section */}
-          <Tabs
-            defaultValue={activeTab}
-            className="w-full"
-            onValueChange={setActiveTab}
-          >
-            <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+          <Tabs defaultValue="detail" className="w-full">
+            <TabsList className="grid w-full grid-cols-1 lg:w-[200px]">
               <TabsTrigger value="detail">Details</TabsTrigger>
-              <TabsTrigger value="supplier">Supplier Info</TabsTrigger>
             </TabsList>
-
             <TabsContent value="detail" className="space-y-4">
               {urlStatus != 7 && (
                 <Card className={"p-0 gap-0"}>
@@ -1238,7 +1133,6 @@ function AddGrn({ docData }) {
                     Select Items{" "}
                   </CardTitle>
                   <CardContent className="p-4 ">
-                    {/* Search and Filter Section */}
                     <div className="flex items-center   gap-4 mb-6">
                       <div className="flex-1 max-w-[430px]">
                         <Input
@@ -1285,7 +1179,6 @@ function AddGrn({ docData }) {
                         Apply Filters
                       </Button>
 
-                      {/* Existing checkboxes */}
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="retail"
@@ -1348,7 +1241,6 @@ function AddGrn({ docData }) {
                       </div>
                     </div>
 
-                    {/* Items Table */}
                     <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200">
                       <Table>
                         <TableHeader className="bg-gray-50">
@@ -1366,7 +1258,7 @@ function AddGrn({ docData }) {
                             <TableHead>Qty</TableHead>
                             <TableHead>Price</TableHead>
                             <TableHead>Expiry date</TableHead>
-                            <TableHead>Action</TableHead>
+                            {urlStatus != 7 && <TableHead>Action</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1393,7 +1285,7 @@ function AddGrn({ docData }) {
                                 <TableCell>{item.stockCode || "-"}</TableCell>
                                 <TableCell className="max-w-[200px] whitespace-normal break-words">
                                   {item.stockName || "-"}
-                                </TableCell>
+                                </TableCell>{" "}
                                 <TableCell>{item.itemUom || "-"}</TableCell>
                                 <TableCell>{item.brand || "-"}</TableCell>
                                 <TableCell>{item.linkCode || "-"}</TableCell>
@@ -1460,79 +1352,6 @@ function AddGrn({ docData }) {
                 </Card>
               )}
             </TabsContent>
-
-            <TabsContent value="supplier" className="space-y-6">
-              <Card>
-                <CardContent className="p-6">
-                  {/* Attention To */}
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Attn To</Label>
-                      <Input
-                        value={supplierInfo.Attn}
-                        onChange={(e) => handleSupplierChange(e, "Attn")}
-                        placeholder="Enter attention to"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Address and Ship To Address */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                    <div className="space-y-4">
-                      <Label>Address</Label>
-                      <div className="space-y-2">
-                        <Input
-                          value={supplierInfo.line1}
-                          onChange={(e) => handleSupplierChange(e, "line1")}
-                          placeholder="Address Line 1"
-                        />
-                        <Input
-                          value={supplierInfo.line2}
-                          onChange={(e) => handleSupplierChange(e, "line2")}
-                          placeholder="Address Line 2"
-                        />
-                        <Input
-                          value={supplierInfo.line3}
-                          onChange={(e) => handleSupplierChange(e, "line3")}
-                          placeholder="Address Line 3"
-                        />
-                        <Input
-                          value={supplierInfo.pcode}
-                          onChange={(e) => handleSupplierChange(e, "pcode")}
-                          placeholder="Post Code"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Label>Ship To Address</Label>
-                      <div className="space-y-2">
-                        <Input
-                          value={supplierInfo.sline1}
-                          onChange={(e) => handleSupplierChange(e, "sline1")}
-                          placeholder="Ship To Address Line 1"
-                        />
-                        <Input
-                          value={supplierInfo.sline2}
-                          onChange={(e) => handleSupplierChange(e, "sline2")}
-                          placeholder="Ship To Address Line 2"
-                        />
-                        <Input
-                          value={supplierInfo.sline3}
-                          onChange={(e) => handleSupplierChange(e, "sline3")}
-                          placeholder="Ship To Address Line 3"
-                        />
-                        <Input
-                          value={supplierInfo.spcode}
-                          onChange={(e) => handleSupplierChange(e, "spcode")}
-                          placeholder="Ship To Post Code"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
           </Tabs>
 
           {cartData.length > 0 && (
@@ -1595,7 +1414,6 @@ function AddGrn({ docData }) {
                           </TableCell>
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
                           <TableCell>{item.itemRemark}</TableCell>
-
                           {urlStatus != 7 && (
                             <TableCell>
                               <div className="flex gap-2">
@@ -1620,7 +1438,6 @@ function AddGrn({ docData }) {
                           )}
                         </TableRow>
                       ))}
-                      {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
                           colSpan={4}
@@ -1708,4 +1525,4 @@ function AddGrn({ docData }) {
   );
 }
 
-export default AddGrn;
+export default AddGti;

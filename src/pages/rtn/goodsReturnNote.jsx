@@ -23,33 +23,44 @@ import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
 import useDebounce from "@/hooks/useDebounce";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useGto } from "@/context/gtoContext";
+import { useGrn } from "@/context/grnContext";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
-function GoodsTransferOut() {
+function GoodsReturnNote() {
   const navigate = useNavigate();
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-  const { goodsData, isLoading, setLoading, setGoodsData, setError } = useGto();
+  const { goodsData, isLoading, setLoading, setGoodsData, setError } = useGrn();
 
+  // Local pagination state
   const [searchValue, setSearchValue] = useState("");
   const [totalCount, setTotalCount] = useState(0);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("all");
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "GTO",
+      movCode: "GRN",
       storeNo: userDetails?.siteCode,
+      supplyNo: null,
     },
     like: null,
     skip: 0,
     limit: 10,
     order: "docDate DESC",
   });
+  const [supplierOptions, setSupplierOptions] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("all");
 
   const debouncedSearchValue = useDebounce(searchValue, 1000);
 
   const getNoteTable = async () => {
     setLoading(true);
+
     try {
       const filter = buildFilterObject(pagination);
       const countFilter = buildCountObject(pagination);
@@ -72,9 +83,25 @@ function GoodsTransferOut() {
     }
   };
 
+  const getSupplierList = async () => {
+    try {
+      const res = await apiService.get("ItemSupplies");
+      const options = res
+        .filter((item) => item.splyCode)
+        .map((item) => ({
+          label: item.supplydesc,
+          value: item.splyCode,
+        }));
+      setSupplierOptions(options);
+    } catch (err) {
+      console.error("Error fetching suppliers:", err);
+    }
+  };
+
   useEffect(() => {
     const initialize = async () => {
       try {
+        await getSupplierList();
         await getNoteTable();
       } catch (error) {
         console.error("Error initializing:", error);
@@ -84,7 +111,7 @@ function GoodsTransferOut() {
     };
 
     initialize();
-  }, []);
+  }, []); // Run only once on mount
 
   useEffect(() => {
     if (!initialLoading) {
@@ -93,6 +120,7 @@ function GoodsTransferOut() {
   }, [
     pagination.skip,
     pagination.where.docStatus,
+    pagination.where.supplyNo,
     debouncedSearchValue,
   ]);
 
@@ -107,6 +135,7 @@ function GoodsTransferOut() {
           docNo: value,
           docDate: value,
           docRef1: value,
+          supplyNo: value,
           docAmt: value,
           docStatus: value,
         },
@@ -143,7 +172,7 @@ function GoodsTransferOut() {
 
   const handleRoute = () => {
     console.log("Create New clicked");
-    navigate("/goods-transfer-out/add/");
+    navigate("/goods-receive-note/add/"); // Navigate to the add page
   };
 
   return (
@@ -157,7 +186,7 @@ function GoodsTransferOut() {
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
             <h1 className="text-2xl font-bold text-gray-900">
-              Goods Transfer Out
+              Goods Receive Note
             </h1>
           </div>
 
@@ -169,17 +198,44 @@ function GoodsTransferOut() {
             }}
           >
             <div className="flex items-center justify-between space-x-2 mb-6">
-              <div className="w-[300px] relative">
-                <Input
-                  placeholder="Search by Doc no, Ref no, Total qty"
-                  value={searchValue}
-                  onChange={(e) => handleSearch(e)}
-                  className="pl-10"
-                />
-                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+              <div className="flex gap-4 items-center w-[60%]">
+                <div className="w-[280px] relative">
+                  <Input
+                    placeholder="Search by Doc no, Ref no, Total qty"
+                    value={searchValue}
+                    onChange={(e) => handleSearch(e)}
+                    className="pl-10"
+                  />
+                  <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                </div>
+
+                <Select
+                  onValueChange={(value) => {
+                    setPagination((prev) => ({
+                      ...prev,
+                      where: {
+                        ...prev.where,
+                        supplyNo: value === "all" ? null : value,
+                      },
+                      skip: 0,
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filter by supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Suppliers</SelectItem>
+                    {supplierOptions.map((supplier) => (
+                      <SelectItem key={supplier.value} value={supplier.value}>
+                        {supplier.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <TabsList className="w-[25%] bg-gray-200 h-[38px] mr-40">
+              <TabsList className="w-[25%] bg-gray-200 h-[38px]">
                 <TabsTrigger className="cursor-pointer" value="all">
                   All
                 </TabsTrigger>
@@ -200,13 +256,13 @@ function GoodsTransferOut() {
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
             </TabsContent>
           </Tabs>
 
@@ -221,4 +277,4 @@ function GoodsTransferOut() {
   );
 }
 
-export default GoodsTransferOut;
+export default GoodsReturnNote;

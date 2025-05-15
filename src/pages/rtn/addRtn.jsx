@@ -152,7 +152,7 @@ const EditDialog = memo(
   )
 );
 
-function AddGrn({ docData }) {
+function AddRtn({ docData }) {
   const { docNo } = useParams();
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
@@ -495,7 +495,7 @@ function AddGrn({ docData }) {
 
   const getDocNo = async () => {
     try {
-      const codeDesc = "Goods Receive Note";
+      const codeDesc = "Goods Return Note";
       const siteCode = userDetails?.siteCode;
       const res = await apiService.get(
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
@@ -530,8 +530,8 @@ function AddGrn({ docData }) {
       const newControlNo = (parseInt(controlNo, 10) + 1).toString();
 
       const controlNosUpdate = {
-        controldescription: "Goods Receive Note",
-        sitecode: userDetails.siteCode,
+        controldescription: "Goods Return Note",
+        sitecode: "MCHQ",
         controlnumber: newControlNo,
       };
 

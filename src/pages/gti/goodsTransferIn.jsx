@@ -25,7 +25,7 @@ import useDebounce from "@/hooks/useDebounce";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useGto } from "@/context/gtoContext";
 
-function GoodsTransferOut() {
+function GoodsTransferIn() {
   const navigate = useNavigate();
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
   const { goodsData, isLoading, setLoading, setGoodsData, setError } = useGto();
@@ -37,7 +37,7 @@ function GoodsTransferOut() {
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "GTO",
+      movCode: "GTI",
       storeNo: userDetails?.siteCode,
     },
     like: null,
@@ -143,7 +143,7 @@ function GoodsTransferOut() {
 
   const handleRoute = () => {
     console.log("Create New clicked");
-    navigate("/goods-transfer-out/add/");
+    navigate("/goods-transfer-in/add/");
   };
 
   return (
@@ -157,7 +157,7 @@ function GoodsTransferOut() {
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
             <h1 className="text-2xl font-bold text-gray-900">
-              Goods Transfer Out
+              Goods Transfer In
             </h1>
           </div>
 
@@ -221,4 +221,4 @@ function GoodsTransferOut() {
   );
 }
 
-export default GoodsTransferOut;
+export default GoodsTransferIn;

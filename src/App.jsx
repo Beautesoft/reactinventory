@@ -17,6 +17,8 @@ import PrintPreview from "./pages/grn/printPreview";
 import GoodsTransferOut from "./pages/gto/goodsTransferOut";
 import AddGto from "./pages/gto/addGto";
 import Settings from "./pages/settings";
+import AddGti from "./pages/gti/addGti";
+import GoodsTransferIn from "./pages/gti/goodsTransferIn";
 
 function App() {
   return (
@@ -83,6 +85,26 @@ function App() {
                           />
                             <Route
                             path="/goods-transfer-out/print/:docNo"
+                            element={<PrintPreview />}
+                          />
+                             <Route
+                            path="/goods-transfer-in"
+                            element={<GoodsTransferIn />}
+                          />
+                          <Route
+                            path="/goods-transfer-in/add"
+                            element={<AddGti />}
+                          />
+                              <Route
+                            path="/goods-transfer-in/details/:docNo"
+                            element={<AddGti />}
+                          />
+                          <Route
+                            path="/goods-transfer-in/edit/:docNo"
+                            element={<AddGti />}
+                          />
+                            <Route
+                            path="/goods-transfer-in/print/:docNo"
                             element={<PrintPreview />}
                           />
                           <Route
