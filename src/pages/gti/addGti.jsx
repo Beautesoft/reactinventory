@@ -498,6 +498,35 @@ function AddGti({ docData }) {
     }
   };
 
+  const addNewControlNumber = async (controlData) => {
+    try {
+      const controlNo = controlData.RunningNo;
+      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
+
+      const controlNosUpdate = {
+        controldescription: "Transfer From Other Store",
+        sitecode: userDetails.siteCode,
+        controlnumber: newControlNo,
+      };
+
+      const response = await apiService.post(
+        "ControlNos/updatecontrol",
+        controlNosUpdate
+      );
+
+      if (!response) {
+        throw new Error("Failed to update control number");
+      }
+
+      return response;
+    } catch (error) {
+      console.error("Error updating control number:", error);
+      toast.error("Failed to update control number");
+      throw error;
+    }
+  };
+
+
   const getStockHdrDetails = async (filter) => {
     try {
       const response = await apiService.get(
@@ -878,6 +907,8 @@ function AddGti({ docData }) {
         if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
           await postStockHdr(data, "create");
           await postStockDetails();
+          await addNewControlNumber(controlData);
+
           message = "Note created successfully";
         } else if (type === "save" && urlDocNo) {
           await postStockHdr(data, "update");

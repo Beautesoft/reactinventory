@@ -104,7 +104,7 @@ function PrintPreview() {
   useEffect(() => {
     const filter = {
       where: {
-        movCode: data.movCode,
+        // movCode: data.movCode,
         docNo: data.docNo,
       },
     };
@@ -126,8 +126,11 @@ function PrintPreview() {
 
   const getDocumentDetails = async (filter) => {
     try {
+      // const response = await apiService.get(
+      //   `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
+      // );
       const response = await apiService.get(
-        `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
+        `Stkprintlists${buildFilterQuery(filter ?? filter)}`
       );
       setItems(response);
     } catch (err) {
@@ -187,6 +190,8 @@ function PrintPreview() {
             "Quantity",
             "Unit Price",
             "Amount",
+            "Item Cost",
+            "Total Cost"
           ],
         ];
 
@@ -470,6 +475,9 @@ function PrintPreview() {
               <th className="py-1 text-right">QTY</th>
               <th className="py-1 text-right">UNIT PRICE</th>
               <th className="py-1 text-right">AMOUNT</th>
+              {/* <th className="py-1 text-right">ITEM COST</th>
+              <th className="py-1 text-right">TOTAL COST</th> */}
+
             </tr>
           </thead>
           <tbody>
@@ -483,6 +491,10 @@ function PrintPreview() {
                 <td className="py-1 text-right">{item.docQty}</td>
                 <td className="py-1 text-right">{item.docPrice}</td>
                 <td className="py-1 text-right">{item.docAmt}</td>
+                {/* <td className="py-1 text-right">{(item.docQty * item.docAmt).toFixed(2)}</td> */}
+                {/* <td className="py-1 text-right">{item.docPrice}</td>
+                <td className="py-1 text-right">{(item.docQty * item.docPrice).toFixed(2)}</td> */}
+
               </tr>
             ))}
 

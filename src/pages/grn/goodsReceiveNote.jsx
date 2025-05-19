@@ -50,7 +50,7 @@ function GoodsReceiveNote() {
     like: null,
     skip: 0,
     limit: 10,
-    order: "docDate DESC",
+    order: "docNo DESC",
   });
   const [supplierOptions, setSupplierOptions] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -122,6 +122,7 @@ function GoodsReceiveNote() {
     pagination.where.docStatus,
     pagination.where.supplyNo,
     debouncedSearchValue,
+    pagination.order
   ]);
 
   const handleSearch = (e) => {
@@ -173,6 +174,14 @@ function GoodsReceiveNote() {
   const handleRoute = () => {
     console.log("Create New clicked");
     navigate("/goods-receive-note/add/"); // Navigate to the add page
+  };
+
+  const handleSort = (key, direction) => {
+    setPagination((prev) => ({
+      ...prev,
+      order: `${key} ${direction === 'ascending' ? 'ASC' : 'DESC'}, docNo DESC`,
+      skip: 0, // Reset to first page when sorting
+    }));
   };
 
   return (
@@ -256,13 +265,25 @@ function GoodsReceiveNote() {
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable 
+                data={goodsData} 
+                isLoading={isLoading} 
+                onSort={handleSort}
+              />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable 
+                data={goodsData} 
+                isLoading={isLoading} 
+                onSort={handleSort}
+              />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable 
+                data={goodsData} 
+                isLoading={isLoading} 
+                onSort={handleSort}
+              />
             </TabsContent>
           </Tabs>
 

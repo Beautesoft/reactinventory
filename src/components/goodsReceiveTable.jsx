@@ -7,7 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText, PrinterIcon } from "lucide-react";
+import { FileText, PrinterIcon, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import TableSpinner from "./tabelSpinner";
 import { useNavigate } from "react-router-dom";
 import { useGrn } from "@/context/grnContext";
@@ -15,7 +15,7 @@ import { useGto } from "@/context/gtoContext";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
 
-function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
+function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
   const navigate = useNavigate();
   const { setDefaultdata: setGrnDefault } = useGrn();
   const { setDefaultdata: setGtoDefault } = useGto();
@@ -23,6 +23,10 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
   // Use ref for caching supplier details
   const supplierCache = useRef(new Map());
   const [supplierDetails, setSupplierDetails] = useState({});
+  const [sortConfig, setSortConfig] = useState({
+    key: null,
+    direction: 'ascending'
+  });
 
   useEffect(() => {
     if (type === "grn" && data?.length > 0) {
@@ -40,12 +44,10 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
               )}}}}`
             );
 
-            // Update cache with new supplier details
             res.forEach((supplier) => {
               supplierCache.current.set(supplier.splyCode, supplier.supplydesc);
             });
 
-            // Update state with all supplier details
             setSupplierDetails((prev) => ({
               ...prev,
               ...Object.fromEntries(
@@ -58,7 +60,6 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
           }
         }
 
-        // Add cached suppliers to state
         const cachedDetails = {};
         uniqueSupplyNos.forEach((code) => {
           if (supplierCache.current.has(code)) {
@@ -93,13 +94,62 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
     navigate(`/${basePath}/print/${item.docNo}`, { state: { item } });
   };
 
+  const handleSort = (key) => {
+    let direction = 'ascending';
+    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+    
+    // Call parent's onSort with the new sort configuration
+    if (onSort) {
+      onSort(key, direction);
+    }
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) {
+      return <ArrowUpDown className="w-4 h-4 ml-1" />;
+    }
+    return sortConfig.direction === 'ascending' ? 
+      <ArrowUp className="w-4 h-4 ml-1" /> : 
+      <ArrowDown className="w-4 h-4 ml-1" />;
+  };
+
+  const sortedData = React.useMemo(() => {
+    if (!sortConfig.key) return data;
+
+    return [...data].sort((a, b) => {
+      let aValue = a[sortConfig.key];
+      let bValue = b[sortConfig.key];
+
+      // Handle special cases
+      if (sortConfig.key === 'docDate') {
+        aValue = new Date(aValue).getTime();
+        bValue = new Date(bValue).getTime();
+      } else if (sortConfig.key === 'supplyNo' && type === 'grn') {
+        aValue = supplierDetails[aValue] || aValue;
+        bValue = supplierDetails[bValue] || bValue;
+      }
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'ascending' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'ascending' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [data, sortConfig, supplierDetails, type]);
+
   const tableHeaders = {
     grn: [
       { key: "docNo", label: "Doc Number" },
       { key: "docDate", label: "Invoice Date" },
       { key: "docRef1", label: "Ref Number" },
       { key: "supplyNo", label: "Supplier" },
-      { key: "docAmt", label: "Total Quantity" },
+      { key: "docQty", label: "Total Quantity" },
+      { key: "docAmt", label: "Total Amount" },
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
@@ -108,7 +158,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
       { key: "docDate", label: "Doc Date" },
       { key: "docRef1", label: "Ref Number 1" },
       { key: "docRef2", label: "Ref Number 2" },
-      { key: "docAmt", label: "Total Quantity" },
+      { key: "docAmt", label: "Total Amount" },
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
@@ -124,9 +174,15 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
             {headers.map((header) => (
               <TableHead
                 key={header.key}
-                className={header.key === "docNo" ? "w-[100px]" : ""}
+                className={`${header.key === "docNo" ? "w-[100px]" : ""} ${
+                  header.key !== "print" ? "cursor-pointer hover:bg-gray-200" : ""
+                }`}
+                onClick={() => header.key !== "print" && handleSort(header.key)}
               >
-                {header.label}
+                <div className="flex items-center">
+                  {header.label}
+                  {header.key !== "print" && getSortIcon(header.key)}
+                </div>
               </TableHead>
             ))}
           </TableRow>
@@ -134,8 +190,8 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
         <TableBody className="p-5">
           {isLoading ? (
             <TableSpinner colSpan={headers.length} message="Loading data..." />
-          ) : data.length > 0 ? (
-            data.map((item, index) => (
+          ) : sortedData.length > 0 ? (
+            sortedData.map((item, index) => (
               <TableRow key={index}>
                 <TableCell
                   onClick={() => handleDetails(item)}
@@ -150,6 +206,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn" }) {
                     ? supplierDetails[item.supplyNo] || item.supplyNo || "-"
                     : item.docRef2 || "-"}
                 </TableCell>
+                <TableCell>{item.docQty}</TableCell>
                 <TableCell>{item.docAmt}</TableCell>
                 <TableCell
                   className={

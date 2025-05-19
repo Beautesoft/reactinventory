@@ -531,7 +531,7 @@ function AddRtn({ docData }) {
 
       const controlNosUpdate = {
         controldescription: "Goods Return Note",
-        sitecode: "MCHQ",
+        sitecode: userDetails.siteCode,
         controlnumber: newControlNo,
       };
 

@@ -42,7 +42,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
-import moment from "moment";
+// import moment from "moment";
+import moment from "moment-timezone";
 import apiService from "@/services/apiService";
 import {
   buildCountObject,
@@ -220,6 +221,8 @@ function AddGrn({ docData }) {
   const [stockHdrs, setStockHdrs] = useState({
     docNo: "",
     docDate: new Date().toISOString().split("T")[0],
+    // docDate: new Date().toISOString(),
+
     docStatus: 0,
     supplyNo: "",
     docRef1: "",
@@ -303,7 +306,7 @@ function AddGrn({ docData }) {
           setInitial(false);
         } else {
           // If creating new document
-          await getDocNo();
+          // await getDocNo();
           await getSupplyList();
           await getStockDetails();
           await getOptions();
@@ -363,6 +366,8 @@ function AddGrn({ docData }) {
         ...prev,
         docNo: data.docNo,
         docDate: moment(data.docDate).format("YYYY-MM-DD"),
+        // docDate: data.docDate,
+
         docStatus: data.docStatus,
         supplyNo: data.supplyNo,
         docRef1: data.docRef1,
@@ -371,6 +376,8 @@ function AddGrn({ docData }) {
         storeNo: data.storeNo,
         docRemk1: data.docRemk1,
         postDate: moment(data.postDate).format("YYYY-MM-DD"),
+        // postDate: data.postDate
+
       }));
       setSupplierInfo({
         Attn: data?.docAttn,
@@ -434,6 +441,9 @@ function AddGrn({ docData }) {
     Promise.all([
       apiService.get(`PackageItemDetails${query}`),
       apiService.get(`PackageItemDetails/count${countQuery}`),
+      // apiService.get(`GetInvItems${query}`),
+
+
     ])
       .then(([stockDetails, count]) => {
         setLoading(false);
@@ -501,19 +511,31 @@ function AddGrn({ docData }) {
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
       );
 
-      if (!res?.[0]) return;
+      if (!res?.[0]) return null;
 
       const docNo = res[0].controlPrefix + res[0].siteCode + res[0].controlNo;
+  
+      const controlData = {
+        docNo: docNo,
+        RunningNo: res[0].controlNo,
+      };
+  
+      return { docNo, controlData };
 
       setStockHdrs((prev) => ({
         ...prev,
         docNo: docNo,
       }));
 
-      setControlData({
-        docNo: docNo,
-        RunningNo: res[0].controlNo,
-      });
+      setControlData(controlData);
+
+      const docNoAdd = cartData.map(item => ({
+        ...item,
+        docNo: docNo
+      }));
+      setCartData(docNoAdd);
+
+
     } catch (err) {
       console.error("Error fetching doc number:", err);
       toast({
@@ -565,19 +587,22 @@ function AddGrn({ docData }) {
     }
   };
 
-  const postStockDetails = async () => {
+  const postStockDetails = async (cart) => {
     try {
+      console.log(cart,'cart')
+
       // First, find items to be deleted
       const itemsToDelete = cartItems.filter(
-        (cartItem) => !cartData.some((item) => item.docId === cartItem.docId)
+        (cartItem) => !cart.some((item) => item.docId === cartItem.docId)
       );
 
       // Group items by operation type
-      const itemsToUpdate = cartData.filter((item) => item.docId);
-      const itemsToCreate = cartData.filter((item) => !item.docId);
+      const itemsToUpdate = cart.filter((item) => item.docId);
+      const itemsToCreate = cart.filter((item) => !item.docId);
+      console.log(itemsToDelete,'itemsToDelete')
 
       // Execute deletions first (in parallel)
-      if (itemsToDelete > 0) {
+      if (itemsToDelete.length > 0) {
         await Promise.all(
           itemsToDelete.map((item) =>
             apiService
@@ -712,80 +737,42 @@ function AddGrn({ docData }) {
     }));
   };
 
-  const validateForm = () => {
+  const validateForm = (hdrs = stockHdrs, cart = cartData, supplier = supplierInfo) => {
     const errors = [];
-
+  
     // Document Header Validations
-    if (!stockHdrs.docNo) {
-      errors.push("Document number is required");
-    }
-
-    if (!stockHdrs.docDate) {
-      errors.push("Document date is required");
-    }
-
-    if (!stockHdrs.supplyNo) {
-      errors.push("Supply number is required");
-    }
-
-    if (!stockHdrs.docTerm) {
-      errors.push("Document term is required");
-    }
-
-    if (!stockHdrs.postDate) {
-      errors.push("Delivery date is required");
-    }
-
+    if (!hdrs.docNo) errors.push("Document number is required");
+    if (!hdrs.docDate) errors.push("Document date is required");
+    if (!hdrs.supplyNo) errors.push("Supply number is required");
+    if (!hdrs.docTerm) errors.push("Document term is required");
+    if (!hdrs.postDate) errors.push("Delivery date is required");
+  
     // Cart Validation
-    if (cartData.length === 0) {
-      errors.push("Cart shouldn't be empty");
-    }
-
-    // Supplier Info Validations
-    // if (!supplierInfo.Attn) {
-    //   errors.push("Attention To is required");
-    // }
-
-    // if (!supplierInfo.line1) {
-    //   errors.push("Address is required");
-    // }
-
-    // if (!supplierInfo.sline1) {
-    //   errors.push("Shipping address is required");
-    // }
-
-    // if (!supplierInfo.spcode) {
-    //   errors.push("Shipping postal code is required");
-    // }
-
-    // if (!supplierInfo.pcode) {
-    //   errors.push("Postal code is required");
-    // }
-
-    // Show errors if any
+    if (cart.length === 0) errors.push("Cart shouldn't be empty");
+  
+    // Optional: Supplier validations can be re-enabled if needed
+  
     if (errors.length > 0) {
-      // Show first error in toast
-      toast.error(errors[0], {
-        duration: 3000,
-      });
-
-      // Show all errors in an alert dialog
+      toast.error(errors[0], { duration: 3000 });
       setValidationErrors(errors);
       setShowValidationDialog(true);
       return false;
     }
-
+  
     return true;
   };
 
   const handleDateChange = (e, type) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     if (type === "postDate") {
-      let postDate = moment(e.target.value).valueOf();
-      let docDate = moment(stockHdrs.docDate).valueOf();
+      let postDate = moment.tz(e.target.value, tz).valueOf();
+      let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
       if (docDate > postDate) {
         showError("Post date should be greater than doc date");
         return;
       }
+      console.log(postDate,docDate,'date')
     }
     setStockHdrs((prev) => ({
       ...prev,
@@ -863,10 +850,11 @@ function AddGrn({ docData }) {
     const newCartItem = {
       id: index + 1,
       docAmt: amount,
-      docNo: stockHdrs.docNo,
+      docNo: stockHdrs?.docNo||'',
       movCode: "GRN",
       movType: "GRN",
-      docLineno: null,
+      docLineno: cartData.length + 1,
+      docDate:stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
       docQty: Number(item.Qty),
@@ -879,7 +867,9 @@ function AddGrn({ docData }) {
       postedQty: 0,
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
-      docUom: item.itemUom,
+      createDate:stockHdrs.docDate,
+      docUom: item.itemUom||
+      '',
       docExpdate: item.expiryDate || "",
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
@@ -903,33 +893,97 @@ function AddGrn({ docData }) {
     addItemToCart(newCartItem, index);
   };
 
+  const createTransactionObject = (item, docNo, storeNo) => {
+    const today = new Date();
+    const timeStr = ('0' + today.getHours()).slice(-2) + 
+                   ('0' + today.getMinutes()).slice(-2) + 
+                   ('0' + today.getSeconds()).slice(-2);
+
+    return {
+      postTime: timeStr,
+      aperiod: null,
+      itemcode: item.itemcode + "0000",
+      storeNo: storeNo,
+      tstoreNo: null,
+      fstoreNo: null,
+      trnDocno: docNo,
+      trnType: "GRN",
+      trnDbQty: null,
+      trnCrQty: null,
+      trnQty: item.docQty,
+      trnBalqty: item.docQty,
+      trnBalcst: item.docAmt,
+      trnAmt: item.docAmt,
+      trnCost: item.docAmt,
+      trnRef: null,
+      hqUpdate: false,
+      lineNo: item.docLineno,
+      itemUom: item.docUom,
+      itemBatch: "",
+      movType: "GRN",
+      itemBatchCost: item.itemBatchCost,
+      stockIn: null,
+      transPackageLineNo: null,
+      docExpdate:item.docExpdate 
+      // docExpdate: process.env.REACT_APP_EXPIRY_DATE === "Yes" 
+      //   ? item.docExpdate 
+      //     ? new Date(item.docExpdate).toISOString().split('T')[0] + " 00:00:00"
+      //     : null
+      //   : null
+    };
+  };
+
   const onSubmit = async (e, type) => {
     e?.preventDefault();
-    console.log(stockHdrs, "stockHdrs");
-    console.log(cartData, "cartData");
-    console.log(supplierInfo, "supplierInfo");
+    
+    let docNo;
+    let controlData;
+    let hdr = stockHdrs;  // Initialize with current stockHdrs
+    let details = cartData;  // Initialize with current cartData
 
-    if (validateForm()) {
-      console.log("Form is valid, proceeding with submission.");
-      const totalCart = calculateTotals(cartData);
+    // Only get new docNo for new creations
+    if (type === "save" && !urlDocNo) {
+      const result = await getDocNo();
+      if (!result) return;
+      docNo = result.docNo;
+      controlData = result.controlData;
+      
+      // Update states with new docNo only for new creations
+      hdr = { ...stockHdrs, docNo };  // Create new hdr with docNo
+      details = cartData.map(item => ({ ...item, docNo }));  // Create new details with docNo
+      setStockHdrs(hdr);
+      setCartData(details);
+      setControlData(controlData);
 
+      // Move validation here after docNo is set
+      if (!validateForm(hdr, details, supplierInfo)) return;
+    } else {
+      // Use existing docNo for updates and posts
+      docNo = urlDocNo || stockHdrs.docNo;
+      
+      // Validate for updates and posts
+      if (!validateForm(stockHdrs, cartData, supplierInfo)) return;
+    }
+
+    try {
+      // Create data object using hdr instead of stockHdrs
       let data = {
-        docNo: stockHdrs.docNo,
+        docNo: hdr.docNo,
         movCode: "GRN",
         movType: "GRN",
-        storeNo: stockHdrs.storeNo,
-        supplyNo: stockHdrs.supplyNo,
-        docRef1: stockHdrs.docRef1,
-        docRef2: stockHdrs.docRef2,
+        storeNo: hdr.storeNo,
+        supplyNo: hdr.supplyNo,
+        docRef1: hdr.docRef1,
+        docRef2: hdr.docRef2,
         docLines: null,
-        docDate: stockHdrs.docDate,
-        postDate: stockHdrs.postDate,
-        docStatus: stockHdrs.docStatus,
-        docTerm: stockHdrs.docTerm,
-        docQty: totalCart.totalQty,
-        docAmt: totalCart.totalAmt,
+        docDate: hdr.docDate,
+        postDate: hdr.postDate,
+        docStatus: hdr.docStatus,
+        docTerm: hdr.docTerm,
+        docQty: calculateTotals(details).totalQty,
+        docAmt: calculateTotals(details).totalAmt,
         docAttn: supplierInfo.Attn,
-        docRemk1: stockHdrs.docRemk1,
+        docRemk1: hdr.docRemk1,
 
         bname: supplierInfo.Attn,
         baddr1: supplierInfo.line1,
@@ -942,44 +996,171 @@ function AddGrn({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
 
-        createUser: stockHdrs.createUser,
-        createDate: null,
+        createUser: hdr.createUser,
+        createDate: new Date().toISOString(),
       };
 
-      if (stockHdrs?.poId) data.poId = stockHdrs?.poId;
+      // 3) Header create/update
+      if (type === "save" && !urlDocNo && hdr.docStatus === 0) {
+        await postStockHdr(data, "create");
+         addNewControlNumber(controlData);
 
-      let message;
-      console.log(type, urlDocNo, stockHdrs?.docStatus);
+      } else if (type === "save" && urlDocNo) {
+        await postStockHdr(data, "update");
+      } else if (type === "post" && urlDocNo) {
+        await postStockHdr(data, "updateStatus");
+      }
 
-      try {
-        if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
-          await postStockHdr(data, "create");
-          await postStockDetails();
-          await addNewControlNumber(controlData);
+      // 4) Details create/update/delete
+      console.log(details,'de')
+      await postStockDetails(details);
 
-          message = "Note created successfully";
-        } else if (type === "save" && urlDocNo) {
-          await postStockHdr(data, "update");
-          await postStockDetails();
-          message = "Note updated successfully";
-        } else if (type === "post" && urlDocNo) {
-          data = {
-            ...data,
-            docStatus: 7,
+      // 5) Initial Inventory Log ("Post Started on ...")
+      if (type === "post") {
+        const inventoryLog = {
+          trnDocNo: docNo,
+          loginUser: userDetails.username,
+          siteCode: userDetails.siteCode,
+          logMsg: `Post Started on ${new Date().toISOString()}`,
+          createdDate: new Date().toISOString().split("T")[0],
+        };
+        await apiService.post("Inventorylogs", inventoryLog);
+      }
+
+      if (type === "post") {
+
+        const stktrns = details.map(item => 
+          createTransactionObject(item, docNo, userDetails.siteCode)
+        );
+        // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
+        for (let i = 0; i < stktrns.length; i++) {
+          const d = stktrns[i];
+          const filter = {
+            where: {
+              and: [
+                { itemcode: d.itemcode }, // Add 0000 suffix for inventory
+                { uom: d.itemUom },
+                { sitecode: userDetails.siteCode }
+              ]
+            }
           };
-          await postStockHdr(data, "updateStatus");
-          await postStockDetails();
-          message = "Note posted successfully";
+          const resp = await apiService.get(
+            `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`
+          );
+          if (resp.length) {
+            const on = resp[0];
+            d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
+            d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
+            d.itemBatchCost = on.batchCost.toString();
+          } else {
+            // Log error if GET fails
+            const errorLog = {
+              trnDocNo: docNo,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `Itemonqties Api Error for ${d.itemcode}`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            await apiService.post("Inventorylogs", errorLog);
+          }
         }
 
-        toast.success(message);
-        navigate("/goods-receive-note?tab=all"); // Navigate back to list
-      } catch (error) {
-        console.error("Submit error:", error);
-        toast.error("Failed to submit form");
+        // 7) Check existing stktrns
+        const chkFilter = {
+          where: {
+            and: [
+              { trnDocno: docNo },
+              { storeNo: userDetails.siteCode }
+            ]
+          }
+        };
+        const stkResp = await apiService.get(
+          `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter))}`
+        );
+
+        if (stkResp.length === 0) {
+          // 8) Create and insert new Stktrns
+     
+          await apiService.post("Stktrns", stktrns);
+
+          // 9) Per-item log and (optional) BatchSNO GET
+          for (const d of stktrns) {
+            // Log stktrns insert
+            const insertLog = {
+              trnDocNo: docNo,
+              itemCode: d.itemcode,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `${d.itemcode} Inserted on stktrn Table`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            await apiService.post("Inventorylogs", insertLog);
+
+            // Optionally call Sequoia batchSNO
+            // if (process.env.REACT_APP_BATCH_SNO === "Yes") {
+            //   const url = `${process.env.REACT_APP_SEQUOIA_URI}api/postItemBatchSno?docNo=${docNo}&itemCode=${d.itemcode}&uom=${d.itemUom}&itemsiteCode=${userDetails.siteCode}&Qty=${d.trnQty}&ExpDate=${d.docExpdate}`;
+            //   await fetch(url); // Fire-and-forget
+            // }
+          }
+
+          // 10) Update ItemBatches quantity
+          for (const d of stktrns) {
+            const batchUpdate = {
+              itemcode: d.itemcode, // Add 0000 suffix for inventory
+              sitecode: userDetails.siteCode,
+              uom: d.itemUom,
+              qty: Number(d.trnQty),
+              batchcost: Number(d.trnCost),
+            };
+            await apiService.post("ItemBatches/updateqty", batchUpdate).catch(async err => {
+              // Log qty update error
+              const errorLog = {
+                trnDocNo: docNo,
+                itemCode: d.itemcode,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `ItemBatches/updateqty ${err.message}`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              await apiService.post("Inventorylogs", errorLog);
+            });
+          }
+        } else {
+          // Existing stktrns → log
+          const existsLog = {
+            trnDocNo: docNo,
+            loginUser: userDetails.username,
+            siteCode: userDetails.siteCode,
+            logMsg: "stktrn already exists",
+            createdDate: new Date().toISOString().split("T")[0],
+          };
+          await apiService.post("Inventorylogs", existsLog);
+        }
+
+        // 11) Final header status update to 7 - Only after all operations are complete
+        await apiService.post(
+          `StkMovdocHdrs/update?[where][docNo]=${docNo}`,
+          { docStatus: "7" }
+        );
       }
-    } else {
-      console.log("Form is invalid, fix the errors and resubmit.");
+
+      toast.success(
+        type === "post" 
+          ? "Note Posted successfully" 
+          : urlDocNo 
+            ? "Note Updated successfully" 
+            : "Note Created successfully"
+      );
+      navigate("/goods-receive-note?tab=all");
+    } catch (err) {
+      console.error("onSubmit error:", err);
+      toast.error(
+        type === "post" 
+          ? "Failed to post note" 
+          : urlDocNo 
+            ? "Failed to update note" 
+            : "Failed to create note"
+      );
     }
   };
 
@@ -1028,7 +1209,7 @@ function AddGrn({ docData }) {
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={stockHdrs.docStatus === 7 }
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
@@ -1039,7 +1220,7 @@ function AddGrn({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={stockHdrs.docStatus === 7 }
               >
                 Post
               </Button>
@@ -1121,7 +1302,9 @@ function AddGrn({ docData }) {
                     <Input
                       disabled={urlStatus == 7}
                       type="date"
+                      // value={stockHdrs.postDate}
                       value={stockHdrs.postDate}
+
                       onChange={(e) => handleDateChange(e, "postDate")}
                     />
                   </div>
