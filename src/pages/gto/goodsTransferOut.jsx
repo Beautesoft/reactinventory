@@ -24,6 +24,8 @@ import { Search, Loader2 } from "lucide-react";
 import useDebounce from "@/hooks/useDebounce";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useGto } from "@/context/gtoContext";
+import { toast } from "sonner";
+import apiService1 from "@/services/apiService1";
 
 function GoodsTransferOut() {
   const navigate = useNavigate();
@@ -34,6 +36,10 @@ function GoodsTransferOut() {
   const [totalCount, setTotalCount] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
+  const [showOwnRecords, setShowOwnRecords] = useState(false);
+  const [ownGoodsData, setOwnGoodsData] = useState([]);
+  const [filteredOwnData, setFilteredOwnData] = useState([]);
+  const [ownLoading, setOwnLoading] = useState(false);
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
@@ -45,6 +51,11 @@ function GoodsTransferOut() {
     limit: 10,
     order: "docDate DESC",
   });
+  const [ownPagination, setOwnPagination] = useState({
+    page: 1,
+    limit: 10
+  });
+  const [ownTotalCount, setOwnTotalCount] = useState(0);
 
   const debouncedSearchValue = useDebounce(searchValue, 1000);
 
@@ -69,6 +80,23 @@ function GoodsTransferOut() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchOwnRecords = async () => {
+    setOwnLoading(true);
+    try {
+      const response = await apiService1.get(`/api/GetStkOutOwn?Site=${userDetails?.siteCode}`);
+      if (response && response.result) {
+        setOwnGoodsData(response.result);
+        setFilteredOwnData(response.result);
+        setOwnTotalCount(response.result.length);
+      }
+    } catch (err) {
+      setError(err.message);
+      toast.error("Failed to fetch own records");
+    } finally {
+      setOwnLoading(false);
     }
   };
 
@@ -100,24 +128,43 @@ function GoodsTransferOut() {
     const value = e.target.value;
     setSearchValue(value);
 
-    if (value) {
-      setPagination((prev) => ({
-        ...prev,
-        like: {
-          docNo: value,
-          docDate: value,
-          docRef1: value,
-          docAmt: value,
-          docStatus: value,
-        },
-        skip: 0,
-      }));
+    if (showOwnRecords) {
+      // Filter own records
+      if (value) {
+        const filtered = ownGoodsData.filter(item => 
+          item.docNo?.toLowerCase().includes(value.toLowerCase()) ||
+          item.docDate?.toLowerCase().includes(value.toLowerCase()) ||
+          item.docRef1?.toLowerCase().includes(value.toLowerCase()) ||
+          item.docRef2?.toLowerCase().includes(value.toLowerCase()) ||
+          item.docRemark?.toLowerCase().includes(value.toLowerCase()) ||
+          item.docQty?.toString().includes(value) ||
+          item.docAmt?.toString().includes(value)
+        );
+        setFilteredOwnData(filtered);
+      } else {
+        setFilteredOwnData(ownGoodsData);
+      }
     } else {
-      setPagination((prev) => ({
-        ...prev,
-        like: null,
-        skip: 0,
-      }));
+      // Original GTO search logic
+      if (value) {
+        setPagination((prev) => ({
+          ...prev,
+          like: {
+            docNo: value,
+            docDate: value,
+            docRef1: value,
+            docAmt: value,
+            docStatus: value,
+          },
+          skip: 0,
+        }));
+      } else {
+        setPagination((prev) => ({
+          ...prev,
+          like: null,
+          skip: 0,
+        }));
+      }
     }
   };
 
@@ -146,6 +193,20 @@ function GoodsTransferOut() {
     navigate("/goods-transfer-out/add/");
   };
 
+  const handleVerifyRecords = () => {
+    setShowOwnRecords(!showOwnRecords);
+    if (!showOwnRecords) {
+      fetchOwnRecords();
+    }
+  };
+
+  const handleOwnPageChange = (newPage) => {
+    setOwnPagination(prev => ({
+      ...prev,
+      page: newPage
+    }));
+  };
+
   return (
     <>
       {initialLoading ? (
@@ -157,7 +218,7 @@ function GoodsTransferOut() {
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
             <h1 className="text-2xl font-bold text-gray-900">
-              Goods Transfer Out
+              {showOwnRecords ? "Verify Records" : "Goods Transfer Out"}
             </h1>
           </div>
 
@@ -179,42 +240,83 @@ function GoodsTransferOut() {
                 <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               </div>
 
-              <TabsList className="w-[25%] bg-gray-200 h-[38px] mr-40">
-                <TabsTrigger className="cursor-pointer" value="all">
-                  All
-                </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="open">
-                  Open
-                </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="posted">
-                  Posted
-                </TabsTrigger>
-              </TabsList>
+              {!showOwnRecords && (
+                <TabsList className="w-[25%] bg-gray-200 h-[38px] mr-40">
+                  <TabsTrigger className="cursor-pointer" value="all">
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger className="cursor-pointer" value="open">
+                    Open
+                  </TabsTrigger>
+                  <TabsTrigger className="cursor-pointer" value="posted">
+                    Posted
+                  </TabsTrigger>
+                </TabsList>
+              )}
 
-              <Button
-                onClick={handleRoute}
-                className="bg-blue-950 text-white hover:bg-blue-700"
-              >
-                + Create New
-              </Button>
+              <div className="flex items-center gap-2">
+                {showOwnRecords ? (
+                  <Button
+                    onClick={handleVerifyRecords}
+                    variant="outline"
+                    className="bg-gray-100"
+                  >
+                    Back to GTO
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      onClick={handleVerifyRecords}
+                      variant="outline"
+                    >
+                      Verify Records
+                    </Button>
+                    <Button
+                      onClick={handleRoute}
+                      className="bg-blue-950 text-white hover:bg-blue-700"
+                    >
+                      + Create New
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
 
-            <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
-            </TabsContent>
-            <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
-            </TabsContent>
-            <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
-            </TabsContent>
+            {showOwnRecords ? (
+              <>
+                <GoodsReceiveTable 
+                  data={filteredOwnData.slice(
+                    (ownPagination.page - 1) * ownPagination.limit,
+                    ownPagination.page * ownPagination.limit
+                  )} 
+                  isLoading={ownLoading} 
+                  type="gtoOwn" 
+                />
+                <Pagination
+                  currentPage={ownPagination.page}
+                  totalPages={Math.ceil(filteredOwnData.length / ownPagination.limit)}
+                  onPageChange={handleOwnPageChange}
+                />
+              </>
+            ) : (
+              <>
+                <TabsContent value="all">
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+                </TabsContent>
+                <TabsContent value="open">
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+                </TabsContent>
+                <TabsContent value="posted">
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+                </TabsContent>
+                <Pagination
+                  currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
+                  totalPages={Math.ceil(totalCount / pagination.limit)}
+                  onPageChange={handlePageChange}
+                />
+              </>
+            )}
           </Tabs>
-
-          <Pagination
-            currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
-            totalPages={Math.ceil(totalCount / pagination.limit)}
-            onPageChange={handlePageChange}
-          />
         </div>
       )}
     </>

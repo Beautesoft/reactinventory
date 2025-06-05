@@ -94,6 +94,11 @@ function PrintPreview() {
   const data = location.state?.item || SAMPLE_DATA;
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
 
+  // Get document type from URL path
+  const isGTO = location.pathname.includes('goods-transfer-out');
+  const documentType = isGTO ? 'GTO' : 'GRN';
+  const documentTitle = isGTO ? 'Goods Transfer Out' : 'Goods Receive Note';
+
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -421,13 +426,13 @@ function PrintPreview() {
         </div>
 
         <div className="bg-gray-100 py-1 px-2 mb-4">
-          <h3 className="font-bold">GRN</h3>
+          <h3 className="font-bold">{documentTitle}</h3>
         </div>
 
         <div className="grid grid-cols-2 text-sm mb-4">
           <div>
             <p>
-              <span className="w-32 inline-block">GRN No.</span>: {data?.docNo}
+              <span className="w-32 inline-block">{documentType} No.</span>: {data?.docNo}
             </p>
             <p>
               <span className="w-32 inline-block">PO1 Reference</span>:{" "}

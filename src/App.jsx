@@ -12,7 +12,7 @@ import Layout from "./Layout";
 import Login from "./pages/login";
 import DashBoard from "./pages/dashBoard";
 import GoodsReceiveNote from "./pages/grn/goodsReceiveNote";
-import AddGrn from "./pages/grn/addGrn";
+import AddGrn from "./pages/grn/addGrn.jsx";
 import PrintPreview from "./pages/grn/printPreview";
 import GoodsTransferOut from "./pages/gto/goodsTransferOut";
 import AddGto from "./pages/gto/addGto";

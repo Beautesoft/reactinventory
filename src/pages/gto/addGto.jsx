@@ -1,4 +1,4 @@
-import React, { useState, useEffect, use, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,6 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import TableSpinner from "@/components/tabelSpinner";
 import {
   Table,
   TableBody,
@@ -44,6 +43,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import apiService1 from "@/services/apiService1";
 import {
   buildCountObject,
   buildCountQuery,
@@ -55,7 +55,6 @@ import {
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import Pagination from "@/components/pagination";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,6 +67,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import useDebounce from "@/hooks/useDebounce";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Badge } from "@/components/ui/badge";
+import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
+import ItemTable from "@/components/itemTable";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -129,6 +131,16 @@ const EditDialog = memo(
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="Batch No">Batch No</Label>
+            <Input
+              id="batchNo"
+              value={editData?.docBatchNo || ""}
+              onChange={(e) => onEditCart(e, "docBatchNo")}
+              placeholder="Enter batchNo"
+              className="w-full"
+            />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
             <Input
               id="remarks"
@@ -168,6 +180,8 @@ function AddGto({ docData }) {
   const [activeTab, setActiveTab] = useState("detail");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [postLoading, setPostLoading] = useState(false);
   const [itemTotal, setItemTotal] = useState(0);
   const [cartItems, setCartItems] = useState([]);
   const [searchValue, setSearchValue] = useState("");
@@ -251,22 +265,82 @@ function AddGto({ docData }) {
 
   const [storeOptions, setStoreOptions] = useState([]);
 
-  const handleApplyFilters = () => {
-    setItemFilter((prev) => ({
+  const [originalStockList, setOriginalStockList] = useState([]);
+  const [searchTimer, setSearchTimer] = useState(null);
+
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 6
+  });
+
+  const [filters, setFilters] = useState({
+    brand: [],
+    range: [],
+    department: ["RETAIL PRODUCT", "SALON PRODUCT"]
+  });
+
+  const handlePageChange = (newPage) => {
+    setPagination(prev => ({
       ...prev,
-      whereArray: {
-        ...prev.whereArray,
-        brand: tempFilters.brand.map((item) => item.label) || [],
-        range: tempFilters.range.map((item) => item.label) || [],
-      },
-      skip: 0,
+      page: newPage
     }));
+  };
+
+  const handleApplyFilters = () => {
+    setLoading(true);
+
+    // Store original data if not already stored
+    if (!originalStockList.length && stockList.length) {
+      setOriginalStockList(stockList);
+    }
+
+    // If no filters are active, restore original data
+    if (!filters.brand.length && !filters.range.length && 
+        filters.department.length === 2) {
+      setStockList(originalStockList);
+      setItemTotal(originalStockList.length);
+      setLoading(false);
+      return;
+    }
+
+    const filteredList = originalStockList.filter(item => {
+      // Brand filter
+      if (filters.brand.length > 0) {
+        const brandMatch = filters.brand.some(brand => 
+          brand.value === item.BrandCode || 
+          brand.label === item.Brand
+        );
+        if (!brandMatch) return false;
+      }
+
+      // Range filter
+      if (filters.range.length > 0) {
+        const rangeMatch = filters.range.some(range => 
+          range.value === item.RangeCode || 
+          range.label === item.Range
+        );
+        if (!rangeMatch) return false;
+      }
+
+      // Department filter
+      if (filters.department.length > 0) {
+        const departmentMatch = filters.department.includes(item.Department);
+        if (!departmentMatch) return false;
+      }
+
+      return true;
+    });
+
+    setStockList(filteredList);
+    setItemTotal(filteredList.length);
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+    setLoading(false);
   };
 
   useEffect(() => {
     const initializeData = async () => {
-      setLoading(true);
       setPageLoading(true);
+      setLoading(true);
 
       try {
         if (urlDocNo) {
@@ -276,28 +350,24 @@ function AddGto({ docData }) {
               docNo: urlDocNo,
             },
           };
+          
           await getStockHdr(filter);
-          console.log(urlStatus, urlStatus === 7);
 
           if (urlStatus != 7) {
-            await getOptions();
-            await getStockDetails();
+            await Promise.all([
+              getOptions(),
+              getStockDetails()
+            ]);
           }
 
           await getStockHdrDetails(filter);
           await getStoreList();
-          // await getSupplyList(stockHdrs.supplyNo);
-          setPageLoading(false);
-
-          setInitial(false);
         } else {
-          await getDocNo();
-          await getStoreList();
-          // await getSupplyList();
-          await getStockDetails();
-          await getOptions();
-          setPageLoading(false);
-          setInitial(false);
+          await Promise.all([
+            getStoreList(),
+            getStockDetails(),
+            getOptions()
+          ]);
         }
       } catch (error) {
         console.error("Error initializing data:", error);
@@ -354,7 +424,7 @@ function AddGto({ docData }) {
         // docTerm: data.docTerm,
         storeNo: data.storeNo,
         tstoreNo: data.tstoreNo,
-        fstoreNo: data?.fstoreNo,
+        fstoreNo: data?.fstoreNo|| userDetails?.siteCode ,
         docRemk1: data.docRemk1,
         // postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
@@ -377,16 +447,18 @@ function AddGto({ docData }) {
   };
 
   const getOptions = async () => {
-    Promise.all([
-      apiService.get(`ItemBrands${buildFilterQuery(dropDownFilter)}`),
-      apiService.get(`ItemRanges${buildCountQuery(dropDownFilter)}`),
-    ]).then(([brands, ranges]) => {
-      console.log(brands);
-      console.log(ranges);
+    try {
+      setLoading(true);
+      const [brands, ranges] = await Promise.all([
+        apiService.get(`ItemBrands${buildFilterQuery(dropDownFilter)}`),
+        apiService.get(`ItemRanges${buildCountQuery(dropDownFilter)}`),
+      ]);
+
       const brandOp = brands.map((item) => ({
         value: item.itmCode,
         label: item.itmDesc,
       }));
+      
       const rangeOp = ranges.map((item) => ({
         value: item.itmCode,
         label: item.itmDesc,
@@ -394,46 +466,47 @@ function AddGto({ docData }) {
 
       setBrandOption(brandOp);
       setRangeOptions(rangeOp);
-    });
+    } catch (error) {
+      console.error("Error fetching options:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch options",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getStockDetails = async () => {
-    const filter = buildFilterObject(itemFilter);
-    const countFilter = buildCountObject(itemFilter);
-    console.log(countFilter, "filial");
-    const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-    const countQuery = `?where=${encodeURIComponent(
-      JSON.stringify(countFilter.where)
-    )}`;
+    try {
+      setLoading(true);
+      const query = `?Site=${userDetails?.siteCode}`;
+      const res = await apiService1.get(`api/GetInvitems${query}`);
+      
+      const stockDetails = res.result;
+      const count = res.result.length;
+      
+      const updatedRes = stockDetails.map((item) => ({
+        ...item,
+        Qty: 0,
+        expiryDate: null,
+        docAmt: null,
+      }));
 
-    Promise.all([
-      apiService.get(`PackageItemDetails${query}`),
-      apiService.get(`PackageItemDetails/count${countQuery}`),
-    ])
-      .then(([stockDetails, count]) => {
-        setLoading(false);
-        const updatedRes = stockDetails.map((item) => ({
-          ...item,
-          Qty: 0,
-          expiryDate: null,
-          Price: Number(item?.item_Price),
-          docAmt: null,
-        }));
-        console.log(updatedRes, "updatedRes");
-        console.log(count, "count");
-
-        setStockList(updatedRes);
-        setItemTotal(count.count);
-      })
-      .catch((err) => {
-        setLoading(false);
-        console.error("Error fetching stock details:", err);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to fetch stock details",
-        });
+      setStockList(updatedRes);
+      setOriginalStockList(updatedRes);
+      setItemTotal(count);
+    } catch (err) {
+      console.error("Error fetching stock details:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch stock details",
       });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // const getSupplyList = async (supplycode) => {
@@ -475,19 +548,29 @@ function AddGto({ docData }) {
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
       );
 
-      if (!res?.[0]) return;
+      if (!res?.[0]) return null;
 
       const docNo = res[0].controlPrefix + res[0].siteCode + res[0].controlNo;
+
+      const controlData = {
+        docNo: docNo,
+        RunningNo: res[0].controlNo,
+      };
+
+      return { docNo, controlData };
 
       setStockHdrs((prev) => ({
         ...prev,
         docNo: docNo,
       }));
 
-      setControlData({
-        docNo: docNo,
-        RunningNo: res[0].controlNo,
-      });
+      setControlData(controlData);
+
+      const docNoAdd = cartData.map((item) => ({
+        ...item,
+        docNo,
+      }));
+      setCartData(docNoAdd);
     } catch (err) {
       console.error("Error fetching doc number:", err);
       toast({
@@ -554,14 +637,14 @@ function AddGto({ docData }) {
     }
   };
 
-  const postStockDetails = async () => {
+  const postStockDetails = async (cart) => {
     try {
       const itemsToDelete = cartItems.filter(
-        (cartItem) => !cartData.some((item) => item.docId === cartItem.docId)
+        (cartItem) => !cart.some((item) => item.docId === cartItem.docId)
       );
 
-      const itemsToUpdate = cartData.filter((item) => item.docId);
-      const itemsToCreate = cartData.filter((item) => !item.docId);
+      const itemsToUpdate = cart.filter((item) => item.docId);
+      const itemsToCreate = cart.filter((item) => !item.docId);
 
       if (itemsToDelete > 0) {
         await Promise.all(
@@ -653,24 +736,138 @@ function AddGto({ docData }) {
   };
 
   const handleSearch = (e) => {
-    const searchValue = e.target.value.trim();
-    console.log(searchValue, "searchValue");
+    const searchValue = e.target.value.trim().toLowerCase();
+    
+    // Clear any existing timer
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+    }
+
+    // Store original data if not already stored
+    if (!originalStockList.length && stockList.length) {
+      setOriginalStockList(stockList);
+    }
+
+    if (!searchValue) {
+      // If search is empty, restore original data
+      setStockList(originalStockList);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
-    setSearchValue(searchValue);
+    // Set new timer
+    const timer = setTimeout(() => {
+      const filteredList = originalStockList.filter((item) => {
+        return (
+          item.stockCode?.toLowerCase().includes(searchValue) ||
+          item.stockName?.toLowerCase().includes(searchValue) ||
+          item.uomDescription?.toLowerCase().includes(searchValue) ||
+          item.brandCode?.toLowerCase().includes(searchValue) ||
+          item.rangeCode?.toLowerCase().includes(searchValue)
+        );
+      });
 
-    setItemFilter((prev) => ({
+      setStockList(filteredList);
+      setLoading(false);
+    }, 500); // Reduced to 500ms for better responsiveness
+
+    setSearchTimer(timer);
+  };
+
+  // Add cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimer) {
+        clearTimeout(searchTimer);
+      }
+    };
+  }, [searchTimer]);
+
+  // Update the filter handlers
+  const handleBrandChange = (selected) => {
+    setTempFilters((prev) => ({
       ...prev,
-      like: {
-        ...prev.like,
-        stockCode: searchValue,
-        itemUom: searchValue,
-        stockName: searchValue,
-        brandCode: searchValue,
-      },
-      skip: 0,
+      brand: selected
     }));
   };
+
+  const handleRangeChange = (selected) => {
+    setTempFilters((prev) => ({
+      ...prev,
+      range: selected
+    }));
+  };
+
+  const handleDepartmentChange = (department) => {
+    setLoading(true);
+    
+    // Update filters state
+    const newFilters = {
+      ...tempFilters,
+      department: tempFilters.department.includes(department)
+        ? tempFilters.department.filter(d => d !== department)
+        : [...tempFilters.department, department]
+    };
+    setTempFilters(newFilters);
+
+    // Store original data if not already stored
+    if (!originalStockList.length && stockList.length) {
+      setOriginalStockList(stockList);
+    }
+
+    // If no filters are active, restore original data
+    if (!newFilters.brand.length && !newFilters.range.length && 
+        newFilters.department.length === 2) {
+      setStockList(originalStockList);
+      setItemTotal(originalStockList.length);
+      setLoading(false);
+      return;
+    }
+
+    // Apply filters immediately
+    const filteredList = originalStockList.filter(item => {
+      // Brand filter
+      if (newFilters.brand.length > 0) {
+        const brandMatch = newFilters.brand.some(brand => 
+          brand.value === item.BrandCode || 
+          brand.label === item.Brand
+        );
+        if (!brandMatch) return false;
+      }
+
+      // Range filter
+      if (newFilters.range.length > 0) {
+        const rangeMatch = newFilters.range.some(range => 
+          range.value === item.RangeCode || 
+          range.label === item.Range
+        );
+        if (!rangeMatch) return false;
+      }
+
+      // Department filter
+      if (newFilters.department.length > 0) {
+        const departmentMatch = newFilters.department.includes(item.Department);
+        if (!departmentMatch) return false;
+      }
+
+      return true;
+    });
+
+    setStockList(filteredList);
+    setItemTotal(filteredList.length);
+    itemFilter.skip = 0; // Reset to first page
+    setLoading(false);
+  };
+
+  // Add this effect to help with debugging
+  useEffect(() => {
+    if (originalStockList.length > 0) {
+      console.log('Sample Item Structure:', originalStockList[0]);
+    }
+  }, [originalStockList]);
+
   const showError = (message) => {
     toast.error(message, {
       duration: 3000,
@@ -692,33 +889,26 @@ function AddGto({ docData }) {
     }));
   };
 
-  const validateForm = () => {
+  const validateForm = (
+    hdrs = stockHdrs,
+    cart = cartData,
+    // supplier = supplierInfo
+  ) => {
     const errors = [];
+    console.log('dd')
 
-    if (!stockHdrs.docNo) {
-      errors.push("Document number is required");
-    }
+    // Document Header Validations
+    if (!hdrs.docNo) errors.push("Document number is required");
+    if (!hdrs.docDate) errors.push("Document date is required");
+    if (!hdrs.storeNo) errors.push("Store number is required");
+    if (!hdrs.tstoreNo) errors.push("To store is required");
+    if (!hdrs.fstoreNo) errors.push("From store is required");
 
-    if (!stockHdrs.docDate) {
-      errors.push("Document date is required");
-    }
-
-    if (!stockHdrs.storeNo) {
-      errors.push("storeNo is required");
-    }
-
-    if (!stockHdrs.tstoreNo) {
-      errors.push("To store is required");
-    }
-    if (!stockHdrs.fstoreNo) {
-      errors.push("From store is required");
-    }
-
-    if (cartData.length === 0) {
-      errors.push("Cart shouldn't be empty");
-    }
+    // Cart Validation
+    if (cart.length === 0) errors.push("Cart shouldn't be empty");
 
     if (errors.length > 0) {
+      toast.error(errors[0], { duration: 3000 });
       setValidationErrors(errors);
       setShowValidationDialog(true);
       return false;
@@ -780,6 +970,7 @@ function AddGto({ docData }) {
       docPrice: Number(item.docPrice) || 0,
       docExpdate: item.docExpdate || "",
       itemRemark: item.itemRemark || "",
+      docBatchNo: item.docBatchNo || ""
     });
     setEditingIndex(index);
     setShowEditDialog(true);
@@ -828,14 +1019,15 @@ function AddGto({ docData }) {
       postedQty: 0,
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
-      docUom: item.itemUom,
+      docUom: item.uom,
       docExpdate: item.expiryDate || "",
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
-      DOCUOMDesc: item.itemUom,
+      DOCUOMDesc: item.uomDescription,
       itemRemark: "",
+      docBatchNo: item.docBatchNo || null
     };
 
     const existingItemIndex = cartData.findIndex(
@@ -852,100 +1044,391 @@ function AddGto({ docData }) {
     addItemToCart(newCartItem, index);
   };
 
+  const createTransactionObject = (item, docNo, storeNo) => {
+    const today = new Date();
+    const timeStr = ('0' + today.getHours()).substr(-2) + 
+                   ('0' + today.getMinutes()).substr(-2) + 
+                   ('0' + today.getSeconds()).substr(-2);
+
+    return {
+      id: null,
+      trnPost: today.toISOString().split('T')[0],
+      trnDate: stockHdrs.docDate,
+      trnNo: null,
+      postTime: timeStr,
+      aperiod: null,
+      itemcode: item.itemcode + "0000",
+      storeNo: storeNo,
+      tstoreNo: storeNo,
+      fstoreNo: stockHdrs.fstoreNo,
+      trnDocno: docNo,
+      trnType: "TFR",
+      trnDbQty: null,
+      trnCrQty: null,
+      trnQty: item.docQty,
+      trnBalqty: item.docQty,
+      trnBalcst: item.docAmt,
+      trnAmt: item.docAmt,
+      trnCost: item.docAmt,
+      trnRef: null,
+      hqUpdate: false,
+      lineNo: item.docLineno,
+      itemUom: item.docUom,
+      itemBatch: item.docBatchNo || "",
+      movType: "TFR",
+      itemBatchCost: item.docPrice,
+      stockIn: null,
+      transPackageLineNo: null,
+      docExpdate: item.docExpdate || null
+    };
+  };
+
   const onSubmit = async (e, type) => {
     e?.preventDefault();
-    console.log(stockHdrs, "stockHdrs");
-    console.log(cartData, "cartData");
-    console.log(supplierInfo, "supplierInfo");
+    console.log(stockHdrs)
 
-    if (validateForm()) {
-      console.log("Form is valid, proceeding with submission.");
-      const totalCart = calculateTotals(cartData);
+    // Set loading state based on action type
+    if (type === "save") {
+      setSaveLoading(true);
+    } else if (type === "post") {
+      setPostLoading(true);
+    }
 
+    try {
+      let docNo;
+      let controlData;
+      let hdr = stockHdrs;
+      let details = cartData;
+
+      // Only get new docNo for new creations
+      if (type === "save" && !urlDocNo) {
+        const result = await getDocNo();
+        console.log(result,'dd1')
+
+        if (!result) return;
+        docNo = result.docNo;
+        controlData = result.controlData;
+
+        // Update states with new docNo only for new creations
+        hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
+        details = cartData.map((item, index) => ({
+          ...item,
+          docNo,
+          id: urlDocNo ? item.id : index + 1, // Also update the id field to match
+        }));
+        setStockHdrs(hdr);
+        setCartData(details);
+        setControlData(controlData);
+        console.log('dd1')
+
+        // Move validation here after docNo is set
+        if (!validateForm(hdr, details)) return;
+      } else {
+        // Use existing docNo for updates and posts
+        docNo = urlDocNo || stockHdrs.docNo;
+
+        // Validate for updates and posts
+        if (!validateForm(stockHdrs, cartData)) return;
+      }
+
+      // Create data object using hdr instead of stockHdrs
       let data = {
-        docNo: stockHdrs.docNo,
+        docNo: hdr.docNo,
         movCode: "GTO",
         movType: "GTO",
-        storeNo: stockHdrs.storeNo,
-        tstoreNo: stockHdrs.tstoreNo,
-        fstoreNo: stockHdrs.fstoreNo,
-        // supplyNo: stockHdrs.supplyNo,
-        docRef1: stockHdrs.docRef1,
-        docRef2: stockHdrs.docRef2,
-        docLines: null,
-        docDate: stockHdrs.docDate,
-        // postDate: stockHdrs.postDate,
-        docStatus: stockHdrs.docStatus,
-        // docTerm: stockHdrs.docTerm,
-        docQty: totalCart.totalQty,
-        docAmt: totalCart.totalAmt,
+        storeNo: hdr.storeNo,
+        fstoreNo:hdr.fstoreNo,
+        tstoreNo:hdr.tstoreNo,
+        supplyNo: hdr.supplyNo,
+        docRef1: hdr.docRef1,
+        docRef2: hdr.docRef2,
+        docLines: urlDocNo ? hdr.docLines : cartData.length,
+        docDate: hdr.docDate,
+        recExpect: hdr.deliveryDate,
+        postDate: type === "post" ? new Date().toISOString() : "",
+        docStatus: hdr.docStatus,
+        docTerm: hdr.docTerm,
+        docQty: calculateTotals(details).totalQty,
+        docAmt: calculateTotals(details).totalAmt,
         docAttn: supplierInfo.Attn,
-        docRemk1: stockHdrs.docRemk1,
-
+        docRemk1: hdr.docRemk1,
+        staffNo: userDetails.usercode,
         bname: supplierInfo.Attn,
         baddr1: supplierInfo.line1,
         baddr2: supplierInfo.line2,
         baddr3: supplierInfo.line3,
         bpostcode: supplierInfo.pcode,
-
         daddr1: supplierInfo.sline1,
         daddr2: supplierInfo.sline2,
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
-
-        createUser: stockHdrs.createUser,
-        createDate: null,
+        createUser: hdr.createUser,
+        createDate:
+          type === "save" && !urlDocNo
+            ? new Date().toISOString()
+            : hdr.createDate,
       };
 
-      if (stockHdrs?.poId) data.poId = stockHdrs?.poId;
+      // 3) Header create/update
+      if (type === "save" && !urlDocNo && hdr.docStatus === 0) {
+        await postStockHdr(data, "create");
+        addNewControlNumber(controlData);
+      } else if (type === "save" && urlDocNo) {
+        console.log(data,'daaatt')
+        await postStockHdr(data, "update");
+      } else if (type === "post" && urlDocNo) {
+        await postStockHdr(data, "updateStatus");
+      }
 
-      let message;
-      console.log(type, urlDocNo, stockHdrs?.docStatus);
+      // 4) Details create/update/delete
+      await postStockDetails(details);
 
-      try {
-        if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
-          await postStockHdr(data, "create");
-          await postStockDetails();
-          await addNewControlNumber(controlData);
+      // 5) Initial Inventory Log ("Post Started on ...")
+      if (type === "post") {
+        const inventoryLog = {
+          trnDocNo: docNo,
+          loginUser: userDetails.username,
+          siteCode: userDetails.siteCode,
+          logMsg: `Post Started on ${new Date().toISOString()}`,
+          createdDate: new Date().toISOString().split("T")[0],
+        };
+        // await apiService.post("Inventorylogs", inventoryLog);
+      }
 
-          message = "Note created successfully";
-        } else if (type === "save" && urlDocNo) {
-          await postStockHdr(data, "update");
-          await postStockDetails();
-          message = "Note updated successfully";
-        } else if (type === "post" && urlDocNo) {
-          data = {
-            ...data,
-            docStatus: 7,
+      if (type === "post") {
+        let batchId;
+        const stktrns = details.map((item) =>
+          createTransactionObject(item, docNo, userDetails.siteCode)
+        );
+
+        // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
+        for (let i = 0; i < stktrns.length; i++) {
+          const d = stktrns[i];
+          const filter = {
+            where: {
+              and: [
+                { itemcode: d.itemcode }, // Add 0000 suffix for inventory
+                { uom: d.itemUom },
+                { sitecode: userDetails.siteCode },
+              ],
+            },
           };
-          await postStockHdr(data, "updateStatus");
-          await postStockDetails();
-          message = "Note posted successfully";
+          const resp = await apiService.get(
+            `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`
+          );
+          if (resp.length) {
+            const on = resp[0];
+            d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
+            d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
+            d.itemBatchCost = on.batchCost.toString();
+          } else {
+            // Log error if GET fails
+            const errorLog = {
+              trnDocNo: docNo,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `Itemonqties Api Error for ${d.itemcode}`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", errorLog);
+          }
         }
 
-        toast.success(message);
-        navigateTo("/goods-transfer-out");
-      } catch (error) {
-        console.error("Submit error:", error);
-        toast.error("Failed to submit form");
-      }
-    } else {
-      console.log("Form is invalid, fix the errors and resubmit.");
-    }
-  };
+        // 7) Check existing stktrns
+        const chkFilter = {
+          where: {
+            and: [{ trnDocno: docNo }, { storeNo: userDetails.siteCode }],
+          },
+        };
+        const stkResp = await apiService.get(
+          `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter))}`
+        );
 
-  const handlePageChange = (newPage) => {
-    console.log(newPage, "newPage");
-    const newLimit = itemFilter.limit;
-    const newSkip = (newPage - 1) * newLimit;
-    setItemFilter({
-      ...itemFilter,
-      skip: newSkip,
-    });
+        if (stkResp.length === 0) {
+          // 8) Create and insert new Stktrns
+          await apiService.post("Stktrns", stktrns);
+
+          // 9) Per-item log
+          for (const d of stktrns) {
+            // Log stktrns insert
+            const insertLog = {
+              trnDocNo: docNo,
+              itemCode: d.itemcode,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `${d.itemcode} Inserted on stktrn Table`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", insertLog);
+          }
+
+          // 10) Update ItemBatches quantity
+          for (const d of stktrns) {
+            const trimmedItemCode = d.itemcode.replace(/0000$/, '');
+
+            const batchUpdate = {
+              itemCode: trimmedItemCode,
+              siteCode: userDetails.siteCode,
+              uom: d.itemUom,
+              qty: Number(d.trnQty),
+              batchCost: Number(d.trnCost),
+              batchNo: d.itemBatch,
+              expDate: d.docExpdate
+            };
+            const batchFilter = {
+              itemCode: trimmedItemCode,
+              siteCode: userDetails.siteCode,
+              uom: d.itemUom
+            };
+            
+            await apiService
+              .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .catch(async (err) => {
+                // Log qty update error
+                const errorLog = {
+                  trnDocNo: docNo,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: userDetails.siteCode,
+                  logMsg: `ItemBatches/updateqty ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // await apiService.post("Inventorylogs", errorLog);
+              });
+          }
+        } else {
+          // Existing stktrns → log
+          const existsLog = {
+            trnDocNo: docNo,
+            loginUser: userDetails.username,
+            siteCode: userDetails.siteCode,
+            logMsg: "stktrn already exists",
+            createdDate: new Date().toISOString().split("T")[0],
+          };
+          // await apiService.post("Inventorylogs", existsLog);
+        }
+
+        // 11) Final header status update to 7 - Only after all operations are complete
+        await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
+          docStatus: "7",
+        });
+
+        // 1. Auto-Post handling
+        if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+          const stktrns1 = details.map((item) =>
+            createTransactionObject(item, docNo, formData.docToSite)
+          );
+          await processTransactions(stktrns1);
+        }
+
+        // 2. Batch SNO handling
+        if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+          await apiService1.get(
+            `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
+          );
+
+          if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+            for (const item of details) {
+              await apiService1.get(
+                `api/postToOutItemBatchSno?formName=GRNOut&docNo=${docNo}&itemCode=${item.itemcode}&Uom=${item.docUom}`
+              );
+            }
+          }
+        }
+
+        // 3. Email Notification
+        if (window.APP_CONFIG.NOTIFICATION_MAIL_SEND === "Yes") {
+          const printList = await apiService.get(
+            `Stkprintlists?filter={"where":{"docNo":"${docNo}"}}`
+          );
+          
+          if (printList && printList.length > 0) {
+            const emailData = {
+              to: window.APP_CONFIG.NOTIFICATION_MAIL1,
+              cc: window.APP_CONFIG.NOTIFICATION_MAIL2,
+              subject: "NOTIFICATION FOR STOCK TRANSFER",
+              body: generateEmailBody(printList[0], details)
+            };
+            
+            await apiService.post("EmailService/send", emailData);
+          }
+        }
+      }
+
+      toast.success(
+        type === "post"
+          ? "Note Posted successfully"
+          : urlDocNo
+          ? "Note Updated successfully"
+          : "Note Created successfully"
+      );
+      navigate("/goods-transfer-out?tab=all");
+    } catch (err) {
+      console.error("onSubmit error:", err);
+      toast.error(
+        type === "post"
+          ? "Failed to post note"
+          : urlDocNo
+          ? "Failed to update note"
+          : "Failed to create note"
+      );
+    } finally {
+      // Reset loading states
+      setSaveLoading(false);
+      setPostLoading(false);
+    }
   };
 
   const navigateTo = (path) => {
     navigate(path);
+  };
+
+  const generateEmailBody = (header, details) => {
+    let body = "<html><body>";
+    body += `<div><b><span>Transfer Num:</span></b> ${header.docNo}</div>`;
+    body += `<div><b><span>Order from: </span></b> ${header.fromSite} <b><span style='margin-left:10px'>Created: </span></b> ${header.docDate}</div>`;
+    body += `<div><b><span>Deliver to: </span></b> ${header.toSite} <b><span style='margin-left:10px'>Created by: </span></b> ${header.docAttn}</div>`;
+    body += "<br/>STOCK ORDER<br/>";
+    
+    // Add table header
+    body += "<table cellpadding='6' cellspacing='0' style='margin-top:10px;border: 1px solid #ccc;font-size: 9pt;font-family:Arial'>";
+    body += "<tr>";
+    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>Product</th>";
+    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>SKU</th>";
+    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>Supplier Code</th>";
+    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Cost</th>";
+    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Qty</th>";
+    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Sub Total</th>";
+    body += "</tr>";
+
+    // Add rows
+    let sumQty = 0;
+    let sumAmount = 0;
+    details.forEach(item => {
+      body += "<tr>";
+      body += `<td style='width:30%;border: 1px solid #ccc;text-align: left'>${item.itemdesc}</td>`;
+      body += `<td style='width:15%;border: 1px solid #ccc;text-align: left'>${item.itemcode}</td>`;
+      body += `<td style='width:15%;border: 1px solid #ccc;text-align: left'>${item.supplyDesc || ''}</td>`;
+      body += `<td style='width:15%;border: 1px solid #ccc;text-align: right'>${item.docPrice}</td>`;
+      body += `<td style='width:10%;border: 1px solid #ccc;text-align: right'>${item.docQty}</td>`;
+      body += `<td style='width:15%;border: 1px solid #ccc;text-align: right'>${Number(item.docAmt).toFixed(2)}</td>`;
+      body += "</tr>";
+      sumQty += Number(item.docQty);
+      sumAmount += Number(item.docAmt);
+    });
+
+    // Add total row
+    body += "<tr>";
+    body += "<td style='width:30%;border: 1px solid #ccc;text-align: left'></td>";
+    body += "<td style='width:15%;border: 1px solid #ccc;text-align: left'></td>";
+    body += "<td style='width:15%;border: 1px solid #ccc;text-align: left'></td>";
+    body += "<td style='width:15%;border: 1px solid #ccc;text-align: right;font-weight:bold'>Total</td>";
+    body += `<td style='width:10%;border: 1px solid #ccc;text-align: right;font-weight:bold'>${sumQty}</td>`;
+    body += `<td style='width:15%;border: 1px solid #ccc;text-align: right;font-weight:bold'>${sumAmount.toFixed(2)}</td>`;
+    body += "</tr>";
+
+    body += "</table></body></html>";
+    return body;
   };
 
   return (
@@ -975,13 +1458,20 @@ function AddGto({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={stockHdrs.docStatus === 7 || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
-                Save
+                {saveLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
               </Button>
               <Button
                 variant="secondary"
@@ -989,9 +1479,16 @@ function AddGto({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={stockHdrs.docStatus === 7 || postLoading}
               >
-                Post
+                {postLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Posting...
+                  </>
+                ) : (
+                  "Post"
+                )}
               </Button>
             </div>
           </div>
@@ -1175,12 +1672,7 @@ function AddGto({ docData }) {
                         <MultiSelect
                           options={brandOption}
                           selected={tempFilters.brand}
-                          onChange={(selected) => {
-                            setTempFilters((prev) => ({
-                              ...prev,
-                              brand: selected,
-                            }));
-                          }}
+                          onChange={handleBrandChange}
                           placeholder="Filter by brand..."
                         />
                       </div>
@@ -1189,12 +1681,7 @@ function AddGto({ docData }) {
                         <MultiSelect
                           options={rangeOptions}
                           selected={tempFilters.range}
-                          onChange={(selected) => {
-                            setTempFilters((prev) => ({
-                              ...prev,
-                              range: selected,
-                            }));
-                          }}
+                          onChange={handleRangeChange}
                           placeholder="Filter by range..."
                         />
                       </div>
@@ -1216,21 +1703,7 @@ function AddGto({ docData }) {
                           )}
                           onCheckedChange={(checked) => {
                             console.log(checked);
-                            setItemFilter((prev) => ({
-                              ...prev,
-                              whereArray: {
-                                ...prev.whereArray,
-                                department: checked
-                                  ? [
-                                      ...prev.whereArray.department,
-                                      "RETAIL PRODUCT",
-                                    ]
-                                  : prev.whereArray.department.filter(
-                                      (d) => d !== "RETAIL PRODUCT"
-                                    ),
-                              },
-                              skip: 0,
-                            }));
+                            handleDepartmentChange("RETAIL PRODUCT");
                           }}
                         />
                         <label htmlFor="retail" className="text-sm">
@@ -1246,21 +1719,7 @@ function AddGto({ docData }) {
                             "SALON PRODUCT"
                           )}
                           onCheckedChange={(checked) => {
-                            setItemFilter((prev) => ({
-                              ...prev,
-                              whereArray: {
-                                ...prev.whereArray,
-                                department: checked
-                                  ? [
-                                      ...prev.whereArray.department,
-                                      "SALON PRODUCT",
-                                    ]
-                                  : prev.whereArray.department.filter(
-                                      (d) => d !== "SALON PRODUCT"
-                                    ),
-                              },
-                              skip: 0,
-                            }));
+                            handleDepartmentChange("SALON PRODUCT");
                           }}
                         />
                         <label htmlFor="salon" className="text-sm">
@@ -1269,113 +1728,20 @@ function AddGto({ docData }) {
                       </div>
                     </div>
 
-                    <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200">
-                      <Table>
-                        <TableHeader className="bg-gray-50">
-                          <TableRow>
-                            <TableHead className="font-semibold">
-                              Item Code
-                            </TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>UOM</TableHead>
-                            <TableHead>Brand</TableHead>
-                            <TableHead>Link Code</TableHead>
-                            <TableHead>Bar Code</TableHead>
-                            <TableHead>Range</TableHead>
-                            <TableHead>On Hand Qty</TableHead>
-                            <TableHead>Qty</TableHead>
-                            <TableHead>Price</TableHead>
-                            <TableHead>Expiry date</TableHead>
-                            {urlStatus != 7 && <TableHead>Action</TableHead>}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {loading ? (
-                            <TableSpinner colSpan={14} message="Loading..." />
-                          ) : stockList.length === 0 ? (
-                            <TableRow>
-                              <TableCell
-                                colSpan={14}
-                                className="text-center py-10"
-                              >
-                                <div className="flex flex-col items-center gap-2 text-gray-500">
-                                  <FileText size={40} />
-                                  <p>No items Found</p>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            stockList.map((item, index) => (
-                              <TableRow
-                                key={index}
-                                className="hover:bg-gray-50 transition-colors duration-150"
-                              >
-                                <TableCell>{item.stockCode || "-"}</TableCell>
-                                <TableCell className="max-w-[200px] whitespace-normal break-words">
-                                  {item.stockName || "-"}
-                                </TableCell>{" "}
-                                <TableCell>{item.itemUom || "-"}</TableCell>
-                                <TableCell>{item.brand || "-"}</TableCell>
-                                <TableCell>{item.linkCode || "-"}</TableCell>
-                                <TableCell>{item.brandCode || "-"}</TableCell>
-                                <TableCell>{item.range || "-"}</TableCell>
-                                <TableCell>{item.quantity || "0"}</TableCell>
-                                <TableCell className="text-start">
-                                  <Input
-                                    type="number"
-                                    className="w-20"
-                                    value={item.Qty}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "Qty")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    className="w-20"
-                                    value={item.Price}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "Price")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="date"
-                                    className="w-35"
-                                    value={item.expiryDate}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "expiryDate")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => addToCart(index, item)}
-                                    className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    <Pagination
-                      currentPage={
-                        Math.ceil(itemFilter.skip / itemFilter.limit) + 1
-                      }
-                      totalPages={Math.ceil(itemTotal / itemFilter.limit)}
-                      onPageChange={handlePageChange}
-                    />
+                    {/* <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200"> */}
+                      <ItemTable
+                        data={stockList}
+                        loading={loading}
+                        onQtyChange={(e, index) => handleCalc(e, index, "Qty")}
+                        onPriceChange={(e, index) => handleCalc(e, index, "Price")}
+                        onExpiryDateChange={(e, index) => handleCalc(e, index, "expiryDate")}
+                        onAddToCart={(index, item) => addToCart(index, item)}
+                        currentPage={pagination.page}
+                        itemsPerPage={6}
+                        totalPages={Math.ceil(itemTotal / pagination.limit)}
+                        onPageChange={handlePageChange}
+                      />
+                    {/* </div> */}
                   </CardContent>
                 </Card>
               )}
@@ -1404,6 +1770,7 @@ function AddGto({ docData }) {
                       Amount
                     </TableHead>
                     <TableHead>Expiry Date</TableHead>
+                    <TableHead>Batch No</TableHead>
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 && <TableHead>Action</TableHead>}
                   </TableRow>
@@ -1441,7 +1808,8 @@ function AddGto({ docData }) {
                             {item.docAmt}
                           </TableCell>
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
-                          <TableCell>{item.itemRemark}</TableCell>
+                          <TableCell>{item?.docBatchNo ?? '-'}</TableCell>
+                          <TableCell>{item.itemRemark ?? '-'}</TableCell>
                           {urlStatus != 7 && (
                             <TableCell>
                               <div className="flex gap-2">

@@ -74,23 +74,33 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
   }, [data, type]);
 
   const dateConvert = (date) => {
+    if (!date) return "-";
+    
+    if (type === "gtoOwn") {
+      // For gto type, date is already in DD/MM/YYYY format
+      return date;
+    }
+    
+    // For other types, convert the date
     const options = { year: "numeric", month: "2-digit", day: "2-digit" };
     return new Date(date).toLocaleDateString(undefined, options);
   };
 
   const handleDetails = (item) => {
     const status = item.docStatus === 7 ? "7" : "0";
+    console.log(type)
     const basePath =
-      type === "grn" ? "goods-receive-note" : "goods-transfer-out";
+      type === "grn" ? "goods-receive-note" :  type === "gto"? "goods-transfer-out":'goods-transfer-in';
 
     navigate(`/${basePath}/details/${item.docNo}?status=${status}`, {
       state: { item },
     });
+    console.log(basePath)
   };
 
   const printNote = (item) => {
     const basePath =
-      type === "grn" ? "goods-receive-note" : "goods-transfer-out";
+    type === "grn" ? "goods-receive-note" :"gto"? "goods-transfer-out":'goods-transfer-in';
     navigate(`/${basePath}/print/${item.docNo}`, { state: { item } });
   };
 
@@ -158,9 +168,38 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docDate", label: "Doc Date" },
       { key: "docRef1", label: "Ref Number 1" },
       { key: "docRef2", label: "Ref Number 2" },
+      { key: "docQty", label: "Total Quantity" },
       { key: "docAmt", label: "Total Amount" },
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
+    ],
+    gti: [
+      { key: "docNo", label: "Doc Number" },
+      { key: "docDate", label: "Doc Date" },
+      { key: "docRef1", label: "Ref Number 1" },
+      { key: "docRef2", label: "Ref Number 2" },
+      { key: "docQty", label: "Total Quantity" },
+      { key: "docAmt", label: "Total Amount" },
+      { key: "docStatus", label: "Status" },
+      { key: "print", label: "Print" },
+    ],
+    gtoOwn: [
+      { key: "docNo", label: "Doc Number" },
+      { key: "docDate", label: "Doc Date" },
+      { key: "docRef1", label: "Ref Number 1" },
+      { key: "docRef2", label: "Ref Number 2" },
+      { key: "docRemark", label: "Remarks" },
+      { key: "docQty", label: "Total Quantity" },
+      { key: "docAmt", label: "Total Amount" },
+    ],
+    gtiOwn: [
+      { key: "docNo", label: "Doc Number" },
+      { key: "docDate", label: "Doc Date" },
+      { key: "docRef1", label: "Ref Number 1" },
+      { key: "docRef2", label: "Ref Number 2" },
+      { key: "docRemark", label: "Remarks" },
+      { key: "docQty", label: "Total Quantity" },
+      { key: "docAmt", label: "Total Amount" },
     ],
   };
 
@@ -193,37 +232,51 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
           ) : sortedData.length > 0 ? (
             sortedData.map((item, index) => (
               <TableRow key={index}>
-                <TableCell
-                  onClick={() => handleDetails(item)}
-                  className="cursor-pointer text-gray-600 hover:text-black underline"
-                >
-                  {item.docNo}
-                </TableCell>
-                <TableCell>{dateConvert(item.docDate)}</TableCell>
-                <TableCell>{item.docRef1 || "-"}</TableCell>
-                <TableCell>
-                  {type === "grn"
-                    ? supplierDetails[item.supplyNo] || item.supplyNo || "-"
-                    : item.docRef2 || "-"}
-                </TableCell>
-                <TableCell>{item.docQty}</TableCell>
-                <TableCell>{item.docAmt}</TableCell>
-                <TableCell
-                  className={
-                    item.docStatus === 7
-                      ? "text-green-600 font-semibold"
-                      : "text-yellow-600 font-semibold"
-                  }
-                >
-                  {item.docStatus === 7 ? "Posted" : "Open"}
-                </TableCell>
-                <TableCell className="text-left flex pr-4">
-                  <PrinterIcon
-                    onClick={() => printNote(item)}
-                    className="icon-print cursor-pointer"
-                    aria-label="Print"
-                  />
-                </TableCell>
+                {type === "gtoOwn" ? (
+                  <>
+                    <TableCell>{item.docNo}</TableCell>
+                    <TableCell>{dateConvert(item.docDate)}</TableCell>
+                    <TableCell>{item.docRef1 || "-"}</TableCell>
+                    <TableCell>{item.docRef2 || "-"}</TableCell>
+                    <TableCell>{item.docRemark || "-"}</TableCell>
+                    <TableCell>{item.docQty || 0}</TableCell>
+                    <TableCell>{item.docAmt || 0}</TableCell>
+                  </>
+                ) : (
+                  <>
+                    <TableCell
+                      onClick={() => handleDetails(item)}
+                      className="cursor-pointer text-gray-600 hover:text-black underline"
+                    >
+                      {item.docNo}
+                    </TableCell>
+                    <TableCell>{dateConvert(item.docDate)}</TableCell>
+                    <TableCell>{item.docRef1 || "-"}</TableCell>
+                    <TableCell>
+                      {type === "grn"
+                        ? supplierDetails[item.supplyNo] || item.supplyNo || "-"
+                        : item.docRef2 || "-"}
+                    </TableCell>
+                    <TableCell>{item.docQty}</TableCell>
+                    <TableCell>{item.docAmt}</TableCell>
+                    <TableCell
+                      className={
+                        item.docStatus === 7
+                          ? "text-green-600 font-semibold"
+                          : "text-yellow-600 font-semibold"
+                      }
+                    >
+                      {item.docStatus === 7 ? "Posted" : "Open"}
+                    </TableCell>
+                    <TableCell className="text-left flex pr-4">
+                      <PrinterIcon
+                        onClick={() => printNote(item)}
+                        className="icon-print cursor-pointer"
+                        aria-label="Print"
+                      />
+                    </TableCell>
+                  </>
+                )}
               </TableRow>
             ))
           ) : (

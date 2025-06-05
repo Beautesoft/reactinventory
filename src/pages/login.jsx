@@ -93,6 +93,9 @@ const Login = () => {
         const successData = {
           // emp_code: data.emp_code ?? "",
           username: username,
+          usercode:response.userCode,
+          isSettingEnabled:response.isSettingEnabled,
+          isSettingViewCost:response.isSettingViewCost,
           // token: data.token,
           siteCode: selectedSalon.itemsiteCode,
           siteName: selectedSalon.itemsiteDesc,
@@ -102,6 +105,7 @@ const Login = () => {
           siteState: selectedSalon.itemsiteState,
           sitePostCode: selectedSalon.itemsitePostcode,
           sitePhone: selectedSalon.itemsitePhone1,
+
 
           // role: data.role,
         };
