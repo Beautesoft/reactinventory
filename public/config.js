@@ -28,7 +28,7 @@ window.APP_CONFIG = {
 
   // Feature flags and settings
   AUTO_POST: "No",
-  BATCH_SNO: "No",
+  BATCH_SNO: "Yes",
   EXPIRY_DATE: "No",
   NOTIFICATION_MAIL_SEND:'NO',
   DEFAULT_EXPIRY_DAYS: 365,

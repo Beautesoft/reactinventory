@@ -1124,16 +1124,14 @@ function AddGti({ docData }) {
       let hdr = stockHdrs;
       let details = cartData;
 
-      // Only get new docNo for new creations
-      if (type === "save" && !urlDocNo) {
+      // Get new docNo for both new creations and direct posts
+      if ((type === "save" || type === "post") && !urlDocNo) {
         const result = await getDocNo();
-        console.log(result,'dd1')
-
         if (!result) return;
         docNo = result.docNo;
         controlData = result.controlData;
 
-        // Update states with new docNo only for new creations
+        // Update states with new docNo
         hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
         details = cartData.map((item, index) => ({
           ...item,
@@ -1170,7 +1168,7 @@ function AddGti({ docData }) {
         docDate: hdr.docDate,
         recExpect: hdr.deliveryDate,
         postDate: type === "post" ? new Date().toISOString() : "",
-        docStatus: hdr.docStatus,
+        docStatus: hdr.docStatus, // Keep original status until final update
         docTerm: hdr.docTerm,
         docQty: calculateTotals(details).totalQty,
         docAmt: calculateTotals(details).totalAmt,
@@ -1187,30 +1185,32 @@ function AddGti({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
         createUser: hdr.createUser,
-        createDate:
-          type === "save" && !urlDocNo
-            ? new Date().toISOString()
-            : hdr.createDate,
+        createDate: type === "post" && urlDocNo ? hdr.createDate : new Date().toISOString(),
       };
 
-      // 3) Header create/update
-      if (type === "save" && !urlDocNo && hdr.docStatus === 0) {
+      // Handle header operations based on type and urlDocNo
+      if (type === "save" && !urlDocNo) {
         await postStockHdr(data, "create");
         addNewControlNumber(controlData);
       } else if (type === "save" && urlDocNo) {
         console.log(data,'daaatt')
         await postStockHdr(data, "update");
-      } else if (type === "post" && urlDocNo) {
-        await postStockHdr(data, "updateStatus");
+      } else if (type === "post") {
+        // For direct post without saving, create header first if needed
+        if (!urlDocNo) {
+          await postStockHdr(data, "create");
+          addNewControlNumber(controlData);
+        } else {
+          await postStockHdr(data, "updateStatus");
+        }
       }
 
-      // 4) Details create/update/delete
-      console.log(details, "de");
-
+      // Handle details operations
       await postStockDetails(details);
 
-      // 5) Initial Inventory Log ("Post Started on ...")
+      // Rest of the posting logic remains the same
       if (type === "post") {
+        // 5) Initial Inventory Log ("Post Started on ...")
         const inventoryLog = {
           trnDocNo: docNo,
           loginUser: userDetails.username,
@@ -1219,10 +1219,8 @@ function AddGti({ docData }) {
           createdDate: new Date().toISOString().split("T")[0],
         };
         // await apiService.post("Inventorylogs", inventoryLog);
-      }
 
-      if (type === "post") {
-        let batchId;
+        let batchId
         const stktrns = details.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );

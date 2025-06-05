@@ -180,7 +180,7 @@ function AddGrn({ docData }) {
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
   ];
-
+  console.log(window?.APP_CONFIG?.BATCH_SNO,'bnoooo')
   const [activeTab, setActiveTab] = useState("detail");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
@@ -1102,7 +1102,7 @@ function AddGrn({ docData }) {
       itemprice: 0,
       docBatchNo:null
     };
-    console.log(item.itemUom,cartData[0].docUom)
+    // console.log(item.itemUom,cartData[0].docUom)
 
     const existingItemIndex = cartData.findIndex(
       (cartItem) =>
@@ -1179,20 +1179,19 @@ function AddGrn({ docData }) {
       let hdr = stockHdrs;
       let details = cartData;
 
-      // Only get new docNo for new creations
-      if (type === "save" && !urlDocNo) {
+      // Get new docNo for both new creations and direct posts
+      if ((type === "save" || type === "post") && !urlDocNo) {
         const result = await getDocNo();
         if (!result) return;
         docNo = result.docNo;
         controlData = result.controlData;
 
-        // Update states with new docNo only for new creations
+        // Update states with new docNo
         hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
         details = cartData.map((item, index) => ({
           ...item,
           docNo,
-          // docId: urlDocNo ? item.docId : index + 1, // Use sequential index + 1 for new items
-          id: urlDocNo ? item.id : index + 1, // Also update the id field to match
+          id: index + 1, // Use sequential index + 1 for new items
         }));
         setStockHdrs(hdr);
         setCartData(details);
@@ -1221,7 +1220,7 @@ function AddGrn({ docData }) {
         docDate: hdr.docDate,
         recExpect: hdr.deliveryDate,
         postDate: type === "post" ? new Date().toISOString() : "",
-        docStatus: hdr.docStatus,
+        docStatus: hdr.docStatus, // Keep original status until final update
         docTerm: hdr.docTerm,
         docQty: calculateTotals(details).totalQty,
         docAmt: calculateTotals(details).totalAmt,
@@ -1238,28 +1237,31 @@ function AddGrn({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
         createUser: hdr.createUser,
-        createDate:
-          type === "save" && !urlDocNo
-            ? new Date().toISOString()
-            : hdr.createDate,
+        createDate: type === "post" && urlDocNo ? hdr.createDate : new Date().toISOString(),
       };
 
-      // 3) Header create/update
-      if (type === "save" && !urlDocNo && hdr.docStatus === 0) {
+      // Handle header operations based on type and urlDocNo
+      if (type === "save" && !urlDocNo) {
         await postStockHdr(data, "create");
         addNewControlNumber(controlData);
       } else if (type === "save" && urlDocNo) {
         await postStockHdr(data, "update");
-      } else if (type === "post" && urlDocNo) {
-        await postStockHdr(data, "updateStatus");
+      } else if (type === "post") {
+        // For direct post without saving, create header first if needed
+        if (!urlDocNo) {
+          await postStockHdr(data, "create");
+          addNewControlNumber(controlData);
+        } else {
+          await postStockHdr(data, "updateStatus");
+        }
       }
 
-      // 4) Details create/update/delete
-      console.log(details, "de");
+      // Handle details operations
       await postStockDetails(details);
 
-      // 5) Initial Inventory Log ("Post Started on ...")
+      // Rest of the posting logic remains the same
       if (type === "post") {
+        // 5) Initial Inventory Log ("Post Started on ...")
         const inventoryLog = {
           trnDocNo: docNo,
           loginUser: userDetails.username,
@@ -1268,9 +1270,6 @@ function AddGrn({ docData }) {
           createdDate: new Date().toISOString().split("T")[0],
         };
         // await apiService.post("Inventorylogs", inventoryLog);
-      }
-
-      if (type === "post") {
 
         let batchId
         const stktrns = details.map((item) =>
@@ -1365,14 +1364,48 @@ function AddGrn({ docData }) {
               qty: Number(d.trnQty),
               batchCost: Number(d.trnCost),
               batchNo:d.itemBatch,
-              expDate:d.docExpdate
-
+              expDate: d?.docExpdate? d?.docExpdate:null
             };
             const batchFilter = {
               itemCode: trimmedItemCode,
               siteCode: userDetails.siteCode,
               uom: d.itemUom
             };
+            if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+
+              const params = new URLSearchParams({
+                docNo: d.trnDocno,
+                itemCode: d.itemcode,
+                uom: d.itemUom,
+                itemsiteCode: d.storeNo,
+                Qty: d.trnQty,
+                ExpDate: d?.docExpdate? d?.docExpdate:null,
+                // batchNo:d.itemBatch,
+                batchSNo:d.itemBatch,
+                // itemsiteCode: userDetails.siteCode,
+                batchCost: Number(d.trnCost),
+
+                // Make sure it's in correct format (e.g., "yyyy-MM-dd")
+              });
+
+              try {
+                await apiService1.get(`api/postItemBatchSno?${params.toString()}`);
+              } catch (err) {
+                const errorLog = {
+                  trnDocNo: d.trnDocno,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: userDetails.siteCode,
+                  logMsg: `api/postItemBatchSno error: ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // Optionally log the error
+                // await apiService.post("Inventorylogs", errorLog);
+              }
+
+            }
+
+
             
             await apiService
             // .post("ItemBatches/updateqty", batchUpdate)
@@ -1410,10 +1443,10 @@ function AddGrn({ docData }) {
 
       toast.success(
         type === "post"
-          ? "Note Posted successfully"
+          ? "Posted successfully"
           : urlDocNo
-          ? "Note Updated successfully"
-          : "Note Created successfully"
+          ? "Updated successfully"
+          : "Created successfully"
       );
       navigate("/goods-receive-note?tab=all");
     } catch (err) {

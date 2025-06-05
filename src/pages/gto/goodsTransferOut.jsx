@@ -49,7 +49,7 @@ function GoodsTransferOut() {
     like: null,
     skip: 0,
     limit: 10,
-    order: "docDate DESC",
+    order: "docNo DESC",
   });
   const [ownPagination, setOwnPagination] = useState({
     page: 1,
