@@ -43,7 +43,7 @@ function GoodsTransferOut() {
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "GTO",
+      movCode: "TFRT",
       storeNo: userDetails?.siteCode,
     },
     like: null,

@@ -195,7 +195,7 @@ function AddGti({ docData }) {
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [filter, setFilter] = useState({
-    movCode: "GTI",
+    movCode: "TFRF",
     splyCode: "",
     docNo: "",
   });
@@ -230,8 +230,8 @@ function AddGti({ docData }) {
     tstoreNo: userDetails?.siteCode,
     docRemk1: "",
     createUser: userDetails?.username,
-    movCode: "GTI",
-    movType: "GTI",
+    movCode: "TFRF",
+    movType: "TFR",
   });
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
@@ -390,7 +390,7 @@ function AddGti({ docData }) {
         if (urlDocNo) {
           const filter = {
             where: {
-              movCode: "GTI",
+              // movCode: "TFRF",
               docNo: urlDocNo,
             },
           };
@@ -459,7 +459,7 @@ function AddGti({ docData }) {
       console.log(response, "data for stock header");
       setStockHdrs((prev) => ({
         ...prev,
-        docNo: data.docNo,
+        docNo: data?.docNo,
         docDate: moment(data.docDate).format("YYYY-MM-DD"),
         docStatus: data.docStatus,
         // supplyNo: data.supplyNo,
@@ -885,8 +885,8 @@ function AddGti({ docData }) {
       id: index + 1,
       docAmt: amount,
       docNo: stockHdrs.docNo,
-      movCode: "GTI",
-      movType: "GTI",
+      movCode: "TFRF",
+      movType: "TFR",
       docLineno: null,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
@@ -927,44 +927,50 @@ function AddGti({ docData }) {
     addItemToCart(newCartItem, index);
   };
 
-  const createTransactionObject = (item, docNo, storeNo) => {
-    const today = new Date();
-    const timeStr = ('0' + today.getHours()).substr(-2) + 
-                   ('0' + today.getMinutes()).substr(-2) + 
-                   ('0' + today.getSeconds()).substr(-2);
-
-    return {
-      id: null,
-      trnPost: today.toISOString().split('T')[0],
-      trnDate: stockHdrs.docDate,
-      trnNo: null,
-      postTime: timeStr,
-      aperiod: null,
-      itemcode: item.itemcode + "0000",
-      storeNo: storeNo,
-      tstoreNo: storeNo,
-      fstoreNo: stockHdrs.fstoreNo,
-      trnDocno: docNo,
-      trnType: "TFR",
-      trnDbQty: null,
-      trnCrQty: null,
-      trnQty: item.docQty,
-      trnBalqty: item.docQty,
-      trnBalcst: item.docAmt,
-      trnAmt: item.docAmt,
-      trnCost: item.docAmt,
-      trnRef: null,
-      hqUpdate: false,
-      lineNo: item.docLineno,
-      itemUom: item.docUom,
-      itemBatch: item.docBatchNo || "",
-      movType: "TFR",
-      itemBatchCost: item.docPrice,
-      stockIn: null,
-      transPackageLineNo: null,
-      docExpdate: item.docExpdate || null
+  // const createTransactionObject = (item, docNo, storeNo) => {
+    const createTransactionObject = (item, docNo, storeNo, fstoreNo, tstoreNo, multiplier = 1) => {
+      const today = new Date();
+      const timeStr = ('0' + today.getHours()).slice(-2) +
+                      ('0' + today.getMinutes()).slice(-2) +
+                      ('0' + today.getSeconds()).slice(-2);
+    
+      const qty = Number(item.docQty) * multiplier;
+      const amt = Number(item.docAmt) * multiplier;
+      const cost = Number(item.docAmt) * multiplier;
+    
+      return {
+        id: null,
+        trnPost: today.toISOString().split('T')[0],
+        trnDate: item.docExpdate || null,
+        trnNo: null,
+        postTime: timeStr,
+        aperiod: null,
+        itemcode: item.itemcode + "0000",
+        storeNo: storeNo,
+        tstoreNo: tstoreNo,
+        fstoreNo: fstoreNo,
+        trnDocno: docNo,
+        trnType: "TFR",
+        trnDbQty: null,
+        trnCrQty: null,
+        trnQty: qty,
+        trnBalqty: qty,
+        trnBalcst: amt,
+        trnAmt: amt,
+        trnCost: cost,
+        trnRef: null,
+        hqUpdate: false,
+        lineNo: item.docLineno,
+        itemUom: item.docUom,
+        itemBatch: item.docBatchNo || "",
+        movType: "TFR",
+        itemBatchCost: item.docPrice,
+        stockIn: null,
+        transPackageLineNo: null,
+        docExpdate: item.docExpdate || null,
+      };
     };
-  };
+    
 
   const generateEmailBody = (header, details) => {
     let body = "<html><body>";
@@ -1014,98 +1020,98 @@ function AddGti({ docData }) {
     return body;
   };
 
-  const processTransactions = async (transactions) => {
-    try {
-      // Log start of transaction
-      await apiService.post("Inventorylogs", {
-        trnDocNo: transactions[0].trnDocno,
-        loginUser: userDetails.username,
-        siteCode: transactions[0].storeNo,
-        logMsg: "Post Started on " + new Date().toISOString(),
-        createdDate: new Date().toISOString().split('T')[0]
-      });
+  // const processTransactions = async (transactions) => {
+  //   try {
+  //     // Log start of transaction
+  //     await apiService.post("Inventorylogs", {
+  //       trnDocNo: transactions[0].trnDocno,
+  //       loginUser: userDetails.username,
+  //       siteCode: transactions[0].storeNo,
+  //       logMsg: "Post Started on " + new Date().toISOString(),
+  //       createdDate: new Date().toISOString().split('T')[0]
+  //     });
 
-      // Process each transaction
-      for (const transaction of transactions) {
-        // Get current item quantities
-        const response = await apiService.get(
-          `Itemonqties?filter={"where":{"and":[{"itemcode":"${transaction.itemcode}"},{"uom":"${transaction.itemUom}"},{"sitecode":"${transaction.storeNo}"}]}}`
-        );
+  //     // Process each transaction
+  //     for (const transaction of transactions) {
+  //       // Get current item quantities
+  //       const response = await apiService.get(
+  //         `Itemonqties?filter={"where":{"and":[{"itemcode":"${transaction.itemcode}"},{"uom":"${transaction.itemUom}"},{"sitecode":"${transaction.storeNo}"}]}}`
+  //       );
         
-        if (response && response.length > 0) {
-          const currentQty = response[0];
-          transaction.trnBalqty = (Number(transaction.trnBalqty) + Number(currentQty.trnBalqty)).toString();
-          transaction.trnBalcst = (Number(transaction.trnBalcst) + Number(currentQty.trnBalcst)).toString();
-          transaction.itemBatchCost = currentQty.batchCost.toString();
-        }
+  //       if (response && response.length > 0) {
+  //         const currentQty = response[0];
+  //         transaction.trnBalqty = (Number(transaction.trnBalqty) + Number(currentQty.trnBalqty)).toString();
+  //         transaction.trnBalcst = (Number(transaction.trnBalcst) + Number(currentQty.trnBalcst)).toString();
+  //         transaction.itemBatchCost = currentQty.batchCost.toString();
+  //       }
 
-        // Check if transaction already exists
-        const existingTrn = await apiService.get(
-          `Stktrns?filter={"where":{"and":[{"trnDocno":"${transaction.trnDocno}"},{"storeNo":"${transaction.storeNo}"}]}}`
-        );
+  //       // Check if transaction already exists
+  //       const existingTrn = await apiService.get(
+  //         `Stktrns?filter={"where":{"and":[{"trnDocno":"${transaction.trnDocno}"},{"storeNo":"${transaction.storeNo}"}]}}`
+  //       );
 
-        if (!existingTrn || existingTrn.length === 0) {
-          // Create new transaction
-          await apiService1.post("Stktrns", transaction);
+  //       if (!existingTrn || existingTrn.length === 0) {
+  //         // Create new transaction
+  //         await apiService1.post("Stktrns", transaction);
 
-          // Log transaction creation
-          await apiService.post("Inventorylogs", {
-            trnDocNo: transaction.trnDocno,
-            itemCode: transaction.itemcode,
-            loginUser: userDetails.username,
-            siteCode: transaction.storeNo,
-            logMsg: `${transaction.itemcode} GTI on stktrn Table For ${transaction.storeNo}`,
-            createdDate: new Date().toISOString().split('T')[0]
-          });
+  //         // Log transaction creation
+  //         await apiService.post("Inventorylogs", {
+  //           trnDocNo: transaction.trnDocno,
+  //           itemCode: transaction.itemcode,
+  //           loginUser: userDetails.username,
+  //           siteCode: transaction.storeNo,
+  //           logMsg: `${transaction.itemcode} TFRF on stktrn Table For ${transaction.storeNo}`,
+  //           createdDate: new Date().toISOString().split('T')[0]
+  //         });
 
-          // Update item batch quantities
-          await apiService.post("ItemBatches/updateqty", {
-            itemcode: transaction.itemcode,
-            sitecode: transaction.storeNo,
-            uom: transaction.itemUom,
-            qty: Number(transaction.trnQty),
-            batchcost: Number(transaction.trnCost)
-          });
+  //         // Update item batch quantities
+  //         await apiService.post("ItemBatches/updateqty", {
+  //           itemcode: transaction.itemcode,
+  //           sitecode: transaction.storeNo,
+  //           uom: transaction.itemUom,
+  //           qty: Number(transaction.trnQty),
+  //           batchcost: Number(transaction.trnCost)
+  //         });
 
-          // Handle batch SNO if enabled
-          if (window.APP_CONFIG.BATCH_SNO === "Yes") {
-            await apiService1.get(
-              `api/postGRNInToItemBatchSno?formName=GTI&docNo=${transaction.trnDocno}&fromsiteCode=${transaction.fstoreNo}&tositeCode=${userDetails.siteCode}&userCode=${userDetails.username}`
-            );
-          }
-        }
-      }
+  //         // Handle batch SNO if enabled
+  //         if (window.APP_CONFIG.BATCH_SNO === "Yes") {
+  //           await apiService1.get(
+  //             `api/postGRNInToItemBatchSno?formName=GRNIn&docNo=${transaction.trnDocno}&fromsiteCode=${transaction.fstoreNo}&tositeCode=${userDetails.siteCode}&userCode=${userDetails.username}`
+  //           );
+  //         }
+  //       }
+  //     }
 
-      // Send email notification if enabled
-      if (window.APP_CONFIG.NOTIFICATION_MAIL_SEND === "Yes") {
-        const printList = await apiService1.get(
-          `Stkprintlists?filter={"where":{"docNo":"${transactions[0].trnDocno}"}}`
-        );
+  //     // Send email notification if enabled
+  //     if (window.APP_CONFIG.NOTIFICATION_MAIL_SEND === "Yes") {
+  //       const printList = await apiService1.get(
+  //         `Stkprintlists?filter={"where":{"docNo":"${transactions[0].trnDocno}"}}`
+  //       );
 
-        if (printList && printList.length > 0) {
-          const emailBody = generateEmailBody(printList[0], printList);
-          await apiService1.post("api/sendEmail", {
-            to: window.config.NOTIFICATION_MAIL1,
-            cc: window.config.NOTIFICATION_MAIL2,
-            subject: "NOTIFICATION FOR STOCK TRANSFER",
-            body: emailBody
-          });
-        }
-      }
+  //       if (printList && printList.length > 0) {
+  //         const emailBody = generateEmailBody(printList[0], printList);
+  //         await apiService1.post("api/sendEmail", {
+  //           to: window.config.NOTIFICATION_MAIL1,
+  //           cc: window.config.NOTIFICATION_MAIL2,
+  //           subject: "NOTIFICATION FOR STOCK TRANSFER",
+  //           body: emailBody
+  //         });
+  //       }
+  //     }
 
-      return true;
-    } catch (error) {
-      console.error("Error processing transactions:", error);
-      await apiService.post("Inventorylogs", {
-        trnDocNo: transactions[0].trnDocno,
-        loginUser: userDetails.username,
-        siteCode: transactions[0].storeNo,
-        logMsg: "Error processing transactions: " + error.message,
-        createdDate: new Date().toISOString().split('T')[0]
-      });
-      throw error;
-    }
-  };
+  //     return true;
+  //   } catch (error) {
+  //     console.error("Error processing transactions:", error);
+  //     await apiService.post("Inventorylogs", {
+  //       trnDocNo: transactions[0].trnDocno,
+  //       loginUser: userDetails.username,
+  //       siteCode: transactions[0].storeNo,
+  //       logMsg: "Error processing transactions: " + error.message,
+  //       createdDate: new Date().toISOString().split('T')[0]
+  //     });
+  //     throw error;
+  //   }
+  // };
 
   const onSubmit = async (e, type) => {
     e?.preventDefault();
@@ -1156,8 +1162,8 @@ function AddGti({ docData }) {
       // Create data object using hdr instead of stockHdrs
       let data = {
         docNo: hdr.docNo,
-        movCode: "GTI",
-        movType: "GTI",
+        movCode: "TFRF",
+        movType: "TFR",
         storeNo: hdr.storeNo,
         fstoreNo: hdr.fstoreNo,
         tstoreNo: hdr.tstoreNo,
@@ -1222,10 +1228,40 @@ function AddGti({ docData }) {
 
         let batchId
         const stktrns = details.map((item) =>
-          createTransactionObject(item, docNo, userDetails.siteCode)
+          createTransactionObject(
+            item,
+            docNo,
+            stockHdrs.tstoreNo,  // storeNo (destination)
+            stockHdrs.fstoreNo,   // fstoreNo (source)
+            stockHdrs.tstoreNo,  // tstoreNo (again destination)
+            1                     // positive qty
+          )
         );
+        
+        const stktrns1 = details.map((item) =>
+          createTransactionObject(
+            item,
+            docNo,
+            stockHdrs.fstoreNo,   // storeNo (source)
+            stockHdrs.fstoreNo,   // fstoreNo (source)
+            stockHdrs.tstoreNo,  // tstoreNo (destination)
+            -1                    // negative qty
+          )
+        );
+console.log(stktrns,'stktrns')
+console.log(stktrns1,'stktrns1')
 
-        // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
+
+                // 2. Batch SNO handling
+                if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+                  await apiService1.get(
+                    `api/SaveOutItemBatchSno?formName=GRNIn&docNo=${docNo}&siteCode=${stktrns[0].fstoreNo}&userCode=${userDetails.username}`
+                  );
+                }
+
+        if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+
+                  // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         for (let i = 0; i < stktrns.length; i++) {
           const d = stktrns[i];
           const filter = {
@@ -1233,7 +1269,7 @@ function AddGti({ docData }) {
               and: [
                 { itemcode: d.itemcode }, // Add 0000 suffix for inventory
                 { uom: d.itemUom },
-                { sitecode: userDetails.siteCode },
+                { sitecode: d.storeNo },
               ],
             },
           };
@@ -1257,11 +1293,12 @@ function AddGti({ docData }) {
             // await apiService.post("Inventorylogs", errorLog);
           }
         }
+        }
 
         // 7) Check existing stktrns
         const chkFilter = {
           where: {
-            and: [{ trnDocno: docNo }, { storeNo: userDetails.siteCode }],
+            and: [{ trnDocno: docNo }, { storeNo: stktrns[0].storeNo }],
           },
         };
         const stkResp = await apiService.get(
@@ -1290,23 +1327,34 @@ function AddGti({ docData }) {
           for (const d of stktrns) {
             const trimmedItemCode = d.itemcode.replace(/0000$/, '');
 
+            // const batchUpdate = {
+            //   itemCode: trimmedItemCode,
+            //   siteCode:  d.storeNo,
+            //   uom: d.itemUom,
+            //   qty: Number(d.trnQty),
+            //   batchCost: Number(d.trnCost),
+            //   batchNo: d.itemBatch,
+            //   expDate: d.docExpdate
+            // };
             const batchUpdate = {
-              itemCode: trimmedItemCode,
-              siteCode: userDetails.siteCode,
+              itemcode: trimmedItemCode,
+              sitecode:  d.storeNo,
               uom: d.itemUom,
               qty: Number(d.trnQty),
-              batchCost: Number(d.trnCost),
+              batchcost: Number(d.trnCost),
               batchNo: d.itemBatch,
               expDate: d.docExpdate
             };
             const batchFilter = {
               itemCode: trimmedItemCode,
-              siteCode: userDetails.siteCode,
+              siteCode: d.storeNo,
               uom: d.itemUom
             };
             
             await apiService
-              .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .post(`ItemBatches/updateqty`, batchUpdate)
+
               .catch(async (err) => {
                 // Log qty update error
                 const errorLog = {
@@ -1332,53 +1380,167 @@ function AddGti({ docData }) {
           // await apiService.post("Inventorylogs", existsLog);
         }
 
+
+        for (let i = 0; i < stktrns1.length; i++) {
+          const d = stktrns1[i];
+          const filter = {
+            where: {
+              and: [
+                { itemcode: d.itemcode }, // Add 0000 suffix for inventory
+                { uom: d.itemUom },
+                { sitecode: d.storeNo },
+              ],
+            },
+          };
+          const resp = await apiService.get(
+            `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`
+          );
+          if (resp.length) {
+            const on = resp[0];
+            d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
+            d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
+            d.itemBatchCost = on.batchCost.toString();
+          } else {
+            // Log error if GET fails
+            const errorLog = {
+              trnDocNo: docNo,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `Itemonqties Api Error for ${d.itemcode}`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", errorLog);
+          }
+        }
+
+        // 7) Check existing stktrns
+        const chkFilter1 = {
+          where: {
+            and: [{ trnDocno: docNo }, { storeNo: stktrns1[0].storeNo }],
+          },
+        };
+        const stkResp1 = await apiService.get(
+          `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter1))}`
+        );
+
+        if (stkResp1.length === 0) {
+          // 8) Create and insert new Stktrns
+          await apiService.post("Stktrns", stktrns1);
+
+          // 9) Per-item log
+          for (const d of stktrns1) {
+            // Log stktrns insert
+            const insertLog = {
+              trnDocNo: docNo,
+              itemCode: d.itemcode,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `${d.itemcode} Inserted on stktrn Table`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", insertLog);
+          }
+
+          // 10) Update ItemBatches quantity
+          for (const d of stktrns1) {
+            const trimmedItemCode = d.itemcode.replace(/0000$/, '');
+
+            // const batchUpdate = {
+            //   itemCode: trimmedItemCode,
+            //   siteCode:d.storeNo,
+            //   uom: d.itemUom,
+            //   qty: Number(d.trnQty),
+            //   batchCost: Number(d.trnCost),
+            //   batchNo: d.itemBatch,
+            //   expDate: d.docExpdate
+            // };
+            const batchUpdate = {
+              itemcode: trimmedItemCode,
+              sitecode:  d.storeNo,
+              uom: d.itemUom,
+              qty: Number(d.trnQty),
+              batchcost: Number(d.trnCost),
+              batchNo: d.itemBatch,
+              expDate: d.docExpdate
+            };
+            const batchFilter = {
+              itemCode: trimmedItemCode,
+              siteCode:d.storeNo,
+              uom: d.itemUom
+            };
+            
+            await apiService
+              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .post(`ItemBatches/updateqty`, batchUpdate)
+
+              .catch(async (err) => {
+                // Log qty update error
+                const errorLog = {
+                  trnDocNo: docNo,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: d.storeNo,
+                  logMsg: `ItemBatches/updateqty ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // await apiService.post("Inventorylogs", errorLog);
+              });
+          }
+        } else {
+          // Existing stktrns → log
+          const existsLog = {
+            trnDocNo: docNo,
+            loginUser: userDetails.username,
+            siteCode: d.storeNo,
+            logMsg: "stktrn already exists",
+            createdDate: new Date().toISOString().split("T")[0],
+          };
+          // await apiService.post("Inventorylogs", existsLog);
+        }
         // 11) Final header status update to 7 - Only after all operations are complete
         await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
           docStatus: "7",
         });
 
         // 1. Auto-Post handling
-        if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
-          const stktrns1 = details.map((item) =>
-            createTransactionObject(item, docNo, formData.docToSite)
-          );
-          await processTransactions(stktrns1);
-        }
+        // if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+        //   const stktrns1 = details.map((item) =>
+        //     createTransactionObject(item, docNo, formData.docToSite)
+        //   );
+        //   await processTransactions(stktrns1);
+        // }
 
-        // 2. Batch SNO handling
-        if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
-          await apiService1.get(
-            `api/SaveOutItemBatchSno?formName=GTI&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
-          );
 
-          if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
-            for (const item of details) {
-              await apiService1.get(
-                `api/postToOutItemBatchSno?formName=GTI&docNo=${docNo}&itemCode=${item.itemcode}&Uom=${item.docUom}`
-              );
-            }
-          }
-        }
+
+
+          // if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+          //   for (const item of details) {
+          //     await apiService1.get(
+          //       `api/postToOutItemBatchSno?formName=GTI&docNo=${docNo}&itemCode=${item.itemcode}&Uom=${item.docUom}`
+          //     );
+          //   }
+          // }
 
         // 3. Email Notification
-        if (window.APP_CONFIG.NOTIFICATION_MAIL_SEND === "Yes") {
-          const printList = await apiService.get(
-            `Stkprintlists?filter={"where":{"docNo":"${docNo}"}}`
-          );
+        // if (window.APP_CONFIG.NOTIFICATION_MAIL_SEND === "Yes") {
+        //   const printList = await apiService.get(
+        //     `Stkprintlists?filter={"where":{"docNo":"${docNo}"}}`
+        //   );
           
-          if (printList && printList.length > 0) {
-            const emailData = {
-              to: window.APP_CONFIG.NOTIFICATION_MAIL1,
-              cc: window.APP_CONFIG.NOTIFICATION_MAIL2,
-              subject: "NOTIFICATION FOR STOCK TRANSFER",
-              body: generateEmailBody(printList[0], details)
-            };
+        //   if (printList && printList.length > 0) {
+        //     const emailData = {
+        //       to: window.APP_CONFIG.NOTIFICATION_MAIL1,
+        //       cc: window.APP_CONFIG.NOTIFICATION_MAIL2,
+        //       subject: "NOTIFICATION FOR STOCK TRANSFER",
+        //       body: generateEmailBody(printList[0], details)
+        //     };
             
-            await apiService.post("EmailService/send", emailData);
-          }
-        }
-      }
-
+        //     await apiService.post("EmailService/send", emailData);
+        //   }
+        // }
+      // }
+    }
+  
       toast.success(
         type === "post"
           ? "Posted successfully"
@@ -1386,8 +1548,10 @@ function AddGti({ docData }) {
           ? "Updated successfully"
           : "Created successfully"
       );
+    
       navigate("/goods-transfer-in?tab=all");
-    } catch (err) {
+    }
+     catch (err) {
       console.error("onSubmit error:", err);
       toast.error(
         type === "post"
@@ -1396,12 +1560,14 @@ function AddGti({ docData }) {
           ? "Failed to update"
           : "Failed to create"
       );
-    } finally {
+    } 
+    finally {
       // Reset loading states
       setSaveLoading(false);
       setPostLoading(false);
     }
   };
+
 
   const handlePageChange = (newPage) => {
     setPagination(prev => ({
@@ -1497,7 +1663,7 @@ function AddGti({ docData }) {
 
                     <Select
                       value={stockHdrs.fstoreNo || ""} // Add fallback empty string
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 || urlDocNo} // Disable if viewing or editing existing doc
                       onValueChange={(value) =>
                         setStockHdrs((prev) => ({ ...prev, fstoreNo: value }))
                       }
@@ -1519,7 +1685,6 @@ function AddGti({ docData }) {
                           ))}
                       </SelectContent>
                     </Select>
-                
                   </div>
                   <div className="space-y-2">
                     <Label>GR Ref 1</Label>
@@ -1555,7 +1720,7 @@ function AddGti({ docData }) {
                     </Label>
                     <Input
                       value={userDetails?.siteName}
-                      disabled
+                      disabled={true} // Always disabled for GTI
                       className="bg-gray-50"
                     />
                   </div>

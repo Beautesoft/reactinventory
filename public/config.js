@@ -27,11 +27,12 @@ window.APP_CONFIG = {
   // API_BASE_URL: "https://mydemov2.beautecloud.com/api",
 
   // Feature flags and settings
-  AUTO_POST: "No",
+  AUTO_POST: "Yes",
   BATCH_SNO: "Yes",
   EXPIRY_DATE: "No",
   NOTIFICATION_MAIL_SEND:'NO',
   DEFAULT_EXPIRY_DAYS: 365,
-
+  NOTIFICATION_MAIL1:'yoonustaji@gmail.com',
+  NOTIFICATION_MAIL2:'muthu98wic@gmail.com'
   // Add other configuration values here
 };

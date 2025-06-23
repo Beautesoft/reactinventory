@@ -195,7 +195,7 @@ function AddGto({ docData }) {
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [filter, setFilter] = useState({
-    movCode: "GTO",
+    movCode: "TFRT",
     splyCode: "",
     docNo: "",
   });
@@ -230,8 +230,8 @@ function AddGto({ docData }) {
     tstoreNo: "",
     docRemk1: "",
     createUser: userDetails?.username,
-    movCode: "GTO",
-    movType: "GTO",
+    movCode: "TFRT",
+    movType: "TFR",
   });
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
@@ -346,7 +346,7 @@ function AddGto({ docData }) {
         if (urlDocNo) {
           const filter = {
             where: {
-              movCode: "GTO",
+              movCode: "TFRT",
               docNo: urlDocNo,
             },
           };
@@ -998,14 +998,20 @@ function AddGto({ docData }) {
       return;
     }
 
+    // Check if quantity exceeds on-hand quantity
+    if (Number(item.Qty) > Number(item.quantity)) {
+      toast.error("Not enough stock available");
+      return;
+    }
+
     const amount = Number(item.Qty) * Number(item.Price);
 
     const newCartItem = {
       id: index + 1,
       docAmt: amount,
       docNo: stockHdrs.docNo,
-      movCode: "GTO",
-      movType: "GTO",
+      movCode: "TFRT",
+      movType: "TFR",
       docLineno: null,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
@@ -1044,32 +1050,36 @@ function AddGto({ docData }) {
     addItemToCart(newCartItem, index);
   };
 
-  const createTransactionObject = (item, docNo, storeNo) => {
+  const createTransactionObject = (item, docNo, storeNo, fstoreNo, tstoreNo, multiplier = 1) => {
     const today = new Date();
-    const timeStr = ('0' + today.getHours()).substr(-2) + 
-                   ('0' + today.getMinutes()).substr(-2) + 
-                   ('0' + today.getSeconds()).substr(-2);
-
+    const timeStr = ('0' + today.getHours()).slice(-2) +
+                    ('0' + today.getMinutes()).slice(-2) +
+                    ('0' + today.getSeconds()).slice(-2);
+  
+    const qty = Number(item.docQty) * multiplier;
+    const amt = Number(item.docAmt) * multiplier;
+    const cost = Number(item.docAmt) * multiplier;
+  
     return {
       id: null,
       trnPost: today.toISOString().split('T')[0],
-      trnDate: stockHdrs.docDate,
+      trnDate: item.docExpdate || null,
       trnNo: null,
       postTime: timeStr,
       aperiod: null,
       itemcode: item.itemcode + "0000",
       storeNo: storeNo,
-      tstoreNo: storeNo,
-      fstoreNo: stockHdrs.fstoreNo,
+      tstoreNo: tstoreNo,
+      fstoreNo: fstoreNo,
       trnDocno: docNo,
       trnType: "TFR",
       trnDbQty: null,
       trnCrQty: null,
-      trnQty: item.docQty,
-      trnBalqty: item.docQty,
-      trnBalcst: item.docAmt,
-      trnAmt: item.docAmt,
-      trnCost: item.docAmt,
+      trnQty: qty,
+      trnBalqty: qty,
+      trnBalcst: amt,
+      trnAmt: amt,
+      trnCost: cost,
       trnRef: null,
       hqUpdate: false,
       lineNo: item.docLineno,
@@ -1079,10 +1089,10 @@ function AddGto({ docData }) {
       itemBatchCost: item.docPrice,
       stockIn: null,
       transPackageLineNo: null,
-      docExpdate: item.docExpdate || null
+      docExpdate: item.docExpdate || null,
     };
   };
-
+  
   const onSubmit = async (e, type) => {
     e?.preventDefault();
 
@@ -1131,8 +1141,8 @@ function AddGto({ docData }) {
       // Create data object using hdr instead of stockHdrs
       let data = {
         docNo: hdr.docNo,
-        movCode: "GTO",
-        movType: "GTO",
+        movCode: "TFRT",
+        movType: "TFR",
         storeNo: hdr.storeNo,
         fstoreNo:hdr.fstoreNo,
         tstoreNo:hdr.tstoreNo,
@@ -1196,8 +1206,36 @@ function AddGto({ docData }) {
 
         let batchId
         const stktrns = details.map((item) =>
-          createTransactionObject(item, docNo, userDetails.siteCode)
+          createTransactionObject(
+            item,
+            docNo,
+            stockHdrs.fstoreNo,  // storeNo (destination)
+            stockHdrs.fstoreNo,   // fstoreNo (source)
+            stockHdrs.tstoreNo,  // tstoreNo (again destination)
+            -1                     // positive qty
+          )
         );
+
+        const stktrns1 = details.map((item) =>
+          createTransactionObject(
+            item,
+            docNo,
+            stockHdrs.tstoreNo,   // storeNo (source)
+            stockHdrs.fstoreNo,   // fstoreNo (source)
+            stockHdrs.tstoreNo,  // tstoreNo (destination)
+            1                    // negative qty
+          )
+        );
+console.log(stktrns,'stktrns')
+console.log(stktrns1,'stktrns1')
+
+                // 2. Batch SNO handling
+                if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+                  await apiService1.get(
+                    `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${stktrns[0].fstoreNo}&userCode=${userDetails.username}`
+                  );
+                }
+        
 
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         for (let i = 0; i < stktrns.length; i++) {
@@ -1207,7 +1245,7 @@ function AddGto({ docData }) {
               and: [
                 { itemcode: d.itemcode }, // Add 0000 suffix for inventory
                 { uom: d.itemUom },
-                { sitecode: userDetails.siteCode },
+                { sitecode: d.storeNo },
               ],
             },
           };
@@ -1235,7 +1273,7 @@ function AddGto({ docData }) {
         // 7) Check existing stktrns
         const chkFilter = {
           where: {
-            and: [{ trnDocno: docNo }, { storeNo: userDetails.siteCode }],
+            and: [{ trnDocno: docNo }, { storeNo: stktrns[0].storeNo }],
           },
         };
         const stkResp = await apiService.get(
@@ -1266,7 +1304,7 @@ function AddGto({ docData }) {
 
             const batchUpdate = {
               itemCode: trimmedItemCode,
-              siteCode: userDetails.siteCode,
+              sitecode:  d.storeNo,
               uom: d.itemUom,
               qty: Number(d.trnQty),
               batchCost: Number(d.trnCost),
@@ -1306,32 +1344,11 @@ function AddGto({ docData }) {
           // await apiService.post("Inventorylogs", existsLog);
         }
 
-        // 11) Final header status update to 7 - Only after all operations are complete
-        await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
-          docStatus: "7",
-        });
-
-        // 1. Auto-Post handling
-        if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
-          const stktrns1 = details.map((item) =>
-            createTransactionObject(item, docNo, formData.docToSite)
-          );
-          await processTransactions(stktrns1);
-        }
-
-        // 2. Batch SNO handling
+        
         if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
           await apiService1.get(
-            `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
+            `api/postOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
           );
-
-          if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
-            for (const item of details) {
-              await apiService1.get(
-                `api/postToOutItemBatchSno?formName=GRNOut&docNo=${docNo}&itemCode=${item.itemcode}&Uom=${item.docUom}`
-              );
-            }
-          }
         }
 
         // 3. Email Notification
@@ -1351,6 +1368,153 @@ function AddGto({ docData }) {
             await apiService.post("EmailService/send", emailData);
           }
         }
+
+               // 11) Final header status update to 7 - Only after all operations are complete
+               await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
+                docStatus: "7",
+              });
+
+        if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+
+
+        for (let i = 0; i < stktrns1.length; i++) {
+          const d = stktrns1[i];
+          const filter = {
+            where: {
+              and: [
+                { itemcode: d.itemcode }, // Add 0000 suffix for inventory
+                { uom: d.itemUom },
+                { sitecode: d.storeNo },
+              ],
+            },
+          };
+          const resp = await apiService.get(
+            `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`
+          );
+          if (resp.length) {
+            const on = resp[0];
+            d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
+            d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
+            d.itemBatchCost = on.batchCost.toString();
+          } else {
+            // Log error if GET fails
+            const errorLog = {
+              trnDocNo: docNo,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `Itemonqties Api Error for ${d.itemcode}`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", errorLog);
+          }
+        }
+
+        // 7) Check existing stktrns
+        const chkFilter1 = {
+          where: {
+            and: [{ trnDocno: docNo }, { storeNo: stktrns1[0].storeNo }],
+          },
+        };
+        const stkResp1 = await apiService.get(
+          `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter1))}`
+        );
+
+        if (stkResp1.length === 0) {
+          // 8) Create and insert new Stktrns
+          await apiService.post("Stktrns", stktrns1);
+
+          // 9) Per-item log
+          for (const d of stktrns1) {
+            // Log stktrns insert
+            const insertLog = {
+              trnDocNo: docNo,
+              itemCode: d.itemcode,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: `${d.itemcode} Inserted on stktrn Table`,
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", insertLog);
+          }
+
+          // 10) Update ItemBatches quantity
+          for (const d of stktrns1) {
+            const trimmedItemCode = d.itemcode.replace(/0000$/, '');
+
+            // const batchUpdate = {
+            //   itemCode: trimmedItemCode,
+            //   siteCode:d.storeNo,
+            //   uom: d.itemUom,
+            //   qty: Number(d.trnQty),
+            //   batchCost: Number(d.trnCost),
+            //   batchNo: d.itemBatch,
+            //   expDate: d.docExpdate
+            // };
+            const batchUpdate = {
+              itemcode: trimmedItemCode,
+              sitecode:  d.storeNo,
+              uom: d.itemUom,
+              qty: Number(d.trnQty),
+              batchcost: Number(d.trnCost),
+              batchNo: d.itemBatch,
+              expDate: d.docExpdate
+            };
+            const batchFilter = {
+              itemCode: trimmedItemCode,
+              siteCode:d.storeNo,
+              uom: d.itemUom
+            };
+            
+            await apiService
+              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .post(`ItemBatches/updateqty`, batchUpdate)
+
+              .catch(async (err) => {
+                // Log qty update error
+                const errorLog = {
+                  trnDocNo: docNo,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: d.storeNo,
+                  logMsg: `ItemBatches/updateqty ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // await apiService.post("Inventorylogs", errorLog);
+              });
+          }
+        } else {
+          // Existing stktrns → log
+          const existsLog = {
+            trnDocNo: docNo,
+            loginUser: userDetails.username,
+            siteCode: d.storeNo,
+            logMsg: "stktrn already exists",
+            createdDate: new Date().toISOString().split("T")[0],
+          };
+          // await apiService.post("Inventorylogs", existsLog);
+        }
+
+      } 
+
+ 
+
+        // // 1. Auto-Post handling
+        // if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+        //   const stktrns1 = details.map((item) =>
+        //     createTransactionObject(item, docNo, formData.docToSite)
+        //   );
+        //   await processTransactions(stktrns1);
+        // }
+
+        // 2. Batch SNO handling
+        // if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+        //   await apiService1.get(
+        //     `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
+        //   );
+
+     
+        // }
+
       }
 
       toast.success(
@@ -1511,7 +1675,7 @@ function AddGto({ docData }) {
                     </Label>
                     <Input
                       value={userDetails?.siteName}
-                      disabled
+                      disabled={true}
                       className="bg-gray-50"
                     />
                   </div>
@@ -1548,22 +1712,22 @@ function AddGto({ docData }) {
                       To Store<span className="text-red-500">*</span>
                     </Label>
                     <Select
-                      value={stockHdrs.tstoreNo || ""} // Add fallback empty string
-                      disabled={urlStatus == 7}
+                      value={stockHdrs.tstoreNo || ""}
+                      disabled={urlStatus == 7 || urlDocNo}
                       onValueChange={(value) =>
                         setStockHdrs((prev) => ({ ...prev, tstoreNo: value }))
                       }
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select destination store">
+                        <SelectValue placeholder="Select To store">
                           {storeOptions.find(
                             (store) => store.value === stockHdrs.tstoreNo
-                          )?.label || "Select destination store"}
+                          )?.label || "Select To store"}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {storeOptions
-                          .filter((store) => store.value !== stockHdrs.storeNo) // Filter out current store instead of selected store
+                          .filter((store) => store.value !== stockHdrs.storeNo)
                           .map((store) => (
                             <SelectItem key={store.value} value={store.value}>
                               {store.label}

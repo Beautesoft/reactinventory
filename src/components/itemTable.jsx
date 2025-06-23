@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "./ui/table";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, Loader2 } from "lucide-react";
 // import { TableSpinner } from "./ui/table-spinner";
 import Pagination from "./pagination";
 import TableSpinner from "./tabelSpinner";
@@ -17,8 +17,8 @@ function ItemTable({
   currentPage,
   itemsPerPage,
   totalPages,
-  onPageChange
-
+  onPageChange,
+  onHandQty
 }) {
   // const [currentPage, setCurrentPage] = useState(1);
   // const totalPages = Math.ceil(data.length / itemsPerPage);
@@ -49,7 +49,7 @@ function ItemTable({
               <TableHead>Qty</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Cost</TableHead>
-              <TableHead>Expiry date</TableHead>
+              {/* <TableHead>Expiry date</TableHead> */}
               <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
@@ -101,7 +101,7 @@ function ItemTable({
                     />
                   </TableCell>
                   <TableCell>{item.Cost || "0"}</TableCell>
-                  <TableCell>
+                  {/* <TableCell>
                     <Input
                       type="date"
                       className="w-35"
@@ -109,7 +109,7 @@ function ItemTable({
                       onChange={(e) => onExpiryDateChange(e, startIndex + index)}
                       min="0"
                     />
-                  </TableCell>
+                  </TableCell> */}
                   <TableCell>
                     <Button
                       variant="ghost"
