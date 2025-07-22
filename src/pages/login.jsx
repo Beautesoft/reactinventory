@@ -14,9 +14,12 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import blogo from "@/assets/beatesoftlogo1.png";
+import bslogo from "@/assets/companylogo.png";
+
 import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
 import axios from "axios";
+
 
 const Login = () => {
   let navigate = useNavigate();
@@ -27,7 +30,7 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [salonOptions, setSalonOptions] = useState([]);
   const [selectedSalon, setSelectedSalon] = useState({});
-  const [salon, setSalon] = useState(null);
+  const [salon, setSalon] = useState("");
   const [salonDetail, setSalonDetail] = useState(null);
 
   useEffect(() => {
@@ -148,7 +151,7 @@ const Login = () => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 h-screen w-full">
-      <div className="hidden lg:flex items-end justify-end bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="hidden lg:flex ml-[50px] items-center justify-content-center ">
         <img
           className="w-[520px] h-[520px] object-contain "
           src={blogo}
@@ -156,15 +159,16 @@ const Login = () => {
         />
       </div>
 
-      <div className="flex mt-10 justify-center p-8">
-        <div className="w-full max-w-md space-y-8">
+      <div className="flex min-h-screen items-center justify-center p-8 -mt-60">
+        <div className="w-full max-w-lg space-y-8">
           <div className="text-center">
-            <h2 className="text-3xl font-bold">
-              <span className="bg-gradient-to-r from-[#ff7e5f] to-[#feb47b] text-transparent bg-clip-text">
-                Beautesoft
-              </span>
-              <span className="text-[#4c8bf5] ml-2">Inventory</span>
-            </h2>
+            {/* <div className="text-3xl font-bold">
+              <img src={bslogo} alt="Logo" className="w-10 h-10" />
+              <p className="text-[#4c8bf5]">Inventory</p>
+            </div> */}
+            <div className="flex justify-center mt-5">
+              <img src={bslogo} alt="logo" className="w-72" />
+            </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -172,6 +176,7 @@ const Login = () => {
               <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
+                className="h-12"
                 placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -183,6 +188,7 @@ const Login = () => {
               <div className="relative">
                 <Input
                   id="password"
+                  className="h-12"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
@@ -212,12 +218,7 @@ const Login = () => {
                   placeholder="Select outlet"
                   value={salon}
                   onValueChange={(value) => {
-                    console.log(value);
                     setSalon(value);
-                    // Find and set the complete salon object
-                    // const selectedOption = salonOptions.find(
-                    //   (opt) => opt.value === value
-                    // );
                     const selectedOption = salonDetail.find(
                       (opt) => opt.itemsiteCode === value
                     );
@@ -226,7 +227,10 @@ const Login = () => {
                     }
                   }}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger
+                    style={{ height: "48px", minHeight: "48px" }}
+                    className="w-full"
+                  >
                     <SelectValue placeholder="Select an outlet">
                       {salonOptions.find((opt) => opt.value === salon)?.label}
                     </SelectValue>
@@ -242,7 +246,7 @@ const Login = () => {
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full h-12 text-lg" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
             </Button>
           </form>

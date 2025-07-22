@@ -43,7 +43,7 @@ function GoodsTransferIn() {
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "GTI",
+      movCode: "TFRF",
       storeNo: userDetails?.siteCode,
     },
     like: null,
@@ -122,6 +122,7 @@ function GoodsTransferIn() {
     pagination.skip,
     pagination.where.docStatus,
     debouncedSearchValue,
+    pagination.order
   ]);
 
   const handleSearch = (e) => {
@@ -205,6 +206,13 @@ function GoodsTransferIn() {
     if (!showOwnRecords) {
       fetchOwnRecords();
     }
+  };
+  const handleSort = (key, direction) => {
+    setPagination((prev) => ({
+      ...prev,
+      order: `${key} ${direction === 'ascending' ? 'ASC' : 'DESC'}, docNo DESC`,
+      skip: 0, // Reset to first page when sorting
+    }));
   };
 
   return (
@@ -301,13 +309,17 @@ function GoodsTransferIn() {
             ) : (
               <>
                 <TabsContent value="all">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gti" />
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} 
+                  onSort={handleSort}
+                  type="gti" />
                 </TabsContent>
                 <TabsContent value="open">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gti" />
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} onSort={handleSort}
+                   type="gti" />
                 </TabsContent>
                 <TabsContent value="posted">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gti" />
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} onSort={handleSort}
+                   type="gti" />
                 </TabsContent>
                 <Pagination
                   currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}

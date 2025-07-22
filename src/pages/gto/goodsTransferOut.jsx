@@ -122,6 +122,8 @@ function GoodsTransferOut() {
     pagination.skip,
     pagination.where.docStatus,
     debouncedSearchValue,
+    pagination.order
+
   ]);
 
   const handleSearch = (e) => {
@@ -204,6 +206,13 @@ function GoodsTransferOut() {
     setOwnPagination(prev => ({
       ...prev,
       page: newPage
+    }));
+  };
+  const handleSort = (key, direction) => {
+    setPagination((prev) => ({
+      ...prev,
+      order: `${key} ${direction === 'ascending' ? 'ASC' : 'DESC'}, docNo DESC`,
+      skip: 0, // Reset to first page when sorting
     }));
   };
 
@@ -301,13 +310,17 @@ function GoodsTransferOut() {
             ) : (
               <>
                 <TabsContent value="all">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading}
+                  onSort={handleSort}
+                  type="gto" />
                 </TabsContent>
                 <TabsContent value="open">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading}
+                  onSort={handleSort}
+                   type="gto" />
                 </TabsContent>
                 <TabsContent value="posted">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="gto" />
+                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} onSort={handleSort} type="gto" />
                 </TabsContent>
                 <Pagination
                   currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}

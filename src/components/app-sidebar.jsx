@@ -59,7 +59,7 @@ export function AppSidebar() {
       isActive: true,
     },
     {
-      title: "Stock Movement ",
+      title: "Stock Control ",
       url: "#",
       icon: Bot,
       items: [

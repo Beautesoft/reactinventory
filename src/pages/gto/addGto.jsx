@@ -82,44 +82,125 @@ const calculateTotals = (cartData) => {
 };
 
 const EditDialog = memo(
-  ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit }) => (
-    <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-      <DialogContent
-        className="sm:max-w-[425px]"
-        aria-describedby="edit-item-description"
-      >
-        <DialogHeader>
-          <DialogTitle>Edit Item Details</DialogTitle>
-          <div
-            id="edit-item-description"
-            className="text-sm text-muted-foreground"
-          >
-            Modify item details
-          </div>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="qty">Quantity</Label>
-            <Input
-              id="qty"
-              type="number"
-              min="0"
-              value={editData?.docQty || ""}
-              onChange={(e) => onEditCart(e, "docQty")}
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price</Label>
-            <Input
-              id="price"
-              type="number"
-              min="0"
-              value={editData?.docPrice || ""}
-              onChange={(e) => onEditCart(e, "docPrice")}
-              className="w-full"
-            />
-          </div>
+  ({
+     showEditDialog, 
+    setShowEditDialog, 
+    editData, 
+    onEditCart, 
+    onSubmit ,
+    isBatchEdit
+  }) => {
+        const [validationErrors, setValidationErrors] = useState([]);
+    
+
+            // Reset states when dialog closes
+            useEffect(() => {
+              if (!showEditDialog) {
+                // setSelectedBatch(null);
+                // setNewBatchNo("");
+                // setUseExistingBatch(true);
+                // setIsExpiryReadOnly(false);
+                // setBatchOptions([]);
+                setValidationErrors([]);
+              }
+            }, [showEditDialog]);
+
+             const handleSubmit = () => {
+      const errors = [];
+
+      // Only validate quantity and price if not batch editing
+      if (!isBatchEdit) {
+        if (!editData?.docQty || editData.docQty <= 0) {
+          errors.push("Quantity must be greater than 0");
+        }
+        if (!editData?.docPrice || editData.docPrice <= 0) {
+          errors.push("Price must be greater than 0");
+        }
+      }
+
+      // Validate batch number
+      // if (useExistingBatch && !selectedBatch?.value) {
+      //   errors.push("Please select an existing batch");
+      // } else if (!useExistingBatch && !newBatchNo.trim()) {
+      //   errors.push("Please enter a new batch number");
+      // }
+      // Validate expiry date
+      if (!editData?.docExpdate) {
+        errors.push("Expiry date is required");
+      }
+
+      // Validate expiry date
+      if (!editData?.docExpdate) {
+        errors.push("Expiry date is required");
+      }
+
+      if (errors.length > 0) {
+        setValidationErrors(errors);
+        return;
+      }
+
+      // const updatedEditData = {
+      //   ...editData,
+      //   docBatchNo:newBatchNo
+      // };
+
+      // onSubmit(updatedEditData);
+      onSubmit(editData);
+    };
+   return (
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent
+          className="sm:max-w-[425px]"
+          aria-describedby="edit-item-description"
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {isBatchEdit ? "Edit Selected Item Details" : "Edit Item Details"}
+            </DialogTitle>
+            <div
+              id="edit-item-description"
+              className="text-sm text-muted-foreground"
+            >
+              Modify item details
+            </div>
+          </DialogHeader>
+          {validationErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3">
+              <ul className="list-disc pl-5 text-sm text-red-600">
+                {validationErrors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {/* Show Quantity and Price only for individual edit (not batch edit) */}
+          {!isBatchEdit && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="qty">Quantity</Label>
+                <Input
+                  id="qty"
+                  type="number"
+                  min="0"
+                  value={editData?.docQty || ""}
+                  onChange={(e) => onEditCart(e, "docQty")}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="price">Price</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  value={editData?.docPrice || ""}
+                  isBatchEdit
+                  onChange={(e) => onEditCart(e, "docPrice")}
+                  className="w-full"
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
             <Label htmlFor="expiry">Expiry Date</Label>
             <Input
@@ -131,7 +212,7 @@ const EditDialog = memo(
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="Batch No">Batch No</Label>
+            <Label htmlFor="batchNo">Batch No</Label>
             <Input
               id="batchNo"
               value={editData?.docBatchNo || ""}
@@ -150,16 +231,17 @@ const EditDialog = memo(
               className="w-full"
             />
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-            Cancel
-          </Button>
-          <Button onClick={onSubmit}>Save Changes</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  
 );
 
 function AddGto({ docData }) {
@@ -892,13 +974,13 @@ function AddGto({ docData }) {
   const validateForm = (
     hdrs = stockHdrs,
     cart = cartData,
-    // supplier = supplierInfo
+    options = {}
   ) => {
     const errors = [];
     console.log('dd')
 
     // Document Header Validations
-    if (!hdrs.docNo) errors.push("Document number is required");
+    if (!options.skipDocNoCheck && !hdrs.docNo) errors.push("Document number is required");
     if (!hdrs.docDate) errors.push("Document date is required");
     if (!hdrs.storeNo) errors.push("Store number is required");
     if (!hdrs.tstoreNo) errors.push("To store is required");
@@ -964,6 +1046,8 @@ function AddGto({ docData }) {
   }, [editData, editingIndex]);
 
   const editPopup = (item, index) => {
+        setIsBatchEdit(false);
+
     setEditData({
       ...item,
       docQty: Number(item.docQty) || 0,
@@ -1095,6 +1179,7 @@ function AddGto({ docData }) {
   
   const onSubmit = async (e, type) => {
     e?.preventDefault();
+    if (!validateForm(stockHdrs, cartData,{skipDocNoCheck:true})) return;
 
     // Set loading state based on action type
     if (type === "save") {
@@ -1115,6 +1200,9 @@ function AddGto({ docData }) {
         if (!result) return;
         docNo = result.docNo;
         controlData = result.controlData;
+
+        // Increment control number immediately after getting docNo
+        await addNewControlNumber(controlData);
 
         // Update states with new docNo
         hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
@@ -1176,14 +1264,14 @@ function AddGto({ docData }) {
       // Handle header operations based on type and urlDocNo
       if (type === "save" && !urlDocNo) {
         await postStockHdr(data, "create");
-        addNewControlNumber(controlData);
+        // addNewControlNumber(controlData);
       } else if (type === "save" && urlDocNo) {
         await postStockHdr(data, "update");
       } else if (type === "post") {
         // For direct post without saving, create header first if needed
         if (!urlDocNo) {
           await postStockHdr(data, "create");
-          addNewControlNumber(controlData);
+          // addNewControlNumber(controlData);
         } else {
           await postStockHdr(data, "updateStatus");
         }
@@ -1302,35 +1390,62 @@ console.log(stktrns1,'stktrns1')
           for (const d of stktrns) {
             const trimmedItemCode = d.itemcode.replace(/0000$/, '');
 
-            const batchUpdate = {
-              itemCode: trimmedItemCode,
+            // const batchUpdate = {
+            //   itemCode: trimmedItemCode,
+            //   sitecode:  d.storeNo,
+            //   uom: d.itemUom,
+            //   qty: Number(d.trnQty),
+            //   batchCost: Number(d.trnCost),
+            //   batchNo: d.itemBatch,
+            //   expDate: d.docExpdate
+            // };
+                   const batchUpdate = {
+              itemcode: trimmedItemCode,
               sitecode:  d.storeNo,
               uom: d.itemUom,
               qty: Number(d.trnQty),
-              batchCost: Number(d.trnCost),
-              batchNo: d.itemBatch,
-              expDate: d.docExpdate
+              batchcost: Number(d.trnCost),
+              // batchNo: d.itemBatch,
+              // expDate: d.docExpdate
             };
             const batchFilter = {
               itemCode: trimmedItemCode,
               siteCode: userDetails.siteCode,
               uom: d.itemUom
             };
+
+              await apiService.post(
+          `ItemBatches/updateqty`,
+          batchUpdate
+        ).then((res)=>{
+        })
+                  .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
             
-            await apiService
-              .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+            // await apiService
+            //   .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+            //   .catch(async (err) => {
+            //     // Log qty update error
+            //     const errorLog = {
+            //       trnDocNo: docNo,
+            //       itemCode: d.itemcode,
+            //       loginUser: userDetails.username,
+            //       siteCode: userDetails.siteCode,
+            //       logMsg: `ItemBatches/updateqty ${err.message}`,
+            //       createdDate: new Date().toISOString().split("T")[0],
+            //     };
+            //     // await apiService.post("Inventorylogs", errorLog);
+            //   });
           }
         } else {
           // Existing stktrns → log
@@ -1456,31 +1571,49 @@ console.log(stktrns1,'stktrns1')
               uom: d.itemUom,
               qty: Number(d.trnQty),
               batchcost: Number(d.trnCost),
-              batchNo: d.itemBatch,
-              expDate: d.docExpdate
+              // batchNo: d.itemBatch,
+              // expDate: d.docExpdate
             };
             const batchFilter = {
               itemCode: trimmedItemCode,
               siteCode:d.storeNo,
               uom: d.itemUom
             };
-            
-            await apiService
-              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .post(`ItemBatches/updateqty`, batchUpdate)
 
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: d.storeNo,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+                          await apiService.post(
+          `ItemBatches/updateqty`,
+          batchUpdate
+        ).then((res)=>{
+        })
+                  .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
+            
+            // await apiService
+            //   // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+            //   .post(`ItemBatches/updateqty`, batchUpdate)
+
+            //   .catch(async (err) => {
+            //     // Log qty update error
+            //     const errorLog = {
+            //       trnDocNo: docNo,
+            //       itemCode: d.itemcode,
+            //       loginUser: userDetails.username,
+            //       siteCode: d.storeNo,
+            //       logMsg: `ItemBatches/updateqty ${err.message}`,
+            //       createdDate: new Date().toISOString().split("T")[0],
+            //     };
+            //     // await apiService.post("Inventorylogs", errorLog);
+            //   });
           }
         } else {
           // Existing stktrns → log
@@ -1544,6 +1677,30 @@ console.log(stktrns1,'stktrns1')
   const navigateTo = (path) => {
     navigate(path);
   };
+   // 1. Add state at the top of the component
+    const [selectedRows, setSelectedRows] = useState([]);
+    const [isBatchEdit, setIsBatchEdit] = useState(false);
+  
+    // 2. Add handleBatchEditClick and handleBatchEditSubmit
+    const handleBatchEditClick = () => {
+      setIsBatchEdit(true);
+      setEditData({ docBatchNo: "", docExpdate: "", itemRemark: "" });
+      setShowEditDialog(true);
+    };
+  
+    // Place this in the main AddGrn component, after other handler functions and before return
+    const handleBatchEditSubmit = (fields) => {
+      setCartData((prev) =>
+        prev.map((item, idx) =>
+          selectedRows.includes(idx) ? { ...item, ...fields } : item
+        )
+      );
+      setShowEditDialog(false);
+      setIsBatchEdit(false);
+      setSelectedRows([]);
+      toast.success("Batch update successful!");
+    };
+  
 
   const generateEmailBody = (header, details) => {
     let body = "<html><body>";
@@ -1909,6 +2066,18 @@ console.log(stktrns1,'stktrns1')
               )}
             </TabsContent>
           </Tabs>
+              {cartData.length > 0 && (
+                      <div className="flex justify-end my-5">
+                        {selectedRows.length > 0 && (
+                          <Button
+                            onClick={handleBatchEditClick}
+                            className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                          >
+                            Update Selected
+                          </Button>
+                        )}
+                      </div>
+                    )}
 
           {cartData.length > 0 && (
             <div className="rounded-md border border-slate-200 bg-slate-50/50 shadow-sm hover:shadow-md transition-shadow duration-200 mb-15">
@@ -1918,6 +2087,25 @@ console.log(stktrns1,'stktrns1')
               <Table>
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
+                      {urlStatus != 7 && (
+                                          <TableHead>
+                                            <input
+                                              type="checkbox"
+                                              className="w-5 h-5"
+                                              checked={
+                                                selectedRows.length === cartData.length &&
+                                                cartData.length > 0
+                                              }
+                                              onChange={(e) => {
+                                                if (e.target.checked) {
+                                                  setSelectedRows(cartData.map((_, idx) => idx));
+                                                } else {
+                                                  setSelectedRows([]);
+                                                }
+                                              }}
+                                            />
+                                          </TableHead>
+                                        )}
                     <TableHead className="font-semibold text-slate-700">
                       NO
                     </TableHead>
@@ -1956,6 +2144,24 @@ console.log(stktrns1,'stktrns1')
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
+                             {urlStatus != 7 && (
+                                                      <TableCell>
+                                                        <input
+                                                          type="checkbox"
+                                                          className="w-5 h-5"
+                                                          checked={selectedRows.includes(index)}
+                                                          onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                              setSelectedRows([...selectedRows, index]);
+                                                            } else {
+                                                              setSelectedRows(
+                                                                selectedRows.filter((i) => i !== index)
+                                                              );
+                                                            }
+                                                          }}
+                                                        />
+                                                      </TableCell>
+                                                    )}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
@@ -2025,7 +2231,9 @@ console.log(stktrns1,'stktrns1')
         setShowEditDialog={setShowEditDialog}
         editData={editData}
         onEditCart={handleEditCart}
-        onSubmit={handleEditSubmit}
+        onSubmit={isBatchEdit ? handleBatchEditSubmit : handleEditSubmit}
+        isBatchEdit={isBatchEdit}
+
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
