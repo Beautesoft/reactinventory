@@ -53,6 +53,8 @@ export class ApiService1 {
     this.instance.interceptors.response.use(
       (response) => response.data,
       (error) => {
+        console.log(error, "error");
+
         if (error.response?.status === 401) {
           this.setToken(null);
         }

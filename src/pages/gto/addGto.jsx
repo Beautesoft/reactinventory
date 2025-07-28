@@ -83,29 +83,28 @@ const calculateTotals = (cartData) => {
 
 const EditDialog = memo(
   ({
-     showEditDialog, 
-    setShowEditDialog, 
-    editData, 
-    onEditCart, 
-    onSubmit ,
-    isBatchEdit
+    showEditDialog,
+    setShowEditDialog,
+    editData,
+    onEditCart,
+    onSubmit,
+    isBatchEdit,
   }) => {
-        const [validationErrors, setValidationErrors] = useState([]);
-    
+    const [validationErrors, setValidationErrors] = useState([]);
 
-            // Reset states when dialog closes
-            useEffect(() => {
-              if (!showEditDialog) {
-                // setSelectedBatch(null);
-                // setNewBatchNo("");
-                // setUseExistingBatch(true);
-                // setIsExpiryReadOnly(false);
-                // setBatchOptions([]);
-                setValidationErrors([]);
-              }
-            }, [showEditDialog]);
+    // Reset states when dialog closes
+    useEffect(() => {
+      if (!showEditDialog) {
+        // setSelectedBatch(null);
+        // setNewBatchNo("");
+        // setUseExistingBatch(true);
+        // setIsExpiryReadOnly(false);
+        // setBatchOptions([]);
+        setValidationErrors([]);
+      }
+    }, [showEditDialog]);
 
-             const handleSubmit = () => {
+    const handleSubmit = () => {
       const errors = [];
 
       // Only validate quantity and price if not batch editing
@@ -147,7 +146,7 @@ const EditDialog = memo(
       // onSubmit(updatedEditData);
       onSubmit(editData);
     };
-   return (
+    return (
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent
           className="sm:max-w-[425px]"
@@ -241,7 +240,6 @@ const EditDialog = memo(
       </Dialog>
     );
   }
-  
 );
 
 function AddGto({ docData }) {
@@ -352,19 +350,19 @@ function AddGto({ docData }) {
 
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 6
+    limit: 6,
   });
 
   const [filters, setFilters] = useState({
     brand: [],
     range: [],
-    department: ["RETAIL PRODUCT", "SALON PRODUCT"]
+    department: ["RETAIL PRODUCT", "SALON PRODUCT"],
   });
 
   const handlePageChange = (newPage) => {
-    setPagination(prev => ({
+    setPagination((prev) => ({
       ...prev,
-      page: newPage
+      page: newPage,
     }));
   };
 
@@ -377,29 +375,32 @@ function AddGto({ docData }) {
     }
 
     // If no filters are active, restore original data
-    if (!filters.brand.length && !filters.range.length && 
-        filters.department.length === 2) {
+    if (
+      !filters.brand.length &&
+      !filters.range.length &&
+      filters.department.length === 2
+    ) {
       setStockList(originalStockList);
       setItemTotal(originalStockList.length);
       setLoading(false);
       return;
     }
 
-    const filteredList = originalStockList.filter(item => {
+    const filteredList = originalStockList.filter((item) => {
       // Brand filter
       if (filters.brand.length > 0) {
-        const brandMatch = filters.brand.some(brand => 
-          brand.value === item.BrandCode || 
-          brand.label === item.Brand
+        const brandMatch = filters.brand.some(
+          (brand) =>
+            brand.value === item.BrandCode || brand.label === item.Brand
         );
         if (!brandMatch) return false;
       }
 
       // Range filter
       if (filters.range.length > 0) {
-        const rangeMatch = filters.range.some(range => 
-          range.value === item.RangeCode || 
-          range.label === item.Range
+        const rangeMatch = filters.range.some(
+          (range) =>
+            range.value === item.RangeCode || range.label === item.Range
         );
         if (!rangeMatch) return false;
       }
@@ -415,7 +416,7 @@ function AddGto({ docData }) {
 
     setStockList(filteredList);
     setItemTotal(filteredList.length);
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
     setLoading(false);
   };
 
@@ -432,24 +433,17 @@ function AddGto({ docData }) {
               docNo: urlDocNo,
             },
           };
-          
+
           await getStockHdr(filter);
 
           if (urlStatus != 7) {
-            await Promise.all([
-              getOptions(),
-              getStockDetails()
-            ]);
+            await Promise.all([getOptions(), getStockDetails()]);
           }
 
           await getStockHdrDetails(filter);
           await getStoreList();
         } else {
-          await Promise.all([
-            getStoreList(),
-            getStockDetails(),
-            getOptions()
-          ]);
+          await Promise.all([getStoreList(), getStockDetails(), getOptions()]);
         }
       } catch (error) {
         console.error("Error initializing data:", error);
@@ -506,7 +500,7 @@ function AddGto({ docData }) {
         // docTerm: data.docTerm,
         storeNo: data.storeNo,
         tstoreNo: data.tstoreNo,
-        fstoreNo: data?.fstoreNo|| userDetails?.siteCode ,
+        fstoreNo: data?.fstoreNo || userDetails?.siteCode,
         docRemk1: data.docRemk1,
         // postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
@@ -540,7 +534,7 @@ function AddGto({ docData }) {
         value: item.itmCode,
         label: item.itmDesc,
       }));
-      
+
       const rangeOp = ranges.map((item) => ({
         value: item.itmCode,
         label: item.itmDesc,
@@ -565,10 +559,10 @@ function AddGto({ docData }) {
       setLoading(true);
       const query = `?Site=${userDetails?.siteCode}`;
       const res = await apiService1.get(`api/GetInvitems${query}`);
-      
+
       const stockDetails = res.result;
       const count = res.result.length;
-      
+
       const updatedRes = stockDetails.map((item) => ({
         ...item,
         Qty: 0,
@@ -819,7 +813,7 @@ function AddGto({ docData }) {
 
   const handleSearch = (e) => {
     const searchValue = e.target.value.trim().toLowerCase();
-    
+
     // Clear any existing timer
     if (searchTimer) {
       clearTimeout(searchTimer);
@@ -871,26 +865,26 @@ function AddGto({ docData }) {
   const handleBrandChange = (selected) => {
     setTempFilters((prev) => ({
       ...prev,
-      brand: selected
+      brand: selected,
     }));
   };
 
   const handleRangeChange = (selected) => {
     setTempFilters((prev) => ({
       ...prev,
-      range: selected
+      range: selected,
     }));
   };
 
   const handleDepartmentChange = (department) => {
     setLoading(true);
-    
+
     // Update filters state
     const newFilters = {
       ...tempFilters,
       department: tempFilters.department.includes(department)
-        ? tempFilters.department.filter(d => d !== department)
-        : [...tempFilters.department, department]
+        ? tempFilters.department.filter((d) => d !== department)
+        : [...tempFilters.department, department],
     };
     setTempFilters(newFilters);
 
@@ -900,8 +894,11 @@ function AddGto({ docData }) {
     }
 
     // If no filters are active, restore original data
-    if (!newFilters.brand.length && !newFilters.range.length && 
-        newFilters.department.length === 2) {
+    if (
+      !newFilters.brand.length &&
+      !newFilters.range.length &&
+      newFilters.department.length === 2
+    ) {
       setStockList(originalStockList);
       setItemTotal(originalStockList.length);
       setLoading(false);
@@ -909,21 +906,21 @@ function AddGto({ docData }) {
     }
 
     // Apply filters immediately
-    const filteredList = originalStockList.filter(item => {
+    const filteredList = originalStockList.filter((item) => {
       // Brand filter
       if (newFilters.brand.length > 0) {
-        const brandMatch = newFilters.brand.some(brand => 
-          brand.value === item.BrandCode || 
-          brand.label === item.Brand
+        const brandMatch = newFilters.brand.some(
+          (brand) =>
+            brand.value === item.BrandCode || brand.label === item.Brand
         );
         if (!brandMatch) return false;
       }
 
       // Range filter
       if (newFilters.range.length > 0) {
-        const rangeMatch = newFilters.range.some(range => 
-          range.value === item.RangeCode || 
-          range.label === item.Range
+        const rangeMatch = newFilters.range.some(
+          (range) =>
+            range.value === item.RangeCode || range.label === item.Range
         );
         if (!rangeMatch) return false;
       }
@@ -946,7 +943,7 @@ function AddGto({ docData }) {
   // Add this effect to help with debugging
   useEffect(() => {
     if (originalStockList.length > 0) {
-      console.log('Sample Item Structure:', originalStockList[0]);
+      console.log("Sample Item Structure:", originalStockList[0]);
     }
   }, [originalStockList]);
 
@@ -971,16 +968,13 @@ function AddGto({ docData }) {
     }));
   };
 
-  const validateForm = (
-    hdrs = stockHdrs,
-    cart = cartData,
-    options = {}
-  ) => {
+  const validateForm = (hdrs = stockHdrs, cart = cartData, options = {}) => {
     const errors = [];
-    console.log('dd')
+    console.log("dd");
 
     // Document Header Validations
-    if (!options.skipDocNoCheck && !hdrs.docNo) errors.push("Document number is required");
+    if (!options.skipDocNoCheck && !hdrs.docNo)
+      errors.push("Document number is required");
     if (!hdrs.docDate) errors.push("Document date is required");
     if (!hdrs.storeNo) errors.push("Store number is required");
     if (!hdrs.tstoreNo) errors.push("To store is required");
@@ -1046,7 +1040,7 @@ function AddGto({ docData }) {
   }, [editData, editingIndex]);
 
   const editPopup = (item, index) => {
-        setIsBatchEdit(false);
+    setIsBatchEdit(false);
 
     setEditData({
       ...item,
@@ -1054,7 +1048,7 @@ function AddGto({ docData }) {
       docPrice: Number(item.docPrice) || 0,
       docExpdate: item.docExpdate || "",
       itemRemark: item.itemRemark || "",
-      docBatchNo: item.docBatchNo || ""
+      docBatchNo: item.docBatchNo || "",
     });
     setEditingIndex(index);
     setShowEditDialog(true);
@@ -1075,6 +1069,14 @@ function AddGto({ docData }) {
       )
     );
   };
+  // Parse "30/09/2025 12:00:00 AM" to "2025-09-30"
+  const parseBatchExpiry = (dateStr) => {
+    if (!dateStr) return "";
+    const [day, month, yearAndTime] = dateStr.split("/");
+    const [year] = yearAndTime.split(" ");
+    // Return in YYYY-MM-DD format
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
 
   const addToCart = (index, item) => {
     if (!item.Qty || item.Qty <= 0) {
@@ -1087,6 +1089,7 @@ function AddGto({ docData }) {
       toast.error("Not enough stock available");
       return;
     }
+    console.log(item, "item in add to cart");
 
     const amount = Number(item.Qty) * Number(item.Price);
 
@@ -1110,14 +1113,17 @@ function AddGto({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.uom,
-      docExpdate: item.expiryDate || "",
+      // docExpdate: item.expiryDate || "",
+      docExpdate: parseBatchExpiry(item.batchexpirydate),
+
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
       itemRemark: "",
-      docBatchNo: item.docBatchNo || null
+      // docBatchNo: item.docBatchNo || null
+      docBatchNo: item.batchno || null,
     };
 
     const existingItemIndex = cartData.findIndex(
@@ -1134,19 +1140,27 @@ function AddGto({ docData }) {
     addItemToCart(newCartItem, index);
   };
 
-  const createTransactionObject = (item, docNo, storeNo, fstoreNo, tstoreNo, multiplier = 1) => {
+  const createTransactionObject = (
+    item,
+    docNo,
+    storeNo,
+    fstoreNo,
+    tstoreNo,
+    multiplier = 1
+  ) => {
     const today = new Date();
-    const timeStr = ('0' + today.getHours()).slice(-2) +
-                    ('0' + today.getMinutes()).slice(-2) +
-                    ('0' + today.getSeconds()).slice(-2);
-  
+    const timeStr =
+      ("0" + today.getHours()).slice(-2) +
+      ("0" + today.getMinutes()).slice(-2) +
+      ("0" + today.getSeconds()).slice(-2);
+
     const qty = Number(item.docQty) * multiplier;
     const amt = Number(item.docAmt) * multiplier;
     const cost = Number(item.docAmt) * multiplier;
-  
+
     return {
       id: null,
-      trnPost: today.toISOString().split('T')[0],
+      trnPost: today.toISOString().split("T")[0],
       trnDate: item.docExpdate || null,
       trnNo: null,
       postTime: timeStr,
@@ -1176,10 +1190,10 @@ function AddGto({ docData }) {
       docExpdate: item.docExpdate || null,
     };
   };
-  
+
   const onSubmit = async (e, type) => {
     e?.preventDefault();
-    if (!validateForm(stockHdrs, cartData,{skipDocNoCheck:true})) return;
+    if (!validateForm(stockHdrs, cartData, { skipDocNoCheck: true })) return;
 
     // Set loading state based on action type
     if (type === "save") {
@@ -1214,7 +1228,7 @@ function AddGto({ docData }) {
         setStockHdrs(hdr);
         setCartData(details);
         setControlData(controlData);
-        console.log('dd1')
+        console.log("dd1");
 
         // Move validation here after docNo is set
         if (!validateForm(hdr, details)) return;
@@ -1232,8 +1246,8 @@ function AddGto({ docData }) {
         movCode: "TFRT",
         movType: "TFR",
         storeNo: hdr.storeNo,
-        fstoreNo:hdr.fstoreNo,
-        tstoreNo:hdr.tstoreNo,
+        fstoreNo: hdr.fstoreNo,
+        tstoreNo: hdr.tstoreNo,
         supplyNo: hdr.supplyNo,
         docRef1: hdr.docRef1,
         docRef2: hdr.docRef2,
@@ -1258,7 +1272,10 @@ function AddGto({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
         createUser: hdr.createUser,
-        createDate: type === "post" && urlDocNo ? hdr.createDate : new Date().toISOString(),
+        createDate:
+          type === "post" && urlDocNo
+            ? hdr.createDate
+            : new Date().toISOString(),
       };
 
       // Handle header operations based on type and urlDocNo
@@ -1292,15 +1309,15 @@ function AddGto({ docData }) {
         };
         // await apiService.post("Inventorylogs", inventoryLog);
 
-        let batchId
+        let batchId;
         const stktrns = details.map((item) =>
           createTransactionObject(
             item,
             docNo,
-            stockHdrs.fstoreNo,  // storeNo (destination)
-            stockHdrs.fstoreNo,   // fstoreNo (source)
-            stockHdrs.tstoreNo,  // tstoreNo (again destination)
-            -1                     // positive qty
+            stockHdrs.fstoreNo, // storeNo (destination)
+            stockHdrs.fstoreNo, // fstoreNo (source)
+            stockHdrs.tstoreNo, // tstoreNo (again destination)
+            -1 // positive qty
           )
         );
 
@@ -1308,22 +1325,21 @@ function AddGto({ docData }) {
           createTransactionObject(
             item,
             docNo,
-            stockHdrs.tstoreNo,   // storeNo (source)
-            stockHdrs.fstoreNo,   // fstoreNo (source)
-            stockHdrs.tstoreNo,  // tstoreNo (destination)
-            1                    // negative qty
+            stockHdrs.tstoreNo, // storeNo (source)
+            stockHdrs.fstoreNo, // fstoreNo (source)
+            stockHdrs.tstoreNo, // tstoreNo (destination)
+            1 // negative qty
           )
         );
-console.log(stktrns,'stktrns')
-console.log(stktrns1,'stktrns1')
+        console.log(stktrns, "stktrns");
+        console.log(stktrns1, "stktrns1");
 
-                // 2. Batch SNO handling
-                if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
-                  await apiService1.get(
-                    `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${stktrns[0].fstoreNo}&userCode=${userDetails.username}`
-                  );
-                }
-        
+        // 2. Batch SNO handling
+        if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+          await apiService1.get(
+            `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${stktrns[0].fstoreNo}&userCode=${userDetails.username}`
+          );
+        }
 
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         for (let i = 0; i < stktrns.length; i++) {
@@ -1388,7 +1404,7 @@ console.log(stktrns1,'stktrns1')
 
           // 10) Update ItemBatches quantity
           for (const d of stktrns) {
-            const trimmedItemCode = d.itemcode.replace(/0000$/, '');
+            const trimmedItemCode = d.itemcode.replace(/0000$/, "");
 
             // const batchUpdate = {
             //   itemCode: trimmedItemCode,
@@ -1399,27 +1415,22 @@ console.log(stktrns1,'stktrns1')
             //   batchNo: d.itemBatch,
             //   expDate: d.docExpdate
             // };
-                   const batchUpdate = {
-              itemcode: trimmedItemCode,
-              sitecode:  d.storeNo,
-              uom: d.itemUom,
-              qty: Number(d.trnQty),
-              batchcost: Number(d.trnCost),
-              // batchNo: d.itemBatch,
-              // expDate: d.docExpdate
-            };
-            const batchFilter = {
-              itemCode: trimmedItemCode,
-              siteCode: userDetails.siteCode,
-              uom: d.itemUom
-            };
 
-              await apiService.post(
-          `ItemBatches/updateqty`,
-          batchUpdate
-        ).then((res)=>{
-        })
-                  .catch(async (err) => {
+            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+                // batchno: d.itemBatch,
+                // expDate: d.docExpdate
+              };
+
+              await apiService
+                .post(`ItemBatches/updateqty`, batchUpdate)
+                .then((res) => {})
+                .catch(async (err) => {
                   // Log qty update error
                   const errorLog = {
                     trnDocNo: docNo,
@@ -1431,21 +1442,53 @@ console.log(stktrns1,'stktrns1')
                   };
                   // await apiService.post("Inventorylogs", errorLog);
                 });
-            
-            // await apiService
-            //   .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-            //   .catch(async (err) => {
-            //     // Log qty update error
-            //     const errorLog = {
-            //       trnDocNo: docNo,
-            //       itemCode: d.itemcode,
-            //       loginUser: userDetails.username,
-            //       siteCode: userDetails.siteCode,
-            //       logMsg: `ItemBatches/updateqty ${err.message}`,
-            //       createdDate: new Date().toISOString().split("T")[0],
-            //     };
-            //     // await apiService.post("Inventorylogs", errorLog);
-            //   });
+            } else {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+                batchno: d.itemBatch,
+                // expDate: d.docExpdate
+              };
+              const batchFilter = {
+                itemCode: trimmedItemCode,
+                siteCode: userDetails.siteCode,
+                uom: d.itemUom,
+              };
+
+              await apiService
+                .post(`ItemBatches/updateqty`, batchUpdate)
+                .then((res) => {})
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
+
+              // await apiService
+              //   .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              //   .catch(async (err) => {
+              //     // Log qty update error
+              //     const errorLog = {
+              //       trnDocNo: docNo,
+              //       itemCode: d.itemcode,
+              //       loginUser: userDetails.username,
+              //       siteCode: userDetails.siteCode,
+              //       logMsg: `ItemBatches/updateqty ${err.message}`,
+              //       createdDate: new Date().toISOString().split("T")[0],
+              //     };
+              //     // await apiService.post("Inventorylogs", errorLog);
+              //   });
+            }
           }
         } else {
           // Existing stktrns → log
@@ -1459,7 +1502,6 @@ console.log(stktrns1,'stktrns1')
           // await apiService.post("Inventorylogs", existsLog);
         }
 
-        
         if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
           await apiService1.get(
             `api/postOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
@@ -1471,165 +1513,241 @@ console.log(stktrns1,'stktrns1')
           const printList = await apiService.get(
             `Stkprintlists?filter={"where":{"docNo":"${docNo}"}}`
           );
-          
+
           if (printList && printList.length > 0) {
             const emailData = {
               to: window.APP_CONFIG.NOTIFICATION_MAIL1,
               cc: window.APP_CONFIG.NOTIFICATION_MAIL2,
               subject: "NOTIFICATION FOR STOCK TRANSFER",
-              body: generateEmailBody(printList[0], details)
+              body: generateEmailBody(printList[0], details),
             };
-            
+
             await apiService.post("EmailService/send", emailData);
           }
         }
 
-               // 11) Final header status update to 7 - Only after all operations are complete
-               await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
-                docStatus: "7",
-              });
+        // 11) Final header status update to 7 - Only after all operations are complete
+        await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
+          docStatus: "7",
+        });
 
         if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
+          for (let i = 0; i < stktrns1.length; i++) {
+            const d = stktrns1[i];
+            const filter = {
+              where: {
+                and: [
+                  { itemcode: d.itemcode }, // Add 0000 suffix for inventory
+                  { uom: d.itemUom },
+                  { sitecode: d.storeNo },
+                ],
+              },
+            };
+            const resp = await apiService.get(
+              `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`
+            );
+            if (resp.length) {
+              const on = resp[0];
+              d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
+              d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
+              d.itemBatchCost = on.batchCost.toString();
+            } else {
+              // Log error if GET fails
+              const errorLog = {
+                trnDocNo: docNo,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `Itemonqties Api Error for ${d.itemcode}`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", errorLog);
+            }
+          }
 
-
-        for (let i = 0; i < stktrns1.length; i++) {
-          const d = stktrns1[i];
-          const filter = {
+          // 7) Check existing stktrns
+          const chkFilter1 = {
             where: {
-              and: [
-                { itemcode: d.itemcode }, // Add 0000 suffix for inventory
-                { uom: d.itemUom },
-                { sitecode: d.storeNo },
-              ],
+              and: [{ trnDocno: docNo }, { storeNo: stktrns1[0].storeNo }],
             },
           };
-          const resp = await apiService.get(
-            `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`
+          const stkResp1 = await apiService.get(
+            `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter1))}`
           );
-          if (resp.length) {
-            const on = resp[0];
-            d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
-            d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
-            d.itemBatchCost = on.batchCost.toString();
-          } else {
-            // Log error if GET fails
-            const errorLog = {
-              trnDocNo: docNo,
-              loginUser: userDetails.username,
-              siteCode: userDetails.siteCode,
-              logMsg: `Itemonqties Api Error for ${d.itemcode}`,
-              createdDate: new Date().toISOString().split("T")[0],
-            };
-            // await apiService.post("Inventorylogs", errorLog);
-          }
-        }
 
-        // 7) Check existing stktrns
-        const chkFilter1 = {
-          where: {
-            and: [{ trnDocno: docNo }, { storeNo: stktrns1[0].storeNo }],
-          },
-        };
-        const stkResp1 = await apiService.get(
-          `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter1))}`
-        );
+          if (stkResp1.length === 0) {
+            // 8) Create and insert new Stktrns
+            await apiService.post("Stktrns", stktrns1);
 
-        if (stkResp1.length === 0) {
-          // 8) Create and insert new Stktrns
-          await apiService.post("Stktrns", stktrns1);
+            // 9) Per-item log
+            for (const d of stktrns1) {
+              // Log stktrns insert
+              const insertLog = {
+                trnDocNo: docNo,
+                itemCode: d.itemcode,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `${d.itemcode} Inserted on stktrn Table`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", insertLog);
+            }
 
-          // 9) Per-item log
-          for (const d of stktrns1) {
-            // Log stktrns insert
-            const insertLog = {
-              trnDocNo: docNo,
-              itemCode: d.itemcode,
-              loginUser: userDetails.username,
-              siteCode: userDetails.siteCode,
-              logMsg: `${d.itemcode} Inserted on stktrn Table`,
-              createdDate: new Date().toISOString().split("T")[0],
-            };
-            // await apiService.post("Inventorylogs", insertLog);
-          }
+            // 10) Update ItemBatches quantity
+            for (const d of stktrns1) {
+              const trimmedItemCode = d.itemcode.replace(/0000$/, "");
 
-          // 10) Update ItemBatches quantity
-          for (const d of stktrns1) {
-            const trimmedItemCode = d.itemcode.replace(/0000$/, '');
+              if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+                const batchUpdate = {
+                  itemcode: trimmedItemCode,
+                  sitecode: d.storeNo,
+                  uom: d.itemUom,
+                  qty: Number(d.trnQty),
+                  batchcost: Number(d.trnCost),
+                  // batchno: d.itemBatch,
+                  // expDate: d.docExpdate
+                };
+                const batchFilter = {
+                  itemCode: trimmedItemCode,
+                  siteCode: d.storeNo,
+                  uom: d.itemUom,
+                };
 
-            // const batchUpdate = {
-            //   itemCode: trimmedItemCode,
-            //   siteCode:d.storeNo,
-            //   uom: d.itemUom,
-            //   qty: Number(d.trnQty),
-            //   batchCost: Number(d.trnCost),
-            //   batchNo: d.itemBatch,
-            //   expDate: d.docExpdate
-            // };
-            const batchUpdate = {
-              itemcode: trimmedItemCode,
-              sitecode:  d.storeNo,
-              uom: d.itemUom,
-              qty: Number(d.trnQty),
-              batchcost: Number(d.trnCost),
-              // batchNo: d.itemBatch,
-              // expDate: d.docExpdate
-            };
-            const batchFilter = {
-              itemCode: trimmedItemCode,
-              siteCode:d.storeNo,
-              uom: d.itemUom
-            };
-
-                          await apiService.post(
-          `ItemBatches/updateqty`,
-          batchUpdate
-        ).then((res)=>{
-        })
+                await apiService
+                  .post(`ItemBatches/updateqty`, batchUpdate)
+                  .then((res) => {})
                   .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
+                    // Log qty update error
+                    const errorLog = {
+                      trnDocNo: docNo,
+                      itemCode: d.itemcode,
+                      loginUser: userDetails.username,
+                      siteCode: userDetails.siteCode,
+                      logMsg: `ItemBatches/updateqty ${err.message}`,
+                      createdDate: new Date().toISOString().split("T")[0],
+                    };
+                    // await apiService.post("Inventorylogs", errorLog);
+                  });
+              } else {
+                let existingBatch;
+
+                const filter = {
+                  where: {
+                    and: [
+                      { itemCode: d.trimmedItemCode },
+                      { uom: d.itemUom },
+                      { siteCode: d.storeNo },
+                      { batchNo: d.itemBatch },
+                    ],
+                  },
+                };
+
+                const url = `ItemBatches?filter=${encodeURIComponent(
+                  JSON.stringify(filter)
+                )}`;
+                existingBatch = await apiService
+                  .get(url)
+                  .then((resp) => resp[0])
+                  .catch((error) => {
+                    console.error("Error fetching batch:", error);
+                    return null;
+                  });
+
+                if (!existingBatch) {
+                  // For new batches, create a new batch record
+                 const  batchCreate = {
+                    itemCode: trimmedItemCode,
+                    siteCode: d.storeNo,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchCost: Number(d.trnCost),
+                    batchNo: d.itemBatch,
+                    expDate: d?.docExpdate ? d?.docExpdate : null,
                   };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
-            
-            // await apiService
-            //   // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-            //   .post(`ItemBatches/updateqty`, batchUpdate)
 
-            //   .catch(async (err) => {
-            //     // Log qty update error
-            //     const errorLog = {
-            //       trnDocNo: docNo,
-            //       itemCode: d.itemcode,
-            //       loginUser: userDetails.username,
-            //       siteCode: d.storeNo,
-            //       logMsg: `ItemBatches/updateqty ${err.message}`,
-            //       createdDate: new Date().toISOString().split("T")[0],
-            //     };
-            //     // await apiService.post("Inventorylogs", errorLog);
-            //   });
+                  await apiService
+                    .post(`ItemBatches`, batchCreate)
+                    .catch(async (err) => {
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/create error: ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                    });
+                } else {
+                  // const batchUpdate = {
+                  //   itemCode: trimmedItemCode,
+                  //   siteCode:d.storeNo,
+                  //   uom: d.itemUom,
+                  //   qty: Number(d.trnQty),
+                  //   batchCost: Number(d.trnCost),
+                  //   batchNo: d.itemBatch,
+                  //   expDate: d.docExpdate
+                  // };
+                  const batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: d.storeNo,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchcost: Number(d.trnCost),
+                    batchno: d.itemBatch,
+                    // expDate: d.docExpdate
+                  };
+                  const batchFilter = {
+                    itemCode: trimmedItemCode,
+                    siteCode: d.storeNo,
+                    uom: d.itemUom,
+                  };
+
+                  await apiService
+                    .post(`ItemBatches/updateqty`, batchUpdate)
+                    .then((res) => {})
+                    .catch(async (err) => {
+                      // Log qty update error
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/updateqty ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                      // await apiService.post("Inventorylogs", errorLog);
+                    });
+                }
+
+                // await apiService
+                //   .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                //   // .post(`ItemBatches/updateqty`, batchUpdate)
+
+                //   .catch(async (err) => {
+                //     // Log qty update error
+                //     const errorLog = {
+                //       trnDocNo: docNo,
+                //       itemCode: d.itemcode,
+                //       loginUser: userDetails.username,
+                //       siteCode: d.storeNo,
+                //       logMsg: `ItemBatches/updateqty ${err.message}`,
+                //       createdDate: new Date().toISOString().split("T")[0],
+                //     };
+                //     // await apiService.post("Inventorylogs", errorLog);
+                //   });
+              }
+            }
+          } else {
+            // Existing stktrns → log
+            const existsLog = {
+              trnDocNo: docNo,
+              loginUser: userDetails.username,
+              siteCode: d.storeNo,
+              logMsg: "stktrn already exists",
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", existsLog);
           }
-        } else {
-          // Existing stktrns → log
-          const existsLog = {
-            trnDocNo: docNo,
-            loginUser: userDetails.username,
-            siteCode: d.storeNo,
-            logMsg: "stktrn already exists",
-            createdDate: new Date().toISOString().split("T")[0],
-          };
-          // await apiService.post("Inventorylogs", existsLog);
         }
-
-      } 
-
- 
 
         // // 1. Auto-Post handling
         // if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
@@ -1645,9 +1763,7 @@ console.log(stktrns1,'stktrns1')
         //     `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
         //   );
 
-     
         // }
-
       }
 
       toast.success(
@@ -1677,30 +1793,29 @@ console.log(stktrns1,'stktrns1')
   const navigateTo = (path) => {
     navigate(path);
   };
-   // 1. Add state at the top of the component
-    const [selectedRows, setSelectedRows] = useState([]);
-    const [isBatchEdit, setIsBatchEdit] = useState(false);
-  
-    // 2. Add handleBatchEditClick and handleBatchEditSubmit
-    const handleBatchEditClick = () => {
-      setIsBatchEdit(true);
-      setEditData({ docBatchNo: "", docExpdate: "", itemRemark: "" });
-      setShowEditDialog(true);
-    };
-  
-    // Place this in the main AddGrn component, after other handler functions and before return
-    const handleBatchEditSubmit = (fields) => {
-      setCartData((prev) =>
-        prev.map((item, idx) =>
-          selectedRows.includes(idx) ? { ...item, ...fields } : item
-        )
-      );
-      setShowEditDialog(false);
-      setIsBatchEdit(false);
-      setSelectedRows([]);
-      toast.success("Batch update successful!");
-    };
-  
+  // 1. Add state at the top of the component
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [isBatchEdit, setIsBatchEdit] = useState(false);
+
+  // 2. Add handleBatchEditClick and handleBatchEditSubmit
+  const handleBatchEditClick = () => {
+    setIsBatchEdit(true);
+    setEditData({ docBatchNo: "", docExpdate: "", itemRemark: "" });
+    setShowEditDialog(true);
+  };
+
+  // Place this in the main AddGrn component, after other handler functions and before return
+  const handleBatchEditSubmit = (fields) => {
+    setCartData((prev) =>
+      prev.map((item, idx) =>
+        selectedRows.includes(idx) ? { ...item, ...fields } : item
+      )
+    );
+    setShowEditDialog(false);
+    setIsBatchEdit(false);
+    setSelectedRows([]);
+    toast.success("Batch update successful!");
+  };
 
   const generateEmailBody = (header, details) => {
     let body = "<html><body>";
@@ -1708,29 +1823,40 @@ console.log(stktrns1,'stktrns1')
     body += `<div><b><span>Order from: </span></b> ${header.fromSite} <b><span style='margin-left:10px'>Created: </span></b> ${header.docDate}</div>`;
     body += `<div><b><span>Deliver to: </span></b> ${header.toSite} <b><span style='margin-left:10px'>Created by: </span></b> ${header.docAttn}</div>`;
     body += "<br/>STOCK ORDER<br/>";
-    
+
     // Add table header
-    body += "<table cellpadding='6' cellspacing='0' style='margin-top:10px;border: 1px solid #ccc;font-size: 9pt;font-family:Arial'>";
+    body +=
+      "<table cellpadding='6' cellspacing='0' style='margin-top:10px;border: 1px solid #ccc;font-size: 9pt;font-family:Arial'>";
     body += "<tr>";
-    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>Product</th>";
-    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>SKU</th>";
-    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>Supplier Code</th>";
-    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Cost</th>";
-    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Qty</th>";
-    body += "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Sub Total</th>";
+    body +=
+      "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>Product</th>";
+    body +=
+      "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>SKU</th>";
+    body +=
+      "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: left'>Supplier Code</th>";
+    body +=
+      "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Cost</th>";
+    body +=
+      "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Qty</th>";
+    body +=
+      "<th style='background-color: #B8DBFD;border: 1px solid #ccc;text-align: right'>Sub Total</th>";
     body += "</tr>";
 
     // Add rows
     let sumQty = 0;
     let sumAmount = 0;
-    details.forEach(item => {
+    details.forEach((item) => {
       body += "<tr>";
       body += `<td style='width:30%;border: 1px solid #ccc;text-align: left'>${item.itemdesc}</td>`;
       body += `<td style='width:15%;border: 1px solid #ccc;text-align: left'>${item.itemcode}</td>`;
-      body += `<td style='width:15%;border: 1px solid #ccc;text-align: left'>${item.supplyDesc || ''}</td>`;
+      body += `<td style='width:15%;border: 1px solid #ccc;text-align: left'>${
+        item.supplyDesc || ""
+      }</td>`;
       body += `<td style='width:15%;border: 1px solid #ccc;text-align: right'>${item.docPrice}</td>`;
       body += `<td style='width:10%;border: 1px solid #ccc;text-align: right'>${item.docQty}</td>`;
-      body += `<td style='width:15%;border: 1px solid #ccc;text-align: right'>${Number(item.docAmt).toFixed(2)}</td>`;
+      body += `<td style='width:15%;border: 1px solid #ccc;text-align: right'>${Number(
+        item.docAmt
+      ).toFixed(2)}</td>`;
       body += "</tr>";
       sumQty += Number(item.docQty);
       sumAmount += Number(item.docAmt);
@@ -1738,12 +1864,18 @@ console.log(stktrns1,'stktrns1')
 
     // Add total row
     body += "<tr>";
-    body += "<td style='width:30%;border: 1px solid #ccc;text-align: left'></td>";
-    body += "<td style='width:15%;border: 1px solid #ccc;text-align: left'></td>";
-    body += "<td style='width:15%;border: 1px solid #ccc;text-align: left'></td>";
-    body += "<td style='width:15%;border: 1px solid #ccc;text-align: right;font-weight:bold'>Total</td>";
+    body +=
+      "<td style='width:30%;border: 1px solid #ccc;text-align: left'></td>";
+    body +=
+      "<td style='width:15%;border: 1px solid #ccc;text-align: left'></td>";
+    body +=
+      "<td style='width:15%;border: 1px solid #ccc;text-align: left'></td>";
+    body +=
+      "<td style='width:15%;border: 1px solid #ccc;text-align: right;font-weight:bold'>Total</td>";
     body += `<td style='width:10%;border: 1px solid #ccc;text-align: right;font-weight:bold'>${sumQty}</td>`;
-    body += `<td style='width:15%;border: 1px solid #ccc;text-align: right;font-weight:bold'>${sumAmount.toFixed(2)}</td>`;
+    body += `<td style='width:15%;border: 1px solid #ccc;text-align: right;font-weight:bold'>${sumAmount.toFixed(
+      2
+    )}</td>`;
     body += "</tr>";
 
     body += "</table></body></html>";
@@ -2048,36 +2180,40 @@ console.log(stktrns1,'stktrns1')
                     </div>
 
                     {/* <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200"> */}
-                      <ItemTable
-                        data={stockList}
-                        loading={loading}
-                        onQtyChange={(e, index) => handleCalc(e, index, "Qty")}
-                        onPriceChange={(e, index) => handleCalc(e, index, "Price")}
-                        onExpiryDateChange={(e, index) => handleCalc(e, index, "expiryDate")}
-                        onAddToCart={(index, item) => addToCart(index, item)}
-                        currentPage={pagination.page}
-                        itemsPerPage={6}
-                        totalPages={Math.ceil(itemTotal / pagination.limit)}
-                        onPageChange={handlePageChange}
-                      />
+                    <ItemTable
+                      data={stockList}
+                      loading={loading}
+                      onQtyChange={(e, index) => handleCalc(e, index, "Qty")}
+                      onPriceChange={(e, index) =>
+                        handleCalc(e, index, "Price")
+                      }
+                      onExpiryDateChange={(e, index) =>
+                        handleCalc(e, index, "expiryDate")
+                      }
+                      onAddToCart={(index, item) => addToCart(index, item)}
+                      currentPage={pagination.page}
+                      itemsPerPage={6}
+                      totalPages={Math.ceil(itemTotal / pagination.limit)}
+                      onPageChange={handlePageChange}
+                    />
                     {/* </div> */}
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
           </Tabs>
-              {cartData.length > 0 && (
-                      <div className="flex justify-end my-5">
-                        {selectedRows.length > 0 && (
-                          <Button
-                            onClick={handleBatchEditClick}
-                            className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
-                          >
-                            Update Selected
-                          </Button>
-                        )}
-                      </div>
-                    )}
+          {cartData.length > 0 && (
+            <div className="flex justify-end my-5">
+              {selectedRows.length > 0 && (
+                <Button
+                  onClick={handleBatchEditClick}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
+                  Update Selected
+                </Button>
+              )}
+            </div>
+          )}
 
           {cartData.length > 0 && (
             <div className="rounded-md border border-slate-200 bg-slate-50/50 shadow-sm hover:shadow-md transition-shadow duration-200 mb-15">
@@ -2087,25 +2223,25 @@ console.log(stktrns1,'stktrns1')
               <Table>
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
-                      {urlStatus != 7 && (
-                                          <TableHead>
-                                            <input
-                                              type="checkbox"
-                                              className="w-5 h-5"
-                                              checked={
-                                                selectedRows.length === cartData.length &&
-                                                cartData.length > 0
-                                              }
-                                              onChange={(e) => {
-                                                if (e.target.checked) {
-                                                  setSelectedRows(cartData.map((_, idx) => idx));
-                                                } else {
-                                                  setSelectedRows([]);
-                                                }
-                                              }}
-                                            />
-                                          </TableHead>
-                                        )}
+                    {urlStatus != 7 && (
+                      <TableHead>
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5"
+                          checked={
+                            selectedRows.length === cartData.length &&
+                            cartData.length > 0
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRows(cartData.map((_, idx) => idx));
+                            } else {
+                              setSelectedRows([]);
+                            }
+                          }}
+                        />
+                      </TableHead>
+                    )}
                     <TableHead className="font-semibold text-slate-700">
                       NO
                     </TableHead>
@@ -2144,24 +2280,24 @@ console.log(stktrns1,'stktrns1')
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                             {urlStatus != 7 && (
-                                                      <TableCell>
-                                                        <input
-                                                          type="checkbox"
-                                                          className="w-5 h-5"
-                                                          checked={selectedRows.includes(index)}
-                                                          onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                              setSelectedRows([...selectedRows, index]);
-                                                            } else {
-                                                              setSelectedRows(
-                                                                selectedRows.filter((i) => i !== index)
-                                                              );
-                                                            }
-                                                          }}
-                                                        />
-                                                      </TableCell>
-                                                    )}
+                          {urlStatus != 7 && (
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                className="w-5 h-5"
+                                checked={selectedRows.includes(index)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRows([...selectedRows, index]);
+                                  } else {
+                                    setSelectedRows(
+                                      selectedRows.filter((i) => i !== index)
+                                    );
+                                  }
+                                }}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
@@ -2176,8 +2312,8 @@ console.log(stktrns1,'stktrns1')
                             {item.docAmt}
                           </TableCell>
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
-                          <TableCell>{item?.docBatchNo ?? '-'}</TableCell>
-                          <TableCell>{item.itemRemark ?? '-'}</TableCell>
+                          <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                          <TableCell>{item.itemRemark ?? "-"}</TableCell>
                           {urlStatus != 7 && (
                             <TableCell>
                               <div className="flex gap-2">
@@ -2233,7 +2369,6 @@ console.log(stktrns1,'stktrns1')
         onEditCart={handleEditCart}
         onSubmit={isBatchEdit ? handleBatchEditSubmit : handleEditSubmit}
         isBatchEdit={isBatchEdit}
-
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

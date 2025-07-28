@@ -977,6 +977,15 @@ function AddGti({ docData }) {
     );
   };
 
+  // Parse "30/09/2025 12:00:00 AM" to "2025-09-30"
+  const parseBatchExpiry = (dateStr) => {
+    if (!dateStr) return "";
+    const [day, month, yearAndTime] = dateStr.split("/");
+    const [year] = yearAndTime.split(" ");
+    // Return in YYYY-MM-DD format
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+
   const addToCart = (index, item) => {
     if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity");
@@ -1005,14 +1014,17 @@ function AddGti({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.uom,
-      docExpdate: item.expiryDate || "",
+      // docExpdate: item.expiryDate || "",
+      docExpdate: parseBatchExpiry(item.batchexpirydate),
+
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
       itemRemark: "",
-      docBatchNo: item.docBatchNo || null,
+      // docBatchNo: item.docBatchNo || null,
+      docBatchNo: item.batchno || null,
     };
 
     console.log(item, cartData);
@@ -1465,37 +1477,124 @@ function AddGti({ docData }) {
             //   batchNo: d.itemBatch,
             //   expDate: d.docExpdate
             // };
-            const batchUpdate = {
-              itemcode: trimmedItemCode,
-              sitecode: d.storeNo,
-              uom: d.itemUom,
-              qty: Number(d.trnQty),
-              batchcost: Number(d.trnCost),
-              batchNo: d.itemBatch,
-              expDate: d.docExpdate,
-            };
-            const batchFilter = {
-              itemCode: trimmedItemCode,
-              siteCode: d.storeNo,
-              uom: d.itemUom,
-            };
 
-            await apiService
-              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .post(`ItemBatches/updateqty`, batchUpdate)
+            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+                // batchno: d.itemBatch,
+                // expDate: d.docExpdate,
+              };
+              const batchFilter = {
+                itemCode: trimmedItemCode,
+                siteCode: d.storeNo,
+                uom: d.itemUom,
+              };
 
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+              await apiService
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .post(`ItemBatches/updateqty`, batchUpdate)
+
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
+            } else {
+
+              let existingBatch;
+
+              const filter = {
+                where: {
+                  and: [
+                    { itemCode: d.trimmedItemCode },
+                    { uom: d.itemUom },
+                    { siteCode: d.storeNo },
+                    { batchNo: d.itemBatch },
+                  ],
+                },
+              };
+
+              const url = `ItemBatches?filter=${encodeURIComponent(
+                JSON.stringify(filter)
+              )}`;
+              existingBatch = await apiService
+                .get(url)
+                .then((resp) => resp[0])
+                .catch((error) => {
+                  console.error("Error fetching batch:", error);
+                  return null;
+                });
+                if (!existingBatch) {
+                  // For new batches, create a new batch record
+                 const  batchCreate = {
+                    itemCode: trimmedItemCode,
+                    siteCode: d.storeNo,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchCost: Number(d.trnCost),
+                    batchNo: d.itemBatch,
+                    expDate: d?.docExpdate ? d?.docExpdate : null,
+                  };
+
+                  await apiService
+                    .post(`ItemBatches`, batchCreate)
+                    .catch(async (err) => {
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/create error: ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                    });
+                } else {
+
+
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+                batchno: d.itemBatch,
+                // expDate: d.docExpdate,
+              };
+              const batchFilter = {
+                itemCode: trimmedItemCode,
+                siteCode: d.storeNo,
+                uom: d.itemUom,
+              };
+
+              await apiService
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .post(`ItemBatches/updateqty`, batchUpdate)
+
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
+            }
+          }
           }
         } else {
           // Existing stktrns → log
@@ -1582,37 +1681,71 @@ function AddGti({ docData }) {
             //   batchNo: d.itemBatch,
             //   expDate: d.docExpdate
             // };
-            const batchUpdate = {
-              itemcode: trimmedItemCode,
-              sitecode: d.storeNo,
-              uom: d.itemUom,
-              qty: Number(d.trnQty),
-              batchcost: Number(d.trnCost),
-              batchNo: d.itemBatch,
-              expDate: d.docExpdate,
-            };
-            const batchFilter = {
-              itemCode: trimmedItemCode,
-              siteCode: d.storeNo,
-              uom: d.itemUom,
-            };
+            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+                // batchno: d.itemBatch,
+                // expDate: d.docExpdate,
+              };
+              const batchFilter = {
+                itemCode: trimmedItemCode,
+                siteCode: d.storeNo,
+                uom: d.itemUom,
+              };
 
-            await apiService
-              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .post(`ItemBatches/updateqty`, batchUpdate)
+              await apiService
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .post(`ItemBatches/updateqty`, batchUpdate)
 
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: d.storeNo,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: d.storeNo,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
+            } else {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+                batchno: d.itemBatch,
+                // expDate: d.docExpdate,
+              };
+              const batchFilter = {
+                itemCode: trimmedItemCode,
+                siteCode: d.storeNo,
+                uom: d.itemUom,
+              };
+
+              await apiService
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .post(`ItemBatches/updateqty`, batchUpdate)
+
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: d.storeNo,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
+            }
           }
         } else {
           // Existing stktrns → log
@@ -2078,6 +2211,11 @@ function AddGti({ docData }) {
                         stockList.length / pagination.limit
                       )}
                       onPageChange={handlePageChange}
+                      emptyMessage={
+                        !stockHdrs.fstoreNo
+                          ? "Please select From Store to view items"
+                          : "No items Found"
+                      }
                     />
                   </CardContent>
                 </Card>

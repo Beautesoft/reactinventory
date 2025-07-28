@@ -86,7 +86,14 @@ const calculateTotals = (cartData) => {
 };
 
 const EditDialog = memo(
-  ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit, isBatchEdit }) => {
+  ({
+    showEditDialog,
+    setShowEditDialog,
+    editData,
+    onEditCart,
+    onSubmit,
+    isBatchEdit,
+  }) => {
     const [batchOptions, setBatchOptions] = useState([]);
     const [selectedBatch, setSelectedBatch] = useState(null);
     const [isExpiryReadOnly, setIsExpiryReadOnly] = useState(false);
@@ -115,11 +122,12 @@ const EditDialog = memo(
           where: {
             itemCode: editData.itemcode,
             siteCode: JSON.parse(localStorage.getItem("userDetails"))?.siteCode,
-            uom: editData.docUom
-          }
+            uom: editData.docUom,
+          },
         };
-        
-        apiService.get(`ItemBatches${buildFilterQuery(filter)}`)
+
+        apiService
+          .get(`ItemBatches${buildFilterQuery(filter)}`)
           .then((batches) => {
             // Filter out items with empty or null batchNo
             const validBatches = batches.filter(
@@ -128,7 +136,9 @@ const EditDialog = memo(
 
             // Remove duplicates based on batchNo
             const uniqueBatches = validBatches.reduce((acc, current) => {
-              const exists = acc.find((item) => item.batchNo === current.batchNo);
+              const exists = acc.find(
+                (item) => item.batchNo === current.batchNo
+              );
               if (!exists) acc.push(current);
               return acc;
             }, []);
@@ -136,7 +146,7 @@ const EditDialog = memo(
             const formattedOptions = uniqueBatches.map((item) => ({
               value: item.batchNo,
               label: item.batchNo,
-              expDate: item.expDate
+              expDate: item.expDate,
             }));
 
             setBatchOptions(formattedOptions);
@@ -144,7 +154,7 @@ const EditDialog = memo(
             // If there's an existing batch number, try to find and select it
             if (editData.docBatchNo) {
               const existingBatch = formattedOptions.find(
-                opt => opt.value === editData.docBatchNo
+                (opt) => opt.value === editData.docBatchNo
               );
               if (existingBatch) {
                 setSelectedBatch(existingBatch);
@@ -158,7 +168,7 @@ const EditDialog = memo(
               }
             }
           })
-          .catch(error => {
+          .catch((error) => {
             console.error("Error fetching batches:", error);
             setBatchOptions([]);
           })
@@ -169,14 +179,14 @@ const EditDialog = memo(
     }, [showEditDialog]);
 
     const handleExistingBatchChange = (value) => {
-      const selected = batchOptions.find(opt => opt.value === value);
+      const selected = batchOptions.find((opt) => opt.value === value);
       setSelectedBatch(selected);
       setNewBatchNo("");
       setUseExistingBatch(true);
-      
+
       if (selected && selected.expDate) {
         // If batch exists in options and has expiry date, set it and make readonly
-        const formattedDate = selected.expDate.split('T')[0]; // Convert to yyyy-MM-dd format
+        const formattedDate = selected.expDate.split("T")[0]; // Convert to yyyy-MM-dd format
         onEditCart({ target: { value: formattedDate } }, "docExpdate");
         editData.docExpdate = formattedDate;
         setIsExpiryReadOnly(true);
@@ -184,7 +194,7 @@ const EditDialog = memo(
         // If batch doesn't exist or has no expiry date, allow manual entry
         setIsExpiryReadOnly(false);
       }
-      
+
       onEditCart({ target: { value } }, "docBatchNo");
     };
 
@@ -230,7 +240,7 @@ const EditDialog = memo(
       const updatedEditData = {
         ...editData,
         useExistingBatch,
-        docBatchNo: useExistingBatch ? selectedBatch?.value : newBatchNo
+        docBatchNo: useExistingBatch ? selectedBatch?.value : newBatchNo,
       };
 
       onSubmit(updatedEditData);
@@ -243,7 +253,9 @@ const EditDialog = memo(
           aria-describedby="edit-item-description"
         >
           <DialogHeader>
-            <DialogTitle>{isBatchEdit ? "Edit Selected Item Details" : "Edit Item Details"}</DialogTitle>
+            <DialogTitle>
+              {isBatchEdit ? "Edit Selected Item Details" : "Edit Item Details"}
+            </DialogTitle>
             <div
               id="edit-item-description"
               className="text-sm text-muted-foreground"
@@ -282,7 +294,8 @@ const EditDialog = memo(
                     type="number"
                     min="0"
                     value={editData?.docPrice || ""}
-            isBatchEdit        onChange={(e) => onEditCart(e, "docPrice")}
+                    isBatchEdit
+                    onChange={(e) => onEditCart(e, "docPrice")}
                     className="w-full"
                   />
                 </div>
@@ -318,7 +331,13 @@ const EditDialog = memo(
                       disabled={isLoadingBatches}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder={isLoadingBatches ? "Loading batches..." : "Select existing batch"} />
+                        <SelectValue
+                          placeholder={
+                            isLoadingBatches
+                              ? "Loading batches..."
+                              : "Select existing batch"
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {isLoadingBatches ? (
@@ -397,7 +416,7 @@ function AddGrn({ docData }) {
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
   ];
-  console.log(window?.APP_CONFIG?.BATCH_SNO,'bnoooo')
+  console.log(window?.APP_CONFIG?.BATCH_SNO, "bnoooo");
   const [activeTab, setActiveTab] = useState("detail");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
@@ -414,8 +433,6 @@ function AddGrn({ docData }) {
   const [batchOptions, setBatchOptions] = useState([]);
   const [batches, setBatches] = useState([]);
 
-
-
   const [editData, setEditData] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -428,7 +445,7 @@ function AddGrn({ docData }) {
 
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 6
+    limit: 6,
   });
 
   const [itemFilter, setItemFilter] = useState({
@@ -511,7 +528,7 @@ function AddGrn({ docData }) {
   const [filters, setFilters] = useState({
     brand: [],
     range: [],
-    department: ["RETAIL PRODUCT", "SALON PRODUCT"]
+    department: ["RETAIL PRODUCT", "SALON PRODUCT"],
   });
 
   // Add apply filters function
@@ -524,29 +541,32 @@ function AddGrn({ docData }) {
     }
 
     // If no filters are active, restore original data
-    if (!filters.brand.length && !filters.range.length && 
-        filters.department.length === 2) {
+    if (
+      !filters.brand.length &&
+      !filters.range.length &&
+      filters.department.length === 2
+    ) {
       setStockList(originalStockList);
       setItemTotal(originalStockList.length);
       setLoading(false);
       return;
     }
 
-    const filteredList = originalStockList.filter(item => {
+    const filteredList = originalStockList.filter((item) => {
       // Brand filter
       if (filters.brand.length > 0) {
-        const brandMatch = filters.brand.some(brand => 
-          brand.value === item.BrandCode || 
-          brand.label === item.Brand
+        const brandMatch = filters.brand.some(
+          (brand) =>
+            brand.value === item.BrandCode || brand.label === item.Brand
         );
         if (!brandMatch) return false;
       }
 
       // Range filter
       if (filters.range.length > 0) {
-        const rangeMatch = filters.range.some(range => 
-          range.value === item.RangeCode || 
-          range.label === item.Range
+        const rangeMatch = filters.range.some(
+          (range) =>
+            range.value === item.RangeCode || range.label === item.Range
         );
         if (!rangeMatch) return false;
       }
@@ -562,45 +582,45 @@ function AddGrn({ docData }) {
 
     setStockList(filteredList);
     setItemTotal(filteredList.length);
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
     setLoading(false);
   };
 
   // Add this function to help with debugging
   const logFilterState = () => {
-    console.log('Current Filters:', {
+    console.log("Current Filters:", {
       brand: filters.brand,
       range: filters.range,
-      department: filters.department
+      department: filters.department,
     });
-    console.log('Original List Length:', originalStockList.length);
-    console.log('Filtered List Length:', stockList.length);
+    console.log("Original List Length:", originalStockList.length);
+    console.log("Filtered List Length:", stockList.length);
   };
 
   // Update the filter handlers to include logging
   const handleBrandChange = (selected) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
-      brand: selected
+      brand: selected,
     }));
   };
 
   const handleRangeChange = (selected) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
-      range: selected
+      range: selected,
     }));
   };
 
   const handleDepartmentChange = (department) => {
     setLoading(true);
-    
+
     // Update filters state
     const newFilters = {
       ...filters,
       department: filters.department.includes(department)
-        ? filters.department.filter(d => d !== department)
-        : [...filters.department, department]
+        ? filters.department.filter((d) => d !== department)
+        : [...filters.department, department],
     };
     setFilters(newFilters);
 
@@ -609,11 +629,14 @@ function AddGrn({ docData }) {
       setOriginalStockList(stockList);
     }
 
-    console.log(newFilters,'fil0')
+    console.log(newFilters, "fil0");
 
     // If no filters are active, restore original data
-    if (!newFilters.brand.length && !newFilters.range.length && 
-        newFilters.department.length === 2) {
+    if (
+      !newFilters.brand.length &&
+      !newFilters.range.length &&
+      newFilters.department.length === 2
+    ) {
       setStockList(originalStockList);
       setItemTotal(originalStockList.length);
       setLoading(false);
@@ -621,23 +644,23 @@ function AddGrn({ docData }) {
     }
 
     // Apply filters immediately
-    const filteredList = originalStockList.filter(item => {
-        console.log(item,'item')
+    const filteredList = originalStockList.filter((item) => {
+      console.log(item, "item");
 
       // Brand filter
       if (newFilters.brand.length > 0) {
-        const brandMatch = newFilters.brand.some(brand => 
-          brand.value === item.BrandCode || 
-          brand.label === item.Brand
+        const brandMatch = newFilters.brand.some(
+          (brand) =>
+            brand.value === item.BrandCode || brand.label === item.Brand
         );
         if (!brandMatch) return false;
       }
 
       // Range filter
       if (newFilters.range.length > 0) {
-        const rangeMatch = newFilters.range.some(range => 
-          range.value === item.RangeCode || 
-          range.label === item.Range
+        const rangeMatch = newFilters.range.some(
+          (range) =>
+            range.value === item.RangeCode || range.label === item.Range
         );
         if (!rangeMatch) return false;
       }
@@ -653,14 +676,14 @@ function AddGrn({ docData }) {
 
     setStockList(filteredList);
     setItemTotal(filteredList.length);
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
     setLoading(false);
   };
 
   // Add this effect to help with debugging
   useEffect(() => {
     if (originalStockList.length > 0) {
-      console.log('Sample Item Structure:', originalStockList[0]);
+      console.log("Sample Item Structure:", originalStockList[0]);
     }
   }, [originalStockList]);
 
@@ -670,8 +693,8 @@ function AddGrn({ docData }) {
   const handleSearch = (e) => {
     const searchValue = e.target.value.trim().toLowerCase();
 
-    console.log(searchValue,'sv')
-    
+    console.log(searchValue, "sv");
+
     // Clear any existing timer
     if (searchTimer) {
       clearTimeout(searchTimer);
@@ -679,17 +702,17 @@ function AddGrn({ docData }) {
 
     // Store original data if not already stored
     if (!originalStockList.length && stockList.length) {
-      console.log(searchValue,'sv0')
+      console.log(searchValue, "sv0");
 
       setOriginalStockList(stockList);
     }
 
     if (!searchValue) {
       // If search is empty, restore original data
-      console.log(searchValue,'sv1')
+      console.log(searchValue, "sv1");
 
       setStockList(originalStockList);
-            setLoading(false);
+      setLoading(false);
 
       return;
     }
@@ -699,7 +722,7 @@ function AddGrn({ docData }) {
     // Set new timer
     const timer = setTimeout(() => {
       const filteredList = originalStockList.filter((item) => {
-        console.log(searchValue,'sv2')
+        console.log(searchValue, "sv2");
 
         return (
           item.stockCode?.toLowerCase().includes(searchValue) ||
@@ -709,8 +732,6 @@ function AddGrn({ docData }) {
           item.rangeCode?.toLowerCase().includes(searchValue)
         );
       });
-
-      
 
       setStockList(filteredList);
       setLoading(false);
@@ -879,32 +900,31 @@ function AddGrn({ docData }) {
     });
   };
 
-
   const getBatches = async (filter) => {
     try {
       const [batches] = await Promise.all([
         apiService.get(`ItemBatches${buildFilterQuery(filter)}`),
       ]);
-  
+
       // Filter out items with empty or null batchNo
       const validBatches = batches.filter(
         (item) => item.batchNo && item.batchNo.trim() !== ""
       );
-  
+
       // Remove duplicates based on batchNo
       const uniqueBatches = validBatches.reduce((acc, current) => {
         const exists = acc.find((item) => item.batchNo === current.batchNo);
         if (!exists) acc.push(current);
         return acc;
       }, []);
-  
+
       setBatches(uniqueBatches);
-  
+
       const formattedOptions = uniqueBatches.map((item) => ({
         value: item.batchNo,
         label: item.expDate,
       }));
-  
+
       setBatchOptions(formattedOptions);
     } catch (error) {
       console.error("Error fetching batch options:", error);
@@ -952,17 +972,13 @@ function AddGrn({ docData }) {
         console.log(count, "count");
 
         setStockList(updatedRes);
-        setOriginalStockList(updatedRes)
+        setOriginalStockList(updatedRes);
         setItemTotal(count);
       })
       .catch((err) => {
         setLoading(false);
         console.error("Error fetching stock details:", err);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to fetch stock details",
-        });
+        toast.error("Failed to fetch stock details");
       });
   };
 
@@ -1229,10 +1245,14 @@ function AddGrn({ docData }) {
     if (type === "post") {
       cart.forEach((item, index) => {
         if (!item.docBatchNo) {
-          errors.push(`Batch number is required for item ${index + 1} (${item.itemcode})`);
+          errors.push(
+            `Batch number is required for item ${index + 1} (${item.itemcode})`
+          );
         }
         if (!item.docExpdate) {
-          errors.push(`Expiry date is required for item ${index + 1} (${item.itemcode})`);
+          errors.push(
+            `Expiry date is required for item ${index + 1} (${item.itemcode})`
+          );
         }
       });
     }
@@ -1264,22 +1284,24 @@ function AddGrn({ docData }) {
   //   }));
   // };
   const handleDateChange = (e, type) => {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  if (type === "deliveryDate") {
-    let deliveryDate = moment.tz(e.target.value, tz).valueOf();
-    let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
-    if (deliveryDate > docDate) {
-      showError("Delivery Date should be less than or equal to Doc Create Date");
-      return;
+    if (type === "deliveryDate") {
+      let deliveryDate = moment.tz(e.target.value, tz).valueOf();
+      let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
+      if (deliveryDate > docDate) {
+        showError(
+          "Delivery Date should be less than or equal to Doc Create Date"
+        );
+        return;
+      }
+      console.log(deliveryDate, docDate, "date");
     }
-    console.log(deliveryDate, docDate, "date");
-  }
-  setStockHdrs((prev) => ({
-    ...prev,
-    [type]: e.target.value,
-  }));
-};
+    setStockHdrs((prev) => ({
+      ...prev,
+      [type]: e.target.value,
+    }));
+  };
 
   const handleEditCart = useCallback((e, type) => {
     const value = e.target.value;
@@ -1289,30 +1311,34 @@ function AddGrn({ docData }) {
     }));
   }, []);
 
-  const handleEditSubmit = useCallback((updatedEditData) => {
-    if (!updatedEditData.docQty || !updatedEditData.docPrice) {
-      toast.error("Quantity and Price are required");
-      return;
-    }
+  const handleEditSubmit = useCallback(
+    (updatedEditData) => {
+      if (!updatedEditData.docQty || !updatedEditData.docPrice) {
+        toast.error("Quantity and Price are required");
+        return;
+      }
 
-    console.log(updatedEditData,'updatedEditData')
+      console.log(updatedEditData, "updatedEditData");
 
-    const updatedItem = {
-      ...updatedEditData,
-      docQty: Number(updatedEditData.docQty),
-      docPrice: Number(updatedEditData.docPrice),
-      docAmt: Number(updatedEditData.docQty) * Number(updatedEditData.docPrice),
-    };
+      const updatedItem = {
+        ...updatedEditData,
+        docQty: Number(updatedEditData.docQty),
+        docPrice: Number(updatedEditData.docPrice),
+        docAmt:
+          Number(updatedEditData.docQty) * Number(updatedEditData.docPrice),
+      };
 
-    setCartData((prev) =>
-      prev.map((item, index) => (index === editingIndex ? updatedItem : item))
-    );
+      setCartData((prev) =>
+        prev.map((item, index) => (index === editingIndex ? updatedItem : item))
+      );
 
-    setShowEditDialog(false);
-    setEditData(null);
-    setEditingIndex(null);
-    toast.success("Item updated successfully");
-  }, [editingIndex]);
+      setShowEditDialog(false);
+      setEditData(null);
+      setEditingIndex(null);
+      toast.success("Item updated successfully");
+    },
+    [editingIndex]
+  );
 
   const editPopup = (item, index) => {
     setIsBatchEdit(false);
@@ -1322,7 +1348,7 @@ function AddGrn({ docData }) {
       docPrice: Number(item.docPrice) || 0,
       docExpdate: item.docExpdate || "",
       itemRemark: item.itemRemark || "",
-      docBatchNo:item.docBatchNo|| ""
+      docBatchNo: item.docBatchNo || "",
     });
     setEditingIndex(index);
     setShowEditDialog(true);
@@ -1381,9 +1407,9 @@ function AddGrn({ docData }) {
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
-      itemRemark: item?.itemRemark|| null,
+      itemRemark: item?.itemRemark || null,
       itemprice: 0,
-      docBatchNo:null
+      docBatchNo: null,
     };
     // console.log(item.itemUom,cartData[0].docUom)
 
@@ -1410,7 +1436,7 @@ function AddGrn({ docData }) {
       ("0" + today.getSeconds()).slice(-2);
 
     return {
-      id:null,
+      id: null,
       trnPost: today.toISOString().split("T")[0],
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
@@ -1433,12 +1459,12 @@ function AddGrn({ docData }) {
       lineNo: item.docLineno,
       itemUom: item.docUom,
       movType: "GRN",
-      itemBatch:item.docBatchNo,
+      itemBatch: item.docBatchNo,
       itemBatchCost: item.docPrice,
       stockIn: null,
       transPackageLineNo: null,
       docExpdate: item.docExpdate,
-      useExistingBatch:item.useExistingBatch
+      useExistingBatch: item.useExistingBatch,
       // docExpdate: process.env.REACT_APP_EXPIRY_DATE === "Yes"
       //   ? item.docExpdate
       //     ? new Date(item.docExpdate).toISOString().split('T')[0] + " 00:00:00"
@@ -1529,7 +1555,10 @@ function AddGrn({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
         createUser: hdr.createUser,
-        createDate: type === "post" && urlDocNo ? hdr.createDate : new Date().toISOString(),
+        createDate:
+          type === "post" && urlDocNo
+            ? hdr.createDate
+            : new Date().toISOString(),
       };
 
       // Handle header operations based on type and urlDocNo
@@ -1563,7 +1592,7 @@ function AddGrn({ docData }) {
         };
         // await apiService.post("Inventorylogs", inventoryLog);
 
-        let batchId
+        let batchId;
         const stktrns = details.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
@@ -1578,13 +1607,18 @@ function AddGrn({ docData }) {
               ],
             },
           };
-        
-          const url = `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-          return apiService.get(url).then((resp) => ({ resp, d })).catch((error) => ({ error, d }));
+
+          const url = `Itemonqties?filter=${encodeURIComponent(
+            JSON.stringify(filter)
+          )}`;
+          return apiService
+            .get(url)
+            .then((resp) => ({ resp, d }))
+            .catch((error) => ({ error, d }));
         });
-        
+
         const results = await Promise.all(itemRequests);
-        
+
         for (const { resp, d, error } of results) {
           if (error) {
             const errorLog = {
@@ -1597,14 +1631,17 @@ function AddGrn({ docData }) {
             // await apiService.post("Inventorylogs", errorLog);
             continue;
           }
-        
+
           if (resp.length) {
             const on = resp[0];
-            d.trnBalqty = (Number(d.trnBalqty || 0) + Number(on.trnBalqty || 0)).toString();
-            d.trnBalcst = (Number(d.trnBalcst || 0) + Number(on.trnBalcst || 0)).toString();
+            d.trnBalqty = (
+              Number(d.trnBalqty || 0) + Number(on.trnBalqty || 0)
+            ).toString();
+            d.trnBalcst = (
+              Number(d.trnBalcst || 0) + Number(on.trnBalcst || 0)
+            ).toString();
             // d.itemBatchCost = (on.batchCost || 0).toString();
             d.itemBatchCost = (d.itemBatchCost || 0).toString();
-
           } else {
             const errorLog = {
               trnDocNo: docNo,
@@ -1644,7 +1681,7 @@ function AddGrn({ docData }) {
               logMsg: `${d.itemcode} Inserted on stktrn Table`,
               createdDate: new Date().toISOString().split("T")[0],
             };
-                    // Optionally call Sequoia batchSNO
+            // Optionally call Sequoia batchSNO
             // if (process.env.REACT_APP_BATCH_SNO === "Yes") {
             //   const url = `${process.env.REACT_APP_SEQUOIA_URI}api/postItemBatchSno?docNo=${docNo}&itemCode=${d.itemcode}&uom=${d.itemUom}&itemsiteCode=${userDetails.siteCode}&Qty=${d.trnQty}&ExpDate=${d.docExpdate}`;
             //   await fetch(url); // Fire-and-forget
@@ -1663,25 +1700,41 @@ function AddGrn({ docData }) {
             //   batchNo:d.itemBatch
             // };
 
-                if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
-
+            if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
               const params = new URLSearchParams({
                 docNo: d.trnDocno,
                 itemCode: d.itemcode,
                 uom: d.itemUom,
                 itemsiteCode: d.storeNo,
                 Qty: d.trnQty,
-                ExpDate: d?.docExpdate? d?.docExpdate:null,
+                ExpDate: d?.docExpdate ? d?.docExpdate : null,
                 // batchNo:d.itemBatch,
-                batchSNo:d.itemBatch,
+                // batchSNo: d.itemBatch,
                 // itemsiteCode: userDetails.siteCode,
                 batchCost: Number(d.trnCost),
 
                 // Make sure it's in correct format (e.g., "yyyy-MM-dd")
               });
 
+              const payload = {
+                itemCode: d.itemcode?.replace(/0000$/, ""), // Remove 0000 suffix if present
+                siteCode: d.storeNo,
+                batchSNo: d.itemBatch, // or d.batchSNo if that's the correct field
+                DocNo: d.trnDocno,
+                DocOutNo: "", // Set this if you have an outbound doc number, else leave as empty string
+                uom: d.itemUom,
+                availability: true, // or set based on your logic
+                expDate: d.docExpdate
+                  ? new Date(d.docExpdate).toISOString()
+                  : null,
+                batchCost: Number(d.trnCost) || 0,
+              };
+
               try {
-                await apiService1.get(`api/postItemBatchSno?${params.toString()}`);
+                await apiService1.get(
+                  `api/postItemBatchSno?${params.toString()}`
+                );
+                // await apiService.post(`ItemBatchSnos`, payload);
               } catch (err) {
                 const errorLog = {
                   trnDocNo: d.trnDocno,
@@ -1694,51 +1747,53 @@ function AddGrn({ docData }) {
                 // Optionally log the error
                 // await apiService.post("Inventorylogs", errorLog);
               }
-
             }
-            
-            const trimmedItemCode = d.itemcode.replace(/0000$/, '');
+
+            const trimmedItemCode = d.itemcode.replace(/0000$/, "");
             let batchUpdate;
 
             const batchFilter = {
               itemCode: trimmedItemCode,
               siteCode: userDetails.siteCode,
               uom: d.itemUom,
-              batchNo: d.itemBatch
-              }
-              // const fil={
-              //   where:
-              //   {
-              //     itemCode: trimmedItemCode,
-              //     siteCode: userDetails.siteCode,
-              //     uom: d.itemUom,
-              //     batchNo: d.itemBatch
+              batchNo: d.itemBatch,
+            };
+            // const fil={
+            //   where:
+            //   {
+            //     itemCode: trimmedItemCode,
+            //     siteCode: userDetails.siteCode,
+            //     uom: d.itemUom,
+            //     batchNo: d.itemBatch
 
-              //   }
+            //   }
 
-              // }
+            // }
 
-              const fil = {
-                where: {
-                  and: [{  itemCode: trimmedItemCode }, { siteCode: userDetails.siteCode },{  uom: d.itemUom },{  batchNo: d.itemBatch }],
-                }
+            const fil = {
+              where: {
+                and: [
+                  { itemCode: trimmedItemCode },
+                  { siteCode: userDetails.siteCode },
+                  { uom: d.itemUom },
+                  { batchNo: d.itemBatch },
+                ],
+              },
+            };
+
+            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              console.log(d, "ddd");
+              const updateqty = {
+                itemcode: trimmedItemCode,
+                sitecode: userDetails.siteCode,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
               };
-            
-
-            console.log(d,'ddd')
-            const updateqty = {
-  itemcode: trimmedItemCode,
-  sitecode: userDetails.siteCode,
-  uom: d.itemUom ,
-  qty: Number(d.trnQty),
-  batchcost:  Number(d.trnCost)
-};
-     await apiService.post(
-          `ItemBatches/updateqty`,
-          updateqty
-        ).then((res)=>{
-        })
-                  .catch(async (err) => {
+              await apiService
+                .post(`ItemBatches/updateqty`, updateqty)
+                .then((res) => {})
+                .catch(async (err) => {
                   // Log qty update error
                   const errorLog = {
                     trnDocNo: docNo,
@@ -1750,79 +1805,88 @@ function AddGrn({ docData }) {
                   };
                   // await apiService.post("Inventorylogs", errorLog);
                 });
-                
+            } else {
+              if (d.useExistingBatch) {
+                // For existing batches, first get the current batch data
+                // await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(fil))}`)
+                //   .then((res) => {
+                //     const batchData = res[0];
+                //     if (batchData) {
+                //       batchUpdate = {
+                //         itemCode: batchData.itemCode || trimmedItemCode,
+                //         siteCode: batchData.siteCode,
+                //         uom: batchData.uom,
+                //         qty: Number(batchData.qty) + Number(d.trnQty),
+                //         batchCost: Number(batchData.batchCost) + Number(d.trnCost),
+                //         batchNo: batchData.batchNo,
+                //         expDate: d?.docExpdate ? d?.docExpdate : batchData.expDate
+                //       };
+                //     }
+                //   })
+                //   .catch(async (err) => {
+                //     // Log qty update error
+                //     const errorLog = {
+                //       trnDocNo: docNo,
+                //       itemCode: d.itemcode,
+                //       loginUser: userDetails.username,
+                //       siteCode: userDetails.siteCode,
+                //       logMsg: `ItemBatches/updateqty ${err.message}`,
+                //       createdDate: new Date().toISOString().split("T")[0],
+                //     };
+                //     // await apiService.post("Inventorylogs", errorLog);
+                //   });
 
-            // if (d.useExistingBatch) {
-            //   // For existing batches, first get the current batch data
-            //   await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(fil))}`)
-            //     .then((res) => {
-            //       const batchData = res[0];
-            //       if (batchData) {
-            //         batchUpdate = {
-            //           itemCode: batchData.itemCode || trimmedItemCode,
-            //           siteCode: batchData.siteCode,
-            //           uom: batchData.uom,
-            //           qty: Number(batchData.qty) + Number(d.trnQty),
-            //           batchCost: Number(batchData.batchCost) + Number(d.trnCost),
-            //           batchNo: batchData.batchNo,
-            //           expDate: d?.docExpdate ? d?.docExpdate : batchData.expDate
-            //         };
-            //       }
-            //     })
-            //     .catch(async (err) => {
-            //       // Log qty update error
-            //       const errorLog = {
-            //         trnDocNo: docNo,
-            //         itemCode: d.itemcode,
-            //         loginUser: userDetails.username,
-            //         siteCode: userDetails.siteCode,
-            //         logMsg: `ItemBatches/updateqty ${err.message}`,
-            //         createdDate: new Date().toISOString().split("T")[0],
-            //       };
-            //       // await apiService.post("Inventorylogs", errorLog);
-            //     });
+                batchUpdate = {
+                  itemcode: trimmedItemCode,
+                  sitecode: userDetails.siteCode,
+                  uom: d.itemUom,
+                  qty: Number(d.trnQty),
+                  batchcost: Number(d.trnCost),
+                  batchno: d.itemBatch,
+                  // expDate: d?.docExpdate ? d?.docExpdate : null
+                };
 
-          
-            //   await apiService
-            //   // .post("ItemBatches/updateqty", batchUpdate)
-            //     .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-            //     .catch(async (err) => {
-            //       // Log qty update error
-            //       const errorLog = {
-            //         trnDocNo: docNo,
-            //         itemCode: d.itemcode,
-            //         loginUser: userDetails.username,
-            //         siteCode: userDetails.siteCode,
-            //         logMsg: `ItemBatches/updateqty ${err.message}`,
-            //         createdDate: new Date().toISOString().split("T")[0],
-            //       };
-            //       // await apiService.post("Inventorylogs", errorLog);
-            //     });
-            // } else {
-            //   // For new batches, create a new batch record
-            //   batchUpdate = {
-            //     itemCode: trimmedItemCode,
-            //     siteCode: userDetails.siteCode,
-            //     uom: d.itemUom,
-            //     qty: Number(d.trnQty),
-            //     batchCost: Number(d.trnCost),
-            //     batchNo: d.itemBatch,
-            //     expDate: d?.docExpdate ? d?.docExpdate : null
-            //   };
-              
-            //   await apiService
-            //     .post(`ItemBatches`, batchUpdate)
-            //     .catch(async (err) => {
-            //       const errorLog = {
-            //         trnDocNo: docNo,
-            //         itemCode: d.itemcode,
-            //         loginUser: userDetails.username,
-            //         siteCode: userDetails.siteCode,
-            //         logMsg: `ItemBatches/create error: ${err.message}`,
-            //         createdDate: new Date().toISOString().split("T")[0],
-            //       };
-            //     });
-            // }
+                await apiService
+                  .post("ItemBatches/updateqty", batchUpdate)
+                  // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                  .catch(async (err) => {
+                    // Log qty update error
+                    const errorLog = {
+                      trnDocNo: docNo,
+                      itemCode: d.itemcode,
+                      loginUser: userDetails.username,
+                      siteCode: userDetails.siteCode,
+                      logMsg: `ItemBatches/updateqty ${err.message}`,
+                      createdDate: new Date().toISOString().split("T")[0],
+                    };
+                    // await apiService.post("Inventorylogs", errorLog);
+                  });
+              } else {
+                // For new batches, create a new batch record
+                batchUpdate = {
+                  itemCode: trimmedItemCode,
+                  siteCode: userDetails.siteCode,
+                  uom: d.itemUom,
+                  qty: Number(d.trnQty),
+                  batchCost: Number(d.trnCost),
+                  batchNo: d.itemBatch,
+                  expDate: d?.docExpdate ? d?.docExpdate : null,
+                };
+
+                await apiService
+                  .post(`ItemBatches`, batchUpdate)
+                  .catch(async (err) => {
+                    const errorLog = {
+                      trnDocNo: docNo,
+                      itemCode: d.itemcode,
+                      loginUser: userDetails.username,
+                      siteCode: userDetails.siteCode,
+                      logMsg: `ItemBatches/create error: ${err.message}`,
+                      createdDate: new Date().toISOString().split("T")[0],
+                    };
+                  });
+              }
+            }
           }
         } else {
           // Existing stktrns → log
@@ -1867,7 +1931,6 @@ function AddGrn({ docData }) {
   };
 
   const handlePageChange = (newPage) => {
-    
     // console.log(newPage, "newPage");
     // const newLimit = itemFilter.limit;
     // const newSkip = (newPage - 1) * newLimit;
@@ -1876,9 +1939,9 @@ function AddGrn({ docData }) {
     //   skip: newSkip,
     // });
 
-    setPagination(prev => ({
+    setPagination((prev) => ({
       ...prev,
-      page: newPage
+      page: newPage,
     }));
   };
 
@@ -1893,23 +1956,21 @@ function AddGrn({ docData }) {
   // 2. Add handleBatchEditClick and handleBatchEditSubmit
   const handleBatchEditClick = () => {
     setIsBatchEdit(true);
-    setEditData({ docBatchNo: '', docExpdate: '', itemRemark: '' });
+    setEditData({ docBatchNo: "", docExpdate: "", itemRemark: "" });
     setShowEditDialog(true);
   };
 
   // Place this in the main AddGrn component, after other handler functions and before return
   const handleBatchEditSubmit = (fields) => {
-    setCartData(prev =>
+    setCartData((prev) =>
       prev.map((item, idx) =>
-        selectedRows.includes(idx)
-          ? { ...item, ...fields }
-          : item
+        selectedRows.includes(idx) ? { ...item, ...fields } : item
       )
     );
     setShowEditDialog(false);
     setIsBatchEdit(false);
     setSelectedRows([]);
-    toast.success('Batch update successful!');
+    toast.success("Batch update successful!");
   };
 
   return (
@@ -2207,8 +2268,12 @@ function AddGrn({ docData }) {
                         <Checkbox
                           id="retail"
                           className="w-5 h-5"
-                          checked={filters.department.includes("RETAIL PRODUCT")}
-                          onCheckedChange={() => handleDepartmentChange("RETAIL PRODUCT")}
+                          checked={filters.department.includes(
+                            "RETAIL PRODUCT"
+                          )}
+                          onCheckedChange={() =>
+                            handleDepartmentChange("RETAIL PRODUCT")
+                          }
                         />
                         <label htmlFor="retail" className="text-sm">
                           Retail Product
@@ -2220,7 +2285,9 @@ function AddGrn({ docData }) {
                           id="salon"
                           className="w-5 h-5"
                           checked={filters.department.includes("SALON PRODUCT")}
-                          onCheckedChange={() => handleDepartmentChange("SALON PRODUCT")}
+                          onCheckedChange={() =>
+                            handleDepartmentChange("SALON PRODUCT")
+                          }
                         />
                         <label htmlFor="salon" className="text-sm">
                           Salon Product
@@ -2328,8 +2395,10 @@ function AddGrn({ docData }) {
           {cartData.length > 0 && (
             <div className="flex justify-end my-5">
               {selectedRows.length > 0 && (
-                <Button onClick={handleBatchEditClick}                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
->
+                <Button
+                  onClick={handleBatchEditClick}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
                   Update Selected
                 </Button>
               )}
@@ -2341,42 +2410,47 @@ function AddGrn({ docData }) {
                 Selected Items
               </CardTitle>
               <Table>
-                <TableHeader className="bg-slate-100">
-                  <TableRow className="border-b border-slate-200">
-                    <TableHead>
-                      <input
-                        type="checkbox"
-                        className="w-5 h-5"
-                        checked={selectedRows.length === cartData.length && cartData.length > 0}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setSelectedRows(cartData.map((_, idx) => idx));
-                          } else {
-                            setSelectedRows([]);
+                {urlStatus != 7 && (
+                  <TableHeader className="bg-slate-100">
+                    <TableRow className="border-b border-slate-200">
+                      <TableHead>
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5"
+                          checked={
+                            selectedRows.length === cartData.length &&
+                            cartData.length > 0
                           }
-                        }}
-                      />
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      NO
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Item Code
-                    </TableHead>
-                    <TableHead>Item Description</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Amount
-                    </TableHead>
-                    <TableHead>Expiry Date</TableHead>
-                    <TableHead>Batch No</TableHead>
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRows(cartData.map((_, idx) => idx));
+                            } else {
+                              setSelectedRows([]);
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="font-semibold text-slate-700">
+                        NO
+                      </TableHead>
+                      <TableHead className="font-semibold text-slate-700">
+                        Item Code
+                      </TableHead>
+                      <TableHead>Item Description</TableHead>
+                      <TableHead>UOM</TableHead>
+                      <TableHead>Quantity</TableHead>
+                      <TableHead>Price</TableHead>
+                      <TableHead className="font-semibold text-slate-700">
+                        Amount
+                      </TableHead>
+                      <TableHead>Expiry Date</TableHead>
+                      <TableHead>Batch No</TableHead>
 
-                    <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 && <TableHead>Action</TableHead>}
-                  </TableRow>
-                </TableHeader>
+                      <TableHead>Remarks</TableHead>
+                      {urlStatus != 7 && <TableHead>Action</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                )}
                 <TableBody>
                   {loading ? (
                     <TableSpinner colSpan={9} />
@@ -2396,20 +2470,24 @@ function AddGrn({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              className="w-5 h-5"
-                              checked={selectedRows.includes(index)}
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setSelectedRows([...selectedRows, index]);
-                                } else {
-                                  setSelectedRows(selectedRows.filter(i => i !== index));
-                                }
-                              }}
-                            />
-                          </TableCell>
+                          {urlStatus != 7 && (
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                className="w-5 h-5"
+                                checked={selectedRows.includes(index)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRows([...selectedRows, index]);
+                                  } else {
+                                    setSelectedRows(
+                                      selectedRows.filter((i) => i !== index)
+                                    );
+                                  }
+                                }}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
@@ -2425,9 +2503,8 @@ function AddGrn({ docData }) {
                           </TableCell>
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
 
-                          <TableCell>{item?.docBatchNo??'-'}</TableCell>
-                          <TableCell>{item.itemRemark??'-'}</TableCell>
-
+                          <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                          <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
                           {urlStatus != 7 && (
                             <TableCell>
@@ -2455,7 +2532,10 @@ function AddGrn({ docData }) {
                       ))}
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
-                        <TableCell colSpan={5} className="text-right text-slate-700">
+                        <TableCell
+                          colSpan={5}
+                          className="text-right text-slate-700"
+                        >
                           Totals:
                         </TableCell>
                         <TableCell className="text-slate-700">
