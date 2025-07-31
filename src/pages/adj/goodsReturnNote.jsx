@@ -43,7 +43,7 @@ function GoodsReturnNote() {
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "VGRN",
+      movCode: "GRN",
       storeNo: userDetails?.siteCode,
       supplyNo: null,
     },
@@ -172,15 +172,7 @@ function GoodsReturnNote() {
 
   const handleRoute = () => {
     console.log("Create New clicked");
-    navigate("/goods-return-note/add/"); // Navigate to the add page
-  };
-
-  const handleSort = (key, direction) => {
-    setPagination((prev) => ({
-      ...prev,
-      order: `${key} ${direction === "ascending" ? "ASC" : "DESC"}, docNo DESC`,
-      skip: 0, // Reset to first page when sorting
-    }));
+    navigate("/goods-receive-note/add/"); // Navigate to the add page
   };
 
   return (
@@ -194,7 +186,7 @@ function GoodsReturnNote() {
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
             <h1 className="text-2xl font-bold text-gray-900">
-              Goods Return Note
+              Goods Receive Note
             </h1>
           </div>
 
@@ -264,28 +256,13 @@ function GoodsReturnNote() {
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable
-                data={goodsData}
-                isLoading={isLoading}
-                onSort={handleSort}
-                type="rtn"
-              />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable
-                data={goodsData}
-                isLoading={isLoading}
-                onSort={handleSort}
-                type="rtn"
-              />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable
-                data={goodsData}
-                isLoading={isLoading}
-                onSort={handleSort}
-                type="rtn"
-              />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
             </TabsContent>
           </Tabs>
 

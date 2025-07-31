@@ -91,6 +91,7 @@ const EditDialog = memo(
     isBatchEdit,
   }) => {
     const [validationErrors, setValidationErrors] = useState([]);
+    const [newBatchNo, setNewBatchNo] = useState("");
 
     // Reset states when dialog closes
     useEffect(() => {
@@ -123,13 +124,8 @@ const EditDialog = memo(
       // } else if (!useExistingBatch && !newBatchNo.trim()) {
       //   errors.push("Please enter a new batch number");
       // }
-      // Validate expiry date
-      if (!editData?.docExpdate) {
-        errors.push("Expiry date is required");
-      }
-
-      // Validate expiry date
-      if (!editData?.docExpdate) {
+      // Validate expiry date only if batch functionality is enabled
+      if (window?.APP_CONFIG?.BATCH_NO === "Yes" && !editData?.docExpdate) {
         errors.push("Expiry date is required");
       }
 
@@ -146,6 +142,7 @@ const EditDialog = memo(
       // onSubmit(updatedEditData);
       onSubmit(editData);
     };
+
     return (
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent
@@ -200,26 +197,31 @@ const EditDialog = memo(
               </div>
             </>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="expiry">Expiry Date</Label>
-            <Input
-              id="expiry"
-              type="date"
-              value={editData?.docExpdate || ""}
-              onChange={(e) => onEditCart(e, "docExpdate")}
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="batchNo">Batch No</Label>
-            <Input
-              id="batchNo"
-              value={editData?.docBatchNo || ""}
-              onChange={(e) => onEditCart(e, "docBatchNo")}
-              placeholder="Enter batchNo"
-              className="w-full"
-            />
-          </div>
+          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="expiry">Expiry Date</Label>
+                <Input
+                  id="expiry"
+                  type="date"
+                  value={editData?.docExpdate || ""}
+                  onChange={(e) => onEditCart(e, "docExpdate")}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="batchNo">Batch No</Label>
+                <Input
+                  id="batchNo"
+                  value={editData?.docBatchNo || ""}
+                  onChange={(e) => onEditCart(e, "docBatchNo")}
+                  placeholder="Enter batchNo"
+                  className="w-full"
+                  maxLength={20}
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
             <Input
@@ -241,6 +243,7 @@ const EditDialog = memo(
     );
   }
 );
+
 
 function AddGto({ docData }) {
   const { docNo } = useParams();
@@ -1373,6 +1376,7 @@ function AddGto({ docData }) {
             // await apiService.post("Inventorylogs", errorLog);
           }
         }
+      
 
         // 7) Check existing stktrns
         const chkFilter = {
@@ -1416,33 +1420,7 @@ function AddGto({ docData }) {
             //   expDate: d.docExpdate
             // };
 
-            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
-              const batchUpdate = {
-                itemcode: trimmedItemCode,
-                sitecode: d.storeNo,
-                uom: d.itemUom,
-                qty: Number(d.trnQty),
-                batchcost: Number(d.trnCost),
-                // batchno: d.itemBatch,
-                // expDate: d.docExpdate
-              };
-
-              await apiService
-                .post(`ItemBatches/updateqty`, batchUpdate)
-                .then((res) => {})
-                .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
-            } else {
+            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
               const batchUpdate = {
                 itemcode: trimmedItemCode,
                 sitecode: d.storeNo,
@@ -1488,8 +1466,31 @@ function AddGto({ docData }) {
               //     };
               //     // await apiService.post("Inventorylogs", errorLog);
               //   });
-            }
+            } else {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+              };
+
+              await apiService
+                .post(`ItemBatches/updateqty`, batchUpdate)
+                .then((res) => {})
+                .catch(async (err) => {
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                });
+              }
           }
+        
         } else {
           // Existing stktrns → log
           const existsLog = {
@@ -1501,6 +1502,7 @@ function AddGto({ docData }) {
           };
           // await apiService.post("Inventorylogs", existsLog);
         }
+    
 
         if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
           await apiService1.get(
@@ -1596,7 +1598,7 @@ function AddGto({ docData }) {
             for (const d of stktrns1) {
               const trimmedItemCode = d.itemcode.replace(/0000$/, "");
 
-              if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              if (window?.APP_CONFIG?.BATCH_NO !== "Yes") {
                 const batchUpdate = {
                   itemcode: trimmedItemCode,
                   sitecode: d.storeNo,
@@ -1627,7 +1629,8 @@ function AddGto({ docData }) {
                     };
                     // await apiService.post("Inventorylogs", errorLog);
                   });
-              } else {
+              } 
+              else {
                 let existingBatch;
 
                 const filter = {
@@ -1734,7 +1737,30 @@ function AddGto({ docData }) {
                 //     };
                 //     // await apiService.post("Inventorylogs", errorLog);
                 //   });
-              }
+              } 
+              // else {
+              //   const batchUpdate = {
+              //     itemcode: trimmedItemCode,
+              //     sitecode: d.storeNo,
+              //     uom: d.itemUom,
+              //     qty: Number(d.trnQty),
+              //     batchcost: Number(d.trnCost),
+              //   };
+
+              //   await apiService
+              //     .post(`ItemBatches/updateqty`, batchUpdate)
+              //     .then((res) => {})
+              //     .catch(async (err) => {
+              //       const errorLog = {
+              //         trnDocNo: docNo,
+              //         itemCode: d.itemcode,
+              //         loginUser: userDetails.username,
+              //         siteCode: userDetails.siteCode,
+              //         logMsg: `ItemBatches/updateqty ${err.message}`,
+              //         createdDate: new Date().toISOString().split("T")[0],
+              //       };
+              //     });
+              // }
             }
           } else {
             // Existing stktrns → log
@@ -1749,22 +1775,10 @@ function AddGto({ docData }) {
           }
         }
 
-        // // 1. Auto-Post handling
-        // if (window?.APP_CONFIG?.AUTO_POST === "Yes") {
-        //   const stktrns1 = details.map((item) =>
-        //     createTransactionObject(item, docNo, formData.docToSite)
-        //   );
-        //   await processTransactions(stktrns1);
-        // }
 
-        // 2. Batch SNO handling
-        // if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
-        //   await apiService1.get(
-        //     `api/SaveOutItemBatchSno?formName=GRNOut&docNo=${docNo}&siteCode=${userDetails.siteCode}&userCode=${userDetails.username}`
-        //   );
-
-        // }
-      }
+      
+}   
+    
 
       toast.success(
         type === "post"
@@ -1774,7 +1788,8 @@ function AddGto({ docData }) {
           : "Created successfully"
       );
       navigate("/goods-transfer-out?tab=all");
-    } catch (err) {
+      }     
+    catch (err) {
       console.error("onSubmit error:", err);
       toast.error(
         type === "post"
@@ -1790,9 +1805,12 @@ function AddGto({ docData }) {
     }
   };
 
+
+
   const navigateTo = (path) => {
     navigate(path);
   };
+
   // 1. Add state at the top of the component
   const [selectedRows, setSelectedRows] = useState([]);
   const [isBatchEdit, setIsBatchEdit] = useState(false);
@@ -2195,6 +2213,7 @@ function AddGto({ docData }) {
                       itemsPerPage={6}
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
+                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
                     />
                     {/* </div> */}
                   </CardContent>
@@ -2255,8 +2274,12 @@ function AddGto({ docData }) {
                     <TableHead className="font-semibold text-slate-700">
                       Amount
                     </TableHead>
-                    <TableHead>Expiry Date</TableHead>
-                    <TableHead>Batch No</TableHead>
+                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                      <>
+                        <TableHead>Expiry Date</TableHead>
+                        <TableHead>Batch No</TableHead>
+                      </>
+                    )}
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 && <TableHead>Action</TableHead>}
                   </TableRow>
@@ -2311,8 +2334,12 @@ function AddGto({ docData }) {
                           <TableCell className="font-semibold text-slate-700">
                             {item.docAmt}
                           </TableCell>
-                          <TableCell>{format_Date(item.docExpdate)}</TableCell>
-                          <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                            <>
+                              <TableCell>{format_Date(item.docExpdate)}</TableCell>
+                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                            </>
+                          )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
                           {urlStatus != 7 && (
                             <TableCell>
@@ -2352,7 +2379,11 @@ function AddGto({ docData }) {
                         <TableCell className="font-semibold text-slate-700">
                           {calculateTotals(cartData).totalAmt.toFixed(2)}
                         </TableCell>
-                        <TableCell colSpan={2} />
+                        {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                          <TableCell colSpan={4} />
+                        ) : (
+                          <TableCell colSpan={2} />
+                        )}
                       </TableRow>
                     </>
                   )}

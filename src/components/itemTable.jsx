@@ -27,6 +27,7 @@ function ItemTable({
   onPageChange,
   onHandQty,
   emptyMessage, // <-- Add this prop
+  showBatchColumns = false,
 }) {
   // const [currentPage, setCurrentPage] = useState(1);
   // const totalPages = Math.ceil(data.length / itemsPerPage);
@@ -54,8 +55,8 @@ function ItemTable({
               <TableHead>Bar Code</TableHead>
               <TableHead>Range</TableHead>
               <TableHead>On Hand Qty</TableHead>
-              <TableHead>Batch No</TableHead>
-              <TableHead>Batch Expiry</TableHead>
+              {showBatchColumns && <TableHead>Batch No</TableHead>}
+              {showBatchColumns && <TableHead>Batch Expiry</TableHead>}
               <TableHead>Qty</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Cost</TableHead>
@@ -65,10 +66,10 @@ function ItemTable({
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSpinner colSpan={14} message="Loading..." />
+              <TableSpinner colSpan={showBatchColumns ? 14 : 12} message="Loading..." />
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center py-10">
+                <TableCell colSpan={showBatchColumns ? 14 : 12} className="text-center py-10">
                   <div className="flex flex-col items-center gap-2 text-gray-500">
                     <FileText size={40} />
                     <p>{emptyMessage || "No items Found"}</p>
@@ -93,8 +94,8 @@ function ItemTable({
                     <TableCell>{item.barCode || "-"}</TableCell>
                     <TableCell>{item.Range || "-"}</TableCell>
                     <TableCell>{item.quantity || "0"}</TableCell>
-                    <TableCell>{item.batchno || "-"}</TableCell>
-                    <TableCell>{item.batchexpirydate || "-"}</TableCell>
+                    {showBatchColumns && <TableCell>{item.batchno || "-"}</TableCell>}
+                    {showBatchColumns && <TableCell>{item.batchexpirydate || "-"}</TableCell>}
                     <TableCell className="text-start">
                       <Input
                         type="number"

@@ -124,13 +124,8 @@ const EditDialog = memo(
       // } else if (!useExistingBatch && !newBatchNo.trim()) {
       //   errors.push("Please enter a new batch number");
       // }
-      // Validate expiry date
-      if (!editData?.docExpdate) {
-        errors.push("Expiry date is required");
-      }
-
-      // Validate expiry date
-      if (!editData?.docExpdate) {
+      // Validate expiry date only if batch functionality is enabled
+      if (window?.APP_CONFIG?.BATCH_NO === "Yes" && !editData?.docExpdate) {
         errors.push("Expiry date is required");
       }
 
@@ -202,26 +197,31 @@ const EditDialog = memo(
               </div>
             </>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="expiry">Expiry Date</Label>
-            <Input
-              id="expiry"
-              type="date"
-              value={editData?.docExpdate || ""}
-              onChange={(e) => onEditCart(e, "docExpdate")}
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="batchNo">Batch No</Label>
-            <Input
-              id="batchNo"
-              value={editData?.docBatchNo || ""}
-              onChange={(e) => onEditCart(e, "docBatchNo")}
-              placeholder="Enter batchNo"
-              className="w-full"
-            />
-          </div>
+          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="expiry">Expiry Date</Label>
+                <Input
+                  id="expiry"
+                  type="date"
+                  value={editData?.docExpdate || ""}
+                  onChange={(e) => onEditCart(e, "docExpdate")}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="batchNo">Batch No</Label>
+                <Input
+                  id="batchNo"
+                  value={editData?.docBatchNo || ""}
+                  onChange={(e) => onEditCart(e, "docBatchNo")}
+                  placeholder="Enter batchNo"
+                  className="w-full"
+                  maxLength={20}
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
             <Input
@@ -243,6 +243,7 @@ const EditDialog = memo(
     );
   }
 );
+
 
 function AddGti({ docData }) {
   const { docNo } = useParams();
@@ -1478,39 +1479,7 @@ function AddGti({ docData }) {
             //   expDate: d.docExpdate
             // };
 
-            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
-              const batchUpdate = {
-                itemcode: trimmedItemCode,
-                sitecode: d.storeNo,
-                uom: d.itemUom,
-                qty: Number(d.trnQty),
-                batchcost: Number(d.trnCost),
-                // batchno: d.itemBatch,
-                // expDate: d.docExpdate,
-              };
-              const batchFilter = {
-                itemCode: trimmedItemCode,
-                siteCode: d.storeNo,
-                uom: d.itemUom,
-              };
-
-              await apiService
-                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-                .post(`ItemBatches/updateqty`, batchUpdate)
-
-                .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
-            } else {
+            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
 
               let existingBatch;
 
@@ -1593,20 +1562,41 @@ function AddGti({ docData }) {
                   };
                   // await apiService.post("Inventorylogs", errorLog);
                 });
+            } 
+          }else {
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: d.storeNo,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+              };
+
+              await apiService
+                .post(`ItemBatches/updateqty`, batchUpdate)
+                .catch(async (err) => {
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                });
             }
-          }
-          }
-        } else {
+            
+          
           // Existing stktrns → log
-          const existsLog = {
-            trnDocNo: docNo,
-            loginUser: userDetails.username,
-            siteCode: userDetails.siteCode,
-            logMsg: "stktrn already exists",
-            createdDate: new Date().toISOString().split("T")[0],
-          };
+          // const existsLog = {
+          //   trnDocNo: docNo,
+          //   loginUser: userDetails.username,
+          //   siteCode: userDetails.siteCode,
+          //   logMsg: "stktrn already exists",
+          //   createdDate: new Date().toISOString().split("T")[0],
+          // };
           // await apiService.post("Inventorylogs", existsLog);
-        }
+          }
 
         for (let i = 0; i < stktrns1.length; i++) {
           const d = stktrns1[i];
@@ -1681,7 +1671,7 @@ function AddGti({ docData }) {
             //   batchNo: d.itemBatch,
             //   expDate: d.docExpdate
             // };
-            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
+            if (window?.APP_CONFIG?.BATCH_NO !== "Yes") {
               const batchUpdate = {
                 itemcode: trimmedItemCode,
                 sitecode: d.storeNo,
@@ -1798,6 +1788,7 @@ function AddGti({ docData }) {
         // }
         // }
       }
+    }
 
       toast.success(
         type === "post"
@@ -2216,6 +2207,7 @@ function AddGti({ docData }) {
                           ? "Please select From Store to view items"
                           : "No items Found"
                       }
+                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
                     />
                   </CardContent>
                 </Card>
@@ -2276,8 +2268,12 @@ function AddGti({ docData }) {
                     <TableHead className="font-semibold text-slate-700">
                       Amount
                     </TableHead>
-                    <TableHead>Expiry Date</TableHead>
-                    <TableHead>Batch No</TableHead>
+                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                      <>
+                        <TableHead>Expiry Date</TableHead>
+                        <TableHead>Batch No</TableHead>
+                      </>
+                    )}
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 && <TableHead>Action</TableHead>}
                   </TableRow>
@@ -2332,8 +2328,12 @@ function AddGti({ docData }) {
                           <TableCell className="font-semibold text-slate-700">
                             {item.docAmt}
                           </TableCell>
-                          <TableCell>{format_Date(item.docExpdate)}</TableCell>
-                          <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                            <>
+                              <TableCell>{format_Date(item.docExpdate)}</TableCell>
+                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                            </>
+                          )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
                           {urlStatus != 7 && (
                             <TableCell>
@@ -2373,7 +2373,11 @@ function AddGti({ docData }) {
                         <TableCell className="font-semibold text-slate-700">
                           {calculateTotals(cartData).totalAmt.toFixed(2)}
                         </TableCell>
-                        <TableCell colSpan={2} />
+                        {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                          <TableCell colSpan={4} />
+                        ) : (
+                          <TableCell colSpan={2} />
+                        )}
                       </TableRow>
                     </>
                   )}

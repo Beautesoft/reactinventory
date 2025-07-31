@@ -29,7 +29,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
   });
 
   useEffect(() => {
-    if (type === "grn" && data?.length > 0) {
+    if ((type === "grn" || type === "rtn") && data?.length > 0) {
       const fetchSupplierNames = async () => {
         const uniqueSupplyNos = [...new Set(data.map((item) => item.supplyNo))];
         const uncachedSuppliers = uniqueSupplyNos.filter(
@@ -89,8 +89,14 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
   const handleDetails = (item) => {
     const status = item.docStatus === 7 ? "7" : "0";
     console.log(type)
-    const basePath =
-      type === "grn" ? "goods-receive-note" :  type === "gto"? "goods-transfer-out":'goods-transfer-in';
+    const basePath = 
+      type === "grn" ? "goods-receive-note" 
+      : type === "gto" ? "goods-transfer-out"
+      : type === "gti" ? "goods-transfer-in"
+      : type === "rtn" ? "goods-return-note"
+      : type === "adj" ? "stock-adjustment" 
+      : type === "sum" ? "stock-usage-memo"
+      : "goods-transfer-in";
 
     navigate(`/${basePath}/details/${item.docNo}?status=${status}`, {
       state: { item },
@@ -137,7 +143,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       if (sortConfig.key === 'docDate') {
         aValue = new Date(aValue).getTime();
         bValue = new Date(bValue).getTime();
-      } else if (sortConfig.key === 'supplyNo' && type === 'grn') {
+      } else if (sortConfig.key === 'supplyNo' && (type === 'grn' || type === 'rtn')) {
         aValue = supplierDetails[aValue] || aValue;
         bValue = supplierDetails[bValue] || bValue;
       }
@@ -156,6 +162,16 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
     grn: [
       { key: "docNo", label: "Doc Number" },
       { key: "docDate", label: "Invoice Date" },
+      { key: "docRef1", label: "Ref Number" },
+      { key: "supplyNo", label: "Supplier" },
+      { key: "docQty", label: "Total Quantity" },
+      { key: "docAmt", label: "Total Amount" },
+      { key: "docStatus", label: "Status" },
+      { key: "print", label: "Print" },
+    ],
+    rtn: [
+      { key: "docNo", label: "Doc Number" },
+      { key: "docDate", label: "Return Date" },
       { key: "docRef1", label: "Ref Number" },
       { key: "supplyNo", label: "Supplier" },
       { key: "docQty", label: "Total Quantity" },
@@ -253,7 +269,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
                     <TableCell>{dateConvert(item.docDate)}</TableCell>
                     <TableCell>{item.docRef1 || "-"}</TableCell>
                     <TableCell>
-                      {type === "grn"
+                      {(type === "grn" || type === "rtn")
                         ? supplierDetails[item.supplyNo] || item.supplyNo || "-"
                         : item.docRef2 || "-"}
                     </TableCell>

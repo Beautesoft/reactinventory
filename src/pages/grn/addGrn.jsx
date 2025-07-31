@@ -200,11 +200,14 @@ const EditDialog = memo(
 
     const handleNewBatchChange = (e) => {
       const value = e.target.value;
-      setNewBatchNo(value);
-      setSelectedBatch(null);
-      setUseExistingBatch(false);
-      setIsExpiryReadOnly(false);
-      onEditCart({ target: { value } }, "docBatchNo");
+      // Limit to 20 characters
+      if (value.length <= 20) {
+        setNewBatchNo(value);
+        setSelectedBatch(null);
+        setUseExistingBatch(false);
+        setIsExpiryReadOnly(false);
+        onEditCart({ target: { value } }, "docBatchNo");
+      }
     };
 
     const handleSubmit = () => {
@@ -220,16 +223,18 @@ const EditDialog = memo(
         }
       }
 
-      // Validate batch number
-      if (useExistingBatch && !selectedBatch?.value) {
-        errors.push("Please select an existing batch");
-      } else if (!useExistingBatch && !newBatchNo.trim()) {
-        errors.push("Please enter a new batch number");
-      }
+      // Validate batch number only if batch functionality is enabled
+      if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+        if (useExistingBatch && !selectedBatch?.value) {
+          errors.push("Please select an existing batch");
+        } else if (!useExistingBatch && !newBatchNo.trim()) {
+          errors.push("Please enter a new batch number");
+        }
 
-      // Validate expiry date
-      if (!editData?.docExpdate) {
-        errors.push("Expiry date is required");
+        // Validate expiry date only if batch functionality is enabled
+        if (!editData?.docExpdate) {
+          errors.push("Expiry date is required");
+        }
       }
 
       if (errors.length > 0) {
@@ -302,83 +307,88 @@ const EditDialog = memo(
               </>
             )}
             {/* Always show Batch No, Expiry Date, and Remarks */}
-            <div className="space-y-2">
-              <Label htmlFor="batchNo">Batch No</Label>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="useExisting"
-                    checked={useExistingBatch}
-                    onCheckedChange={(checked) => {
-                      setUseExistingBatch(checked);
-                      if (checked) {
-                        setNewBatchNo("");
-                      } else {
-                        setSelectedBatch(null);
-                        onEditCart({ target: { value: "" } }, "docBatchNo");
-                      }
-                    }}
-                  />
-                  <label htmlFor="useExisting" className="text-sm">
-                    Use Existing Batch
-                  </label>
-                </div>
-                {useExistingBatch ? (
-                  <div className="relative">
-                    <Select
-                      value={selectedBatch?.value || ""}
-                      onValueChange={handleExistingBatchChange}
-                      disabled={isLoadingBatches}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue
-                          placeholder={
-                            isLoadingBatches
-                              ? "Loading batches..."
-                              : "Select existing batch"
+            {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="batchNo">Batch No</Label>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="useExisting"
+                        checked={useExistingBatch}
+                        onCheckedChange={(checked) => {
+                          setUseExistingBatch(checked);
+                          if (checked) {
+                            setNewBatchNo("");
+                          } else {
+                            setSelectedBatch(null);
+                            onEditCart({ target: { value: "" } }, "docBatchNo");
                           }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {isLoadingBatches ? (
-                          <div className="flex items-center justify-center p-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          </div>
-                        ) : batchOptions.length === 0 ? (
-                          <div className="p-2 text-sm text-muted-foreground text-center">
-                            No existing batches found
-                          </div>
-                        ) : (
-                          batchOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
+                        }}
+                      />
+                      <label htmlFor="useExisting" className="text-sm">
+                        Use Existing Batch
+                      </label>
+                    </div>
+                    {useExistingBatch ? (
+                      <div className="relative">
+                        <Select
+                          value={selectedBatch?.value || ""}
+                          onValueChange={handleExistingBatchChange}
+                          disabled={isLoadingBatches}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={
+                                isLoadingBatches
+                                  ? "Loading batches..."
+                                  : "Select existing batch"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {isLoadingBatches ? (
+                              <div className="flex items-center justify-center p-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              </div>
+                            ) : batchOptions.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground text-center">
+                                No existing batches found
+                              </div>
+                            ) : (
+                              batchOptions.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <Input
+                        value={newBatchNo}
+                        onChange={handleNewBatchChange}
+                        placeholder="Enter new batch number"
+                        className="w-full"
+                        maxLength={20}
+                      />
+                    )}
                   </div>
-                ) : (
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expiry">Expiry Date</Label>
                   <Input
-                    value={newBatchNo}
-                    onChange={handleNewBatchChange}
-                    placeholder="Enter new batch number"
+                    id="expiry"
+                    type="date"
+                    value={editData?.docExpdate || ""}
+                    onChange={(e) => onEditCart(e, "docExpdate")}
                     className="w-full"
+                    readOnly={isExpiryReadOnly}
                   />
-                )}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="expiry">Expiry Date</Label>
-              <Input
-                id="expiry"
-                type="date"
-                value={editData?.docExpdate || ""}
-                onChange={(e) => onEditCart(e, "docExpdate")}
-                className="w-full"
-                readOnly={isExpiryReadOnly}
-              />
-            </div>
+                </div>
+              </>
+            )}
             <div className="space-y-2">
               <Label htmlFor="remarks">Remarks</Label>
               <Input
@@ -681,11 +691,11 @@ function AddGrn({ docData }) {
   };
 
   // Add this effect to help with debugging
-  useEffect(() => {
-    if (originalStockList.length > 0) {
-      console.log("Sample Item Structure:", originalStockList[0]);
-    }
-  }, [originalStockList]);
+  // useEffect(() => {
+  //   if (originalStockList.length > 0) {
+  //     console.log("Sample Item Structure:", originalStockList[0]);
+  //   }
+  // }, [originalStockList]);
 
   // Add this near other state declarations
   const [searchTimer, setSearchTimer] = useState(null);
@@ -1241,8 +1251,8 @@ function AddGrn({ docData }) {
     // Cart Validation
     if (cart.length === 0) errors.push("Cart shouldn't be empty");
 
-    // Batch and Expiry Date Validation - Only for post
-    if (type === "post") {
+    // Batch and Expiry Date Validation - Only for post and when batch functionality is enabled
+    if (type === "post" && window?.APP_CONFIG?.BATCH_NO === "Yes") {
       cart.forEach((item, index) => {
         if (!item.docBatchNo) {
           errors.push(
@@ -1781,31 +1791,7 @@ function AddGrn({ docData }) {
               },
             };
 
-            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
-              console.log(d, "ddd");
-              const updateqty = {
-                itemcode: trimmedItemCode,
-                sitecode: userDetails.siteCode,
-                uom: d.itemUom,
-                qty: Number(d.trnQty),
-                batchcost: Number(d.trnCost),
-              };
-              await apiService
-                .post(`ItemBatches/updateqty`, updateqty)
-                .then((res) => {})
-                .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
-            } else {
+            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
               if (d.useExistingBatch) {
                 // For existing batches, first get the current batch data
                 // await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(fil))}`)
@@ -1836,15 +1822,17 @@ function AddGrn({ docData }) {
                 //     // await apiService.post("Inventorylogs", errorLog);
                 //   });
 
-                batchUpdate = {
-                  itemcode: trimmedItemCode,
-                  sitecode: userDetails.siteCode,
-                  uom: d.itemUom,
-                  qty: Number(d.trnQty),
-                  batchcost: Number(d.trnCost),
-                  batchno: d.itemBatch,
-                  // expDate: d?.docExpdate ? d?.docExpdate : null
-                };
+                                  batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchcost: Number(d.trnCost),
+                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      batchno: d.itemBatch,
+                    }),
+                    // expDate: d?.docExpdate ? d?.docExpdate : null
+                  };
 
                 await apiService
                   .post("ItemBatches/updateqty", batchUpdate)
@@ -1886,6 +1874,33 @@ function AddGrn({ docData }) {
                     };
                   });
               }
+            }
+            else{
+              batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: userDetails.siteCode,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+
+                // expDate: d?.docExpdate ? d?.docExpdate : null
+              };
+
+            await apiService
+              .post("ItemBatches/updateqty", batchUpdate)
+              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .catch(async (err) => {
+                // Log qty update error
+                const errorLog = {
+                  trnDocNo: docNo,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: userDetails.siteCode,
+                  logMsg: `ItemBatches/updateqty ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // await apiService.post("Inventorylogs", errorLog);
+              });
             }
           }
         } else {
@@ -2311,6 +2326,7 @@ function AddGrn({ docData }) {
                       itemsPerPage={6}
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
+                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
                     />
                   </CardContent>
                 </Card>
@@ -2443,9 +2459,12 @@ function AddGrn({ docData }) {
                       <TableHead className="font-semibold text-slate-700">
                         Amount
                       </TableHead>
-                      <TableHead>Expiry Date</TableHead>
-                      <TableHead>Batch No</TableHead>
-
+                      {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                        <>
+                          <TableHead>Expiry Date</TableHead>
+                          <TableHead>Batch No</TableHead>
+                        </>
+                      )}
                       <TableHead>Remarks</TableHead>
                       {urlStatus != 7 && <TableHead>Action</TableHead>}
                     </TableRow>
@@ -2501,9 +2520,12 @@ function AddGrn({ docData }) {
                           <TableCell className="font-semibold text-slate-700">
                             {item.docAmt}
                           </TableCell>
-                          <TableCell>{format_Date(item.docExpdate)}</TableCell>
-
-                          <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                            <>
+                              <TableCell>{format_Date(item.docExpdate)}</TableCell>
+                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                            </>
+                          )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
                           {urlStatus != 7 && (
@@ -2545,7 +2567,11 @@ function AddGrn({ docData }) {
                         <TableCell className="font-semibold text-slate-700">
                           {calculateTotals(cartData).totalAmt.toFixed(2)}
                         </TableCell>
-                        <TableCell colSpan={2} />
+                        {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                          <TableCell colSpan={4} />
+                        ) : (
+                          <TableCell colSpan={2} />
+                        )}
                       </TableRow>
                     </>
                   )}

@@ -35,6 +35,8 @@ window.APP_CONFIG = {
   // BATCH_SNO: "Yes",
     BATCH_SNO: "No",
     BATCH_NO:"Yes",
+    // BATCH_NO:"No",
+
   EXPIRY_DATE: "No",
   NOTIFICATION_MAIL_SEND:'NO',
   DEFAULT_EXPIRY_DAYS: 365,
