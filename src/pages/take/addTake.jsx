@@ -887,6 +887,8 @@ function AddTake({ docData }) {
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.itemUom,
       itemRemark: "",
+      docMdisc: 0,
+      recTtl: 0,
     };
 
     const existingItemIndex = cartData.findIndex(

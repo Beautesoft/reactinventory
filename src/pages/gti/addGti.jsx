@@ -1026,6 +1026,8 @@ function AddGti({ docData }) {
       itemRemark: "",
       // docBatchNo: item.docBatchNo || null,
       docBatchNo: item.batchno || null,
+      docMdisc: 0,
+      recTtl: 0,
     };
 
     console.log(item, cartData);
@@ -1332,6 +1334,8 @@ function AddGti({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
         createUser: hdr.createUser,
+        staffNo: userDetails.usercode,
+
         createDate:
           type === "post" && urlDocNo
             ? hdr.createDate

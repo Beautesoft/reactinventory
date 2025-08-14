@@ -1077,8 +1077,8 @@ function AddSum({ docData }) {
       id: index + 1,
       docAmt: amount,
       docNo: stockHdrs.docNo,
-      movCode: "ADJ",
-      movType: "ADJ",
+      movCode: "SUM",
+      movType: "SUM",
       docLineno: null,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
@@ -1100,6 +1100,10 @@ function AddSum({ docData }) {
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.itemUom,
       itemRemark: "",
+      docMdisc: 0,
+      recTtl: 0,
+
+
     };
 
     const existingItemIndex = cartData.findIndex(
@@ -1143,6 +1147,8 @@ function AddSum({ docData }) {
         docRemk1: stockHdrs.docRemk1,
         createUser: stockHdrs.createUser,
         createDate: null,
+        staffNo: userDetails.usercode,
+
       };
 
       if (stockHdrs?.poId) data.poId = stockHdrs?.poId;

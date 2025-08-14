@@ -502,6 +502,8 @@ function AddGrn({ docData }) {
     postDate: "",
     deliveryDate: "",
     createUser: userDetails?.username,
+    staffNo: userDetails?.usercode,
+
   });
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
@@ -1420,6 +1422,8 @@ function AddGrn({ docData }) {
       itemRemark: item?.itemRemark || null,
       itemprice: 0,
       docBatchNo: null,
+      docMdisc: 0,
+      recTtl: 0,
     };
     // console.log(item.itemUom,cartData[0].docUom)
 
@@ -1511,6 +1515,7 @@ function AddGrn({ docData }) {
         details = cartData.map((item, index) => ({
           ...item,
           docNo,
+       
           id: index + 1, // Use sequential index + 1 for new items
         }));
         setStockHdrs(hdr);

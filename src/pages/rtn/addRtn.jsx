@@ -1233,6 +1233,9 @@ function AddRtn({ docData }) {
       itemRemark: item?.itemRemark || null,
       itemprice: 0,
       docBatchNo: null,
+      docMdisc: 0,
+      recTtl: 0,
+
     };
     // console.log(item.itemUom,cartData[0].docUom)
 
@@ -1377,6 +1380,8 @@ function AddRtn({ docData }) {
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
         createUser: hdr.createUser,
+        staffNo: userDetails.usercode,
+
         createDate:
           type === "post" && urlDocNo
             ? hdr.createDate

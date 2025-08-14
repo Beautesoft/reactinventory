@@ -1100,6 +1100,8 @@ function AddAdj({ docData }) {
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.itemUom,
       itemRemark: "",
+      docMdisc: 0,
+      recTtl: 0,
     };
 
     const existingItemIndex = cartData.findIndex(
@@ -1143,6 +1145,8 @@ function AddAdj({ docData }) {
         docRemk1: stockHdrs.docRemk1,
         createUser: stockHdrs.createUser,
         createDate: null,
+        staffNo: userDetails.usercode,
+
       };
 
       if (stockHdrs?.poId) data.poId = stockHdrs?.poId;
