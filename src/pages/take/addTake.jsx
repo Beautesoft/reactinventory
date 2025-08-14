@@ -152,7 +152,7 @@ const EditDialog = memo(
   )
 );
 
-function AddRtn({ docData }) {
+function AddTake({ docData }) {
   const { docNo } = useParams();
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
@@ -495,7 +495,7 @@ function AddRtn({ docData }) {
 
   const getDocNo = async () => {
     try {
-      const codeDesc = "Goods Return Note";
+      const codeDesc = "Stock Take";
       const siteCode = userDetails?.siteCode;
       const res = await apiService.get(
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
@@ -530,7 +530,7 @@ function AddRtn({ docData }) {
       const newControlNo = (parseInt(controlNo, 10) + 1).toString();
 
       const controlNosUpdate = {
-        controldescription: "Goods Return Note",
+        controldescription: "Stock Take",
         sitecode: userDetails.siteCode,
         controlnumber: newControlNo,
       };
@@ -909,6 +909,7 @@ function AddRtn({ docData }) {
     console.log(cartData, "cartData");
     console.log(supplierInfo, "supplierInfo");
 
+    return
     if (validateForm()) {
       console.log("Form is valid, proceeding with submission.");
       const totalCart = calculateTotals(cartData);
@@ -973,7 +974,7 @@ function AddRtn({ docData }) {
         }
 
         toast.success(message);
-        navigate("/goods-receive-note?tab=all"); // Navigate back to list
+        navigate("/stock-take?tab=all"); // Navigate back to list
       } catch (error) {
         console.error("Submit error:", error);
         toast.error("Failed to submit form");
@@ -1011,16 +1012,16 @@ function AddRtn({ docData }) {
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
-                ? "View Goods Receive Note"
+                ? "View Stock Take"
                 : urlStatus == 0
-                ? "Update Goods Receive Note"
-                : "Add Goods Receive Note"}
+                ? "Update Stock Take"
+                : "Add Stock Take"}
             </h1>
             <div className="flex gap-4">
               <Button
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
-                onClick={() => navigateTo("/goods-receive-note?tab=all")}
+                onClick={() => navigateTo("/stock-take?tab=all")}
               >
                 Cancel
               </Button>
@@ -1708,4 +1709,4 @@ function AddRtn({ docData }) {
   );
 }
 
-export default AddGrn;
+export default AddTake;

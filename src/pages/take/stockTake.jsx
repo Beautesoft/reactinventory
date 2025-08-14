@@ -32,7 +32,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-function GoodsReturnNote() {
+function StockTake() {
   const navigate = useNavigate();
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
   const { goodsData, isLoading, setLoading, setGoodsData, setError } = useGrn();
@@ -43,7 +43,7 @@ function GoodsReturnNote() {
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "GRN",
+      movCode: "TKE",
       storeNo: userDetails?.siteCode,
       supplyNo: null,
     },
@@ -186,7 +186,7 @@ function GoodsReturnNote() {
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
             <h1 className="text-2xl font-bold text-gray-900">
-              Goods Receive Note
+              Stock Take
             </h1>
           </div>
 
@@ -277,4 +277,4 @@ function GoodsReturnNote() {
   );
 }
 
-export default GoodsReturnNote;
+export default StockTake;

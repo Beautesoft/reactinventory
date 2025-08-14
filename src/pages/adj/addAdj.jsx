@@ -22,16 +22,6 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import TableSpinner from "@/components/tabelSpinner";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   FileText,
   Hand,
@@ -55,7 +45,6 @@ import {
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import Pagination from "@/components/pagination";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,10 +55,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import useDebounce from "@/hooks/useDebounce";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
+import ItemTable from "@/components/itemTable";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import TableSpinner from "@/components/tabelSpinner";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -152,7 +150,7 @@ const EditDialog = memo(
   )
 );
 
-function AddRtn({ docData }) {
+function AddAdj({ docData }) {
   const { docNo } = useParams();
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
@@ -172,8 +170,6 @@ function AddRtn({ docData }) {
   const [pageLoading, setPageLoading] = useState(false);
   const [itemTotal, setItemTotal] = useState(0);
   const [cartItems, setCartItems] = useState([]);
-  const [searchValue, setSearchValue] = useState("");
-  const debouncedSearchValue = useDebounce(searchValue, 1000);
   const [supplyOptions, setSupplyOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
@@ -183,14 +179,18 @@ function AddRtn({ docData }) {
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [filter, setFilter] = useState({
-    movCode: "GRN",
+    movCode: "ADJ",
     splyCode: "",
     docNo: "",
+  });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 6,
   });
 
   const [itemFilter, setItemFilter] = useState({
     // where: {
-    //   movCode: "GRN",
+    //   movCode: "ADJ",
     // },
     whereArray: {
       department: ["RETAIL PRODUCT", "SALON PRODUCT"],
@@ -231,17 +231,7 @@ function AddRtn({ docData }) {
     createUser: userDetails?.username,
   });
   const [cartData, setCartData] = useState([]);
-  const [supplierInfo, setSupplierInfo] = useState({
-    Attn: "",
-    line1: "",
-    line2: "",
-    line3: "",
-    sline1: "",
-    sline2: "",
-    sline3: "",
-    pcode: "",
-    spcode: "",
-  });
+  const [originalStockList, setOriginalStockList] = useState([]);
   const [controlData, setControlData] = useState({
     docNo: "",
     RunningNo: "",
@@ -256,24 +246,222 @@ function AddRtn({ docData }) {
   const [initial, setInitial] = useState(true);
 
   // Add new state for temporary filter values
-  const [tempFilters, setTempFilters] = useState({
+  const [filters, setFilters] = useState({
     brand: [],
     range: [],
+    department: ["RETAIL PRODUCT", "SALON PRODUCT"],
   });
+
+  // Add these state declarations near other states
+  const [searchTimer, setSearchTimer] = useState(null);
 
   // Add apply filters function
   const handleApplyFilters = () => {
-    setItemFilter((prev) => ({
-      ...prev,
-      whereArray: {
-        ...prev.whereArray,
-        brand: tempFilters.brand.map((item) => item.label) || [],
-        range: tempFilters.range.map((item) => item.label) || [],
-      },
-      skip: 0,
-    }));
-    // getStockDetails();
+    setLoading(true);
+
+    // Store original data if not already stored
+    if (!originalStockList.length && stockList.length) {
+      setOriginalStockList(stockList);
+    }
+
+    // If no filters are active, restore original data
+    if (
+      !filters.brand.length &&
+      !filters.range.length &&
+      filters.department.length === 2
+    ) {
+      setStockList(originalStockList);
+      setItemTotal(originalStockList.length);
+      setLoading(false);
+      return;
+    }
+
+    const filteredList = originalStockList.filter((item) => {
+      // Brand filter
+      if (filters.brand.length > 0) {
+        const brandMatch = filters.brand.some(
+          (brand) =>
+            brand.value === item.BrandCode || brand.label === item.Brand
+        );
+        if (!brandMatch) return false;
+      }
+
+      // Range filter
+      if (filters.range.length > 0) {
+        const rangeMatch = filters.range.some(
+          (range) =>
+            range.value === item.RangeCode || range.label === item.Range
+        );
+        if (!rangeMatch) return false;
+      }
+
+      // Department filter
+      if (filters.department.length > 0) {
+        const departmentMatch = filters.department.includes(item.Department);
+        if (!departmentMatch) return false;
+      }
+
+      return true;
+    });
+
+    setStockList(filteredList);
+    setItemTotal(filteredList.length);
+    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
+    setLoading(false);
   };
+
+  // Add this function to help with debugging
+  const logFilterState = () => {
+    console.log("Current Filters:", {
+      brand: filters.brand,
+      range: filters.range,
+      department: filters.department,
+    });
+    console.log("Original List Length:", originalStockList.length);
+    console.log("Filtered List Length:", stockList.length);
+  };
+
+  // Update the filter handlers to include logging
+  const handleBrandChange = (selected) => {
+    setFilters((prev) => ({
+      ...prev,
+      brand: selected,
+    }));
+  };
+
+  const handleRangeChange = (selected) => {
+    setFilters((prev) => ({
+      ...prev,
+      range: selected,
+    }));
+  };
+
+  const handleDepartmentChange = (department) => {
+    setLoading(true);
+
+    // Update filters state
+    const newFilters = {
+      ...filters,
+      department: filters.department.includes(department)
+        ? filters.department.filter((d) => d !== department)
+        : [...filters.department, department],
+    };
+    setFilters(newFilters);
+
+    // Store original data if not already stored
+    if (!originalStockList.length && stockList.length) {
+      setOriginalStockList(stockList);
+    }
+
+    console.log(newFilters, "fil0");
+
+    // If no filters are active, restore original data
+    if (
+      !newFilters.brand.length &&
+      !newFilters.range.length &&
+      newFilters.department.length === 2
+    ) {
+      setStockList(originalStockList);
+      setItemTotal(originalStockList.length);
+      setLoading(false);
+      return;
+    }
+
+    // Apply filters immediately
+    const filteredList = originalStockList.filter((item) => {
+      console.log(item, "item");
+
+      // Brand filter
+      if (newFilters.brand.length > 0) {
+        const brandMatch = newFilters.brand.some(
+          (brand) =>
+            brand.value === item.BrandCode || brand.label === item.Brand
+        );
+        if (!brandMatch) return false;
+      }
+
+      // Range filter
+      if (newFilters.range.length > 0) {
+        const rangeMatch = newFilters.range.some(
+          (range) =>
+            range.value === item.RangeCode || range.label === item.Range
+        );
+        if (!rangeMatch) return false;
+      }
+
+      // Department filter
+      if (newFilters.department.length > 0) {
+        const departmentMatch = newFilters.department.includes(item.Department);
+        if (!departmentMatch) return false;
+      }
+
+      return true;
+    });
+
+    setStockList(filteredList);
+    setItemTotal(filteredList.length);
+    setPagination((prev) => ({ ...prev, page: 1 })); // Reset to first page
+    setLoading(false);
+  };
+
+  const handleSearch = (e) => {
+    const searchValue = e.target.value.trim().toLowerCase();
+
+    console.log(searchValue, "sv");
+
+    // Clear any existing timer
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+    }
+
+    // Store original data if not already stored
+    if (!originalStockList.length && stockList.length) {
+      console.log(searchValue, "sv0");
+
+      setOriginalStockList(stockList);
+    }
+
+    if (!searchValue) {
+      // If search is empty, restore original data
+      console.log(searchValue, "sv1");
+
+      setStockList(originalStockList);
+      setLoading(false);
+
+      return;
+    }
+
+    setLoading(true);
+
+    // Set new timer
+    const timer = setTimeout(() => {
+      const filteredList = originalStockList.filter((item) => {
+        console.log(searchValue, "sv2");
+
+        return (
+          item.stockCode?.toLowerCase().includes(searchValue) ||
+          item.stockName?.toLowerCase().includes(searchValue) ||
+          item.uomDescription?.toLowerCase().includes(searchValue) ||
+          item.brandCode?.toLowerCase().includes(searchValue) ||
+          item.rangeCode?.toLowerCase().includes(searchValue)
+        );
+      });
+
+      setStockList(filteredList);
+      setLoading(false);
+    }, 500); // Reduced to 500ms for better responsiveness
+
+    setSearchTimer(timer);
+  };
+
+  // Add cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimer) {
+        clearTimeout(searchTimer);
+      }
+    };
+  }, [searchTimer]);
 
   useEffect(() => {
     const initializeData = async () => {
@@ -285,7 +473,7 @@ function AddRtn({ docData }) {
           // If editing existing document
           const filter = {
             where: {
-              movCode: "GRN",
+              movCode: "ADJ",
               docNo: urlDocNo,
             },
           };
@@ -346,7 +534,6 @@ function AddRtn({ docData }) {
     }
   }, [
     itemFilter.skip,
-    debouncedSearchValue,
     itemFilter.whereArray.department.length,
     itemFilter.whereArray.brand,
     itemFilter.whereArray.range,
@@ -372,19 +559,19 @@ function AddRtn({ docData }) {
         docRemk1: data.docRemk1,
         postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
-      setSupplierInfo({
-        Attn: data?.docAttn,
-        line1: data?.baddr1,
-        line2: data?.baddr2,
-        line3: data?.baddr3,
-        pcode: data?.bpostcode,
-        sline1: data?.daddr1,
-        sline2: data?.daddr2,
-        sline3: data?.daddr3,
-        spcode: data?.dpostcode,
-      });
+      // setSupplierInfo({
+      //   Attn: data?.docAttn,
+      //   line1: data?.baddr1,
+      //   line2: data?.baddr2,
+      //   line3: data?.baddr3,
+      //   pcode: data?.bpostcode,
+      //   sline1: data?.daddr1,
+      //   sline2: data?.daddr2,
+      //   sline3: data?.daddr3,
+      //   spcode: data?.dpostcode,
+      // });
 
-      console.log(supplierInfo, "ddd2");
+      console.log("Stock header data updated");
     } catch (error) {
       console.error("Error fetching stock header data:", error);
       showError("Failed to fetch stock header data.");
@@ -421,46 +608,102 @@ function AddRtn({ docData }) {
     });
   };
 
+  // const getStockDetails = async () => {
+  //   const filter = buildFilterObject(itemFilter);
+  //   const countFilter = buildCountObject(itemFilter);
+  //   console.log(countFilter, "filial");
+  //   // const query = `?${qs.stringify({ filter }, { encode: false })}`;
+  //   const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+  //   const countQuery = `?where=${encodeURIComponent(
+  //     JSON.stringify(countFilter.where)
+  //   )}`;
+
+  //   Promise.all([
+  //     apiService.get(`PackageItemDetails${query}`),
+  //     apiService.get(`PackageItemDetails/count${countQuery}`),
+  //   ])
+  //     .then(([stockDetails, count]) => {
+  //       setLoading(false);
+  //       const updatedRes = stockDetails.map((item) => ({
+  //         ...item,
+  //         stockCode: item.stockCode || item.stock_code,
+  //         stockName: item.stockName || item.stock_name,
+  //         uomDescription: item.itemUom || item.uom_description,
+  //         Brand: item.brand || item.brand_code,
+  //         Range: item.range || item.range_code,
+  //         linkCode: item.linkCode || item.link_code,
+  //         barCode: item.brandCode || item.bar_code,
+  //         quantity: item.quantity || item.on_hand_qty,
+  //         Qty: 0,
+  //         Price: Number(item?.item_Price || item?.price || 0),
+  //         Cost: Number(item?.item_Price || item?.price || 0),
+  //         expiryDate: null,
+  //         docAmt: null,
+  //         isActive: "True", // Add this field for itemTable filtering
+  //       }));
+  //       console.log(updatedRes, "updatedRes");
+  //       console.log(count, "count");
+
+  //       setStockList(updatedRes);
+  //       setOriginalStockList(updatedRes);
+  //       setItemTotal(count.count);
+  //     })
+  //     .catch((err) => {
+  //       setLoading(false);
+  //       console.error("Error fetching stock details:", err);
+  //       toast({
+  //         variant: "destructive",
+  //         title: "Error",
+  //         description: "Failed to fetch stock details",
+  //       });
+  //     });
+  // };
+
+
   const getStockDetails = async () => {
-    const filter = buildFilterObject(itemFilter);
-    const countFilter = buildCountObject(itemFilter);
-    console.log(countFilter, "filial");
-    // const query = `?${qs.stringify({ filter }, { encode: false })}`;
-    const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-    const countQuery = `?where=${encodeURIComponent(
-      JSON.stringify(countFilter.where)
-    )}`;
-
-    Promise.all([
-      apiService.get(`PackageItemDetails${query}`),
-      apiService.get(`PackageItemDetails/count${countQuery}`),
-    ])
-      .then(([stockDetails, count]) => {
-        setLoading(false);
-        const updatedRes = stockDetails.map((item) => ({
-          ...item,
-          Qty: 0,
-          expiryDate: null,
-          Price: Number(item?.item_Price),
-          docAmt: null,
-        }));
-        console.log(updatedRes, "updatedRes");
-        console.log(count, "count");
-
-        setStockList(updatedRes);
-        setItemTotal(count.count);
-      })
-      .catch((err) => {
-        setLoading(false);
-        console.error("Error fetching stock details:", err);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to fetch stock details",
-        });
+    // Remove the itemFilter dependency - fetch all data at once
+    const query = `?Site=${userDetails.siteCode}`;
+    
+    try {
+      const response = await apiService.get(`PackageItemDetails${query}`);
+      const stockDetails = response;
+      const count = response.length;
+      
+      setLoading(false);
+      const updatedRes = stockDetails.map((item) => ({
+        ...item,
+        stockCode: item.stockCode || item.stock_code,
+        stockName: item.stockName || item.stock_name,
+        uomDescription: item.itemUom || item.uom_description,
+        Brand: item.brand || item.brand_code,
+        Range: item.range || item.range_code,
+        linkCode: item.linkCode || item.link_code,
+        barCode: item.brandCode || item.bar_code,
+        quantity: item.quantity || item.on_hand_qty,
+        Qty: 0,
+        Price: Number(item?.item_Price || item?.price || 0),
+        Cost: Number(item?.item_Price || item?.price || 0),
+        expiryDate: null,
+        docAmt: null,
+        isActive: "True",
+      }));
+      
+      console.log(updatedRes, "updatedRes");
+      console.log(count, "count");
+  
+      setStockList(updatedRes);
+      setOriginalStockList(updatedRes);
+      setItemTotal(count);
+    } catch (err) {
+      setLoading(false);
+      console.error("Error fetching stock details:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch stock details",
       });
+    }
   };
-
   const getSupplyList = async (supplycode) => {
     try {
       const res = await apiService.get(
@@ -495,7 +738,7 @@ function AddRtn({ docData }) {
 
   const getDocNo = async () => {
     try {
-      const codeDesc = "Goods Return Note";
+      const codeDesc = "Stock Adjustment";
       const siteCode = userDetails?.siteCode;
       const res = await apiService.get(
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
@@ -530,7 +773,7 @@ function AddRtn({ docData }) {
       const newControlNo = (parseInt(controlNo, 10) + 1).toString();
 
       const controlNosUpdate = {
-        controldescription: "Goods Return Note",
+        controldescription: "Stock Adjustment",
         sitecode: userDetails.siteCode,
         controlnumber: newControlNo,
       };
@@ -668,29 +911,6 @@ function AddRtn({ docData }) {
     );
   };
 
-  const handleSearch = (e) => {
-    const searchValue = e.target.value.trim();
-    console.log(searchValue, "searchValue");
-    setLoading(true); // Set loading to true
-
-    setSearchValue(searchValue); // Update the search value state
-
-    setItemFilter((prev) => ({
-      ...prev,
-      like: {
-        ...prev.like,
-        stockCode: searchValue,
-        itemUom: searchValue,
-        stockName: searchValue,
-        // range: searchValue,
-        // brand: searchValue,
-        brandCode: searchValue,
-      },
-      skip: 0,
-    }));
-    // updateLike(searchValue); // Update the like filter with the search value
-    // updatePagination({ skip: 0 }); // Reset pagination to the first page
-  };
   const showError = (message) => {
     toast.error(message, {
       duration: 3000,
@@ -703,13 +923,6 @@ function AddRtn({ docData }) {
       duration: 3000,
       position: "top-right",
     });
-  };
-
-  const handleSupplierChange = (e, field) => {
-    setSupplierInfo((prev) => ({
-      ...prev,
-      [field]: e.target.value,
-    }));
   };
 
   const validateForm = () => {
@@ -864,8 +1077,8 @@ function AddRtn({ docData }) {
       id: index + 1,
       docAmt: amount,
       docNo: stockHdrs.docNo,
-      movCode: "GRN",
-      movType: "GRN",
+      movCode: "ADJ",
+      movType: "ADJ",
       docLineno: null,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
@@ -907,7 +1120,6 @@ function AddRtn({ docData }) {
     e?.preventDefault();
     console.log(stockHdrs, "stockHdrs");
     console.log(cartData, "cartData");
-    console.log(supplierInfo, "supplierInfo");
 
     if (validateForm()) {
       console.log("Form is valid, proceeding with submission.");
@@ -915,8 +1127,8 @@ function AddRtn({ docData }) {
 
       let data = {
         docNo: stockHdrs.docNo,
-        movCode: "GRN",
-        movType: "GRN",
+        movCode: "ADJ",
+        movType: "ADJ",
         storeNo: stockHdrs.storeNo,
         supplyNo: stockHdrs.supplyNo,
         docRef1: stockHdrs.docRef1,
@@ -928,20 +1140,7 @@ function AddRtn({ docData }) {
         docTerm: stockHdrs.docTerm,
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
-        docAttn: supplierInfo.Attn,
         docRemk1: stockHdrs.docRemk1,
-
-        bname: supplierInfo.Attn,
-        baddr1: supplierInfo.line1,
-        baddr2: supplierInfo.line2,
-        baddr3: supplierInfo.line3,
-        bpostcode: supplierInfo.pcode,
-
-        daddr1: supplierInfo.sline1,
-        daddr2: supplierInfo.sline2,
-        daddr3: supplierInfo.sline3,
-        dpostcode: supplierInfo.spcode,
-
         createUser: stockHdrs.createUser,
         createDate: null,
       };
@@ -957,11 +1156,11 @@ function AddRtn({ docData }) {
           await postStockDetails();
           await addNewControlNumber(controlData);
 
-          message = "Note created successfully";
+          message = "Stock Adjustment created successfully";
         } else if (type === "save" && urlDocNo) {
           await postStockHdr(data, "update");
           await postStockDetails();
-          message = "Note updated successfully";
+          message = "Stock Adjustment updated successfully";
         } else if (type === "post" && urlDocNo) {
           data = {
             ...data,
@@ -969,11 +1168,11 @@ function AddRtn({ docData }) {
           };
           await postStockHdr(data, "updateStatus");
           await postStockDetails();
-          message = "Note posted successfully";
+          message = "Stock Adjustment posted successfully";
         }
 
         toast.success(message);
-        navigate("/goods-receive-note?tab=all"); // Navigate back to list
+        navigate("/stock-adjustment?tab=all"); // Navigate back to list
       } catch (error) {
         console.error("Submit error:", error);
         toast.error("Failed to submit form");
@@ -985,12 +1184,10 @@ function AddRtn({ docData }) {
 
   const handlePageChange = (newPage) => {
     console.log(newPage, "newPage");
-    const newLimit = itemFilter.limit;
-    const newSkip = (newPage - 1) * newLimit;
-    setItemFilter({
-      ...itemFilter,
-      skip: newSkip,
-    });
+    setPagination((prev) => ({
+      ...prev,
+      page: newPage,
+    }));
   };
 
   const navigateTo = (path) => {
@@ -1011,16 +1208,16 @@ function AddRtn({ docData }) {
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
-                ? "View Goods Receive Note"
+                ? "View Stock Adjustment"
                 : urlStatus == 0
-                ? "Update Goods Receive Note"
-                : "Add Goods Receive Note"}
+                ? "Update Stock Adjustment"
+                : "Add Stock Adjustment"}
             </h1>
             <div className="flex gap-4">
               <Button
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
-                onClick={() => navigateTo("/goods-receive-note?tab=all")}
+                onClick={() => navigateTo("/stock-adjustment?tab=all")}
               >
                 Cancel
               </Button>
@@ -1048,13 +1245,16 @@ function AddRtn({ docData }) {
 
           {/* Header Card */}
           <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">Stock Adjustment</CardTitle>
+            </CardHeader>
             <CardContent className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* First Column */}
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc No<span className="text-red-500">*</span>
+                      Doc NO<span className="text-red-500">*</span>
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -1074,9 +1274,9 @@ function AddRtn({ docData }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>GR Ref 1</Label>
+                    <Label>Ref1</Label>
                     <Input
-                      placeholder="Enter GR Ref 1"
+                      placeholder="Enter Ref 1"
                       disabled={urlStatus == 7}
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
@@ -1090,58 +1290,6 @@ function AddRtn({ docData }) {
                 </div>
 
                 {/* Second Column */}
-                <div className="space-y-4">
-                  <div className="space-y-2 w-full">
-                    <Label>
-                      Supply No<span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      disabled={urlStatus == 7}
-                      value={stockHdrs.supplyNo}
-                      onValueChange={(value) =>
-                        setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select supplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supplyOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>
-                      Delivery Date<span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      disabled={urlStatus == 7}
-                      type="date"
-                      value={stockHdrs.postDate}
-                      onChange={(e) => handleDateChange(e, "postDate")}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>GR Ref 2</Label>
-                    <Input
-                      disabled={urlStatus == 7}
-                      placeholder="Enter GR Ref 2"
-                      value={stockHdrs.docRef2}
-                      onChange={(e) =>
-                        setStockHdrs((prev) => ({
-                          ...prev,
-                          docRef2: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* Third Column */}
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
@@ -1161,18 +1309,15 @@ function AddRtn({ docData }) {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>
-                      Term<span className="text-red-500">*</span>
-                    </Label>
+                    <Label>Ref2</Label>
                     <Input
-                      type="number"
                       disabled={urlStatus == 7}
-                      placeholder="Enter term"
-                      value={stockHdrs.docTerm}
+                      placeholder="Enter Ref 2"
+                      value={stockHdrs.docRef2}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
                           ...prev,
-                          docTerm: e.target.value,
+                          docRef2: e.target.value,
                         }))
                       }
                     />
@@ -1188,33 +1333,33 @@ function AddRtn({ docData }) {
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Additional Row for Created By and Remarks */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                <div className="space-y-2">
-                  <Label>
-                    Created By<span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    value={stockHdrs.createUser}
-                    disabled
-                    className="bg-gray-50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Remarks</Label>
-                  <Input
-                    placeholder="Enter remarks"
-                    disabled={urlStatus == 7}
-                    value={stockHdrs.docRemk1}
-                    onChange={(e) =>
-                      setStockHdrs((prev) => ({
-                        ...prev,
-                        docRemk1: e.target.value,
-                      }))
-                    }
-                  />
+                {/* Third Column */}
+                <div className="space-y-4">
+                  <div className="space-y-2 w-full">
+                    <Label>
+                      Created By<span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      value={stockHdrs.createUser}
+                      disabled
+                      className="bg-gray-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Remark</Label>
+                    <Input
+                      placeholder="Enter remark"
+                      disabled={urlStatus == 7}
+                      value={stockHdrs.docRemk1}
+                      onChange={(e) =>
+                        setStockHdrs((prev) => ({
+                          ...prev,
+                          docRemk1: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -1226,9 +1371,8 @@ function AddRtn({ docData }) {
             className="w-full"
             onValueChange={setActiveTab}
           >
-            <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+            <TabsList className="grid w-full grid-cols-1 lg:w-[200px]">
               <TabsTrigger value="detail">Details</TabsTrigger>
-              <TabsTrigger value="supplier">Supplier Info</TabsTrigger>
             </TabsList>
 
             <TabsContent value="detail" className="space-y-4">
@@ -1243,22 +1387,15 @@ function AddRtn({ docData }) {
                       <div className="flex-1 max-w-[430px]">
                         <Input
                           placeholder="Search items..."
-                          onChange={(e) => {
-                            handleSearch(e);
-                          }}
+                          onChange={handleSearch}
                         />
                       </div>
 
                       <div className="flex-1 mt-2">
                         <MultiSelect
                           options={brandOption}
-                          selected={tempFilters.brand}
-                          onChange={(selected) => {
-                            setTempFilters((prev) => ({
-                              ...prev,
-                              brand: selected,
-                            }));
-                          }}
+                          selected={filters.brand}
+                          onChange={handleBrandChange}
                           placeholder="Filter by brand..."
                         />
                       </div>
@@ -1266,13 +1403,8 @@ function AddRtn({ docData }) {
                       <div className="flex-1 mt-2">
                         <MultiSelect
                           options={rangeOptions}
-                          selected={tempFilters.range}
-                          onChange={(selected) => {
-                            setTempFilters((prev) => ({
-                              ...prev,
-                              range: selected,
-                            }));
-                          }}
+                          selected={filters.range}
+                          onChange={handleRangeChange}
                           placeholder="Filter by range..."
                         />
                       </div>
@@ -1290,27 +1422,12 @@ function AddRtn({ docData }) {
                         <Checkbox
                           id="retail"
                           className="w-5 h-5"
-                          checked={itemFilter.whereArray.department.includes(
+                          checked={filters.department.includes(
                             "RETAIL PRODUCT"
                           )}
-                          onCheckedChange={(checked) => {
-                            console.log(checked);
-                            setItemFilter((prev) => ({
-                              ...prev,
-                              whereArray: {
-                                ...prev.whereArray,
-                                department: checked
-                                  ? [
-                                      ...prev.whereArray.department,
-                                      "RETAIL PRODUCT",
-                                    ]
-                                  : prev.whereArray.department.filter(
-                                      (d) => d !== "RETAIL PRODUCT"
-                                    ),
-                              },
-                              skip: 0,
-                            }));
-                          }}
+                          onCheckedChange={() =>
+                            handleDepartmentChange("RETAIL PRODUCT")
+                          }
                         />
                         <label htmlFor="retail" className="text-sm">
                           Retail Product
@@ -1321,26 +1438,12 @@ function AddRtn({ docData }) {
                         <Checkbox
                           id="salon"
                           className="w-5 h-5"
-                          checked={itemFilter.whereArray.department.includes(
+                          checked={filters.department.includes(
                             "SALON PRODUCT"
                           )}
-                          onCheckedChange={(checked) => {
-                            setItemFilter((prev) => ({
-                              ...prev,
-                              whereArray: {
-                                ...prev.whereArray,
-                                department: checked
-                                  ? [
-                                      ...prev.whereArray.department,
-                                      "SALON PRODUCT",
-                                    ]
-                                  : prev.whereArray.department.filter(
-                                      (d) => d !== "SALON PRODUCT"
-                                    ),
-                              },
-                              skip: 0,
-                            }));
-                          }}
+                          onCheckedChange={() =>
+                            handleDepartmentChange("SALON PRODUCT")
+                          }
                         />
                         <label htmlFor="salon" className="text-sm">
                           Salon Product
@@ -1348,190 +1451,27 @@ function AddRtn({ docData }) {
                       </div>
                     </div>
 
-                    {/* Items Table */}
-                    <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200">
-                      <Table>
-                        <TableHeader className="bg-gray-50">
-                          <TableRow>
-                            <TableHead className="font-semibold">
-                              Item Code
-                            </TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>UOM</TableHead>
-                            <TableHead>Brand</TableHead>
-                            <TableHead>Link Code</TableHead>
-                            <TableHead>Bar Code</TableHead>
-                            <TableHead>Range</TableHead>
-                            <TableHead>On Hand Qty</TableHead>
-                            <TableHead>Qty</TableHead>
-                            <TableHead>Price</TableHead>
-                            <TableHead>Expiry date</TableHead>
-                            <TableHead>Action</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {loading ? (
-                            <TableSpinner colSpan={14} message="Loading..." />
-                          ) : stockList.length === 0 ? (
-                            <TableRow>
-                              <TableCell
-                                colSpan={14}
-                                className="text-center py-10"
-                              >
-                                <div className="flex flex-col items-center gap-2 text-gray-500">
-                                  <FileText size={40} />
-                                  <p>No items Found</p>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            stockList.map((item, index) => (
-                              <TableRow
-                                key={index}
-                                className="hover:bg-gray-50 transition-colors duration-150"
-                              >
-                                <TableCell>{item.stockCode || "-"}</TableCell>
-                                <TableCell className="max-w-[200px] whitespace-normal break-words">
-                                  {item.stockName || "-"}
-                                </TableCell>
-                                <TableCell>{item.itemUom || "-"}</TableCell>
-                                <TableCell>{item.brand || "-"}</TableCell>
-                                <TableCell>{item.linkCode || "-"}</TableCell>
-                                <TableCell>{item.brandCode || "-"}</TableCell>
-                                <TableCell>{item.range || "-"}</TableCell>
-                                <TableCell>{item.quantity || "0"}</TableCell>
-                                <TableCell className="text-start">
-                                  <Input
-                                    type="number"
-                                    className="w-20"
-                                    value={item.Qty}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "Qty")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    className="w-20"
-                                    value={item.Price}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "Price")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="date"
-                                    className="w-35"
-                                    value={item.expiryDate}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "expiryDate")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => addToCart(index, item)}
-                                    className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    <Pagination
-                      currentPage={
-                        Math.ceil(itemFilter.skip / itemFilter.limit) + 1
-                      }
-                      totalPages={Math.ceil(itemTotal / itemFilter.limit)}
+                    {/* Items Table using ItemTable component */}
+                    <ItemTable
+                      data={stockList}
+                      loading={loading}
+                      onQtyChange={(e, index) => handleCalc(e, index, "Qty")}
+                      onPriceChange={(e, index) => handleCalc(e, index, "Price")}
+                      onExpiryDateChange={(e, index) => handleCalc(e, index, "expiryDate")}
+                      onAddToCart={(index, item) => addToCart(index, item)}
+                      currentPage={pagination.page}
+                      itemsPerPage={pagination.limit}
+                      totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
+                      emptyMessage="No items Found"
+                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      qtyLabel="Adj Qty"
+                      priceLabel="Adj Price"
+                      costLabel="Adj Cost"
                     />
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
-
-            <TabsContent value="supplier" className="space-y-6">
-              <Card>
-                <CardContent className="p-6">
-                  {/* Attention To */}
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Attn To</Label>
-                      <Input
-                        value={supplierInfo.Attn}
-                        onChange={(e) => handleSupplierChange(e, "Attn")}
-                        placeholder="Enter attention to"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Address and Ship To Address */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                    <div className="space-y-4">
-                      <Label>Address</Label>
-                      <div className="space-y-2">
-                        <Input
-                          value={supplierInfo.line1}
-                          onChange={(e) => handleSupplierChange(e, "line1")}
-                          placeholder="Address Line 1"
-                        />
-                        <Input
-                          value={supplierInfo.line2}
-                          onChange={(e) => handleSupplierChange(e, "line2")}
-                          placeholder="Address Line 2"
-                        />
-                        <Input
-                          value={supplierInfo.line3}
-                          onChange={(e) => handleSupplierChange(e, "line3")}
-                          placeholder="Address Line 3"
-                        />
-                        <Input
-                          value={supplierInfo.pcode}
-                          onChange={(e) => handleSupplierChange(e, "pcode")}
-                          placeholder="Post Code"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Label>Ship To Address</Label>
-                      <div className="space-y-2">
-                        <Input
-                          value={supplierInfo.sline1}
-                          onChange={(e) => handleSupplierChange(e, "sline1")}
-                          placeholder="Ship To Address Line 1"
-                        />
-                        <Input
-                          value={supplierInfo.sline2}
-                          onChange={(e) => handleSupplierChange(e, "sline2")}
-                          placeholder="Ship To Address Line 2"
-                        />
-                        <Input
-                          value={supplierInfo.sline3}
-                          onChange={(e) => handleSupplierChange(e, "sline3")}
-                          placeholder="Ship To Address Line 3"
-                        />
-                        <Input
-                          value={supplierInfo.spcode}
-                          onChange={(e) => handleSupplierChange(e, "spcode")}
-                          placeholder="Ship To Post Code"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
           </Tabs>
 
@@ -1708,4 +1648,4 @@ function AddRtn({ docData }) {
   );
 }
 
-export default AddGrn;
+export default AddAdj;

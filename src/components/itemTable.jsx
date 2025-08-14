@@ -28,6 +28,9 @@ function ItemTable({
   onHandQty,
   emptyMessage, // <-- Add this prop
   showBatchColumns = false,
+  qtyLabel = "Qty",
+  priceLabel = "Price",
+  costLabel = "Cost",
 }) {
   // const [currentPage, setCurrentPage] = useState(1);
   // const totalPages = Math.ceil(data.length / itemsPerPage);
@@ -57,9 +60,9 @@ function ItemTable({
               <TableHead>On Hand Qty</TableHead>
               {showBatchColumns && <TableHead>Batch No</TableHead>}
               {showBatchColumns && <TableHead>Batch Expiry</TableHead>}
-              <TableHead>Qty</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>Cost</TableHead>
+              <TableHead>{qtyLabel}</TableHead>
+              <TableHead>{priceLabel}</TableHead>
+              <TableHead>{costLabel}</TableHead>
               {/* <TableHead>Expiry date</TableHead> */}
               <TableHead>Action</TableHead>
             </TableRow>

@@ -1294,19 +1294,19 @@ function AddGrn({ docData }) {
   //   }));
   // };
   const handleDateChange = (e, type) => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    if (type === "deliveryDate") {
-      let deliveryDate = moment.tz(e.target.value, tz).valueOf();
-      let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
-      if (deliveryDate > docDate) {
-        showError(
-          "Delivery Date should be less than or equal to Doc Create Date"
-        );
-        return;
-      }
-      console.log(deliveryDate, docDate, "date");
-    }
+    // if (type === "deliveryDate") {
+    //   let deliveryDate = moment.tz(e.target.value, tz).valueOf();
+    //   let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
+    //   if (deliveryDate > docDate) {
+    //     showError(
+    //       "Delivery Date should be less than or equal to Doc Create Date"
+    //     );
+    //     return;
+    //   }
+    //   console.log(deliveryDate, docDate, "date");
+    // }
     setStockHdrs((prev) => ({
       ...prev,
       [type]: e.target.value,

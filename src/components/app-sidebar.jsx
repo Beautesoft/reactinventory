@@ -83,7 +83,13 @@ export function AppSidebar() {
           url: "/goods-return-note",
           icon: FiRotateCw,
         },
-        { title: "Stock Adjustment", url: "/stock-adjustment", icon: FiEdit },
+        { title: "Stock Take", 
+          url: "/stock-take", 
+          icon: FiEdit },
+          
+        { title: "Stock Adjustment", 
+          url: "/stock-adjustment", 
+          icon: FiEdit },
         {
           title: "Stock Usage Memo",
           url: "/stock-usage-memo",

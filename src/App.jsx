@@ -21,6 +21,12 @@ import AddGti from "./pages/gti/addGti";
 import GoodsTransferIn from "./pages/gti/goodsTransferIn";
 import GoodsReturnNote from "./pages/rtn/goodsReturnNote";
 import AddRtn from "./pages/rtn/addRtn";
+import AddAdj from "./pages/adj/addAdj";
+import StockAdjustment from "./pages/adj/stockAdjustment";
+import StockUsageMemo from "./pages/sum/stockUsageMemo";
+import AddSum from "./pages/sum/addSum";
+import AddTake from "./pages/take/addTake";
+import StockTake from "./pages/take/stockTake";
 
 function App() {
   return (
@@ -131,22 +137,38 @@ function App() {
                               element={<PrintPreview />}
                             />
 
+                            <Route path="/stock-take" element={<StockTake />} />
+
+                            <Route
+                              path="/stock-take/add"
+                              element={<AddTake />}
+                            />
+
+                            <Route
+                              path="/stock-take/details/:docNo"
+                              element={<AddTake />}
+                            />
+                            <Route
+                              path="/stock-take/edit/:docNo"
+                              element={<AddTake />}
+                            />
+
                             <Route
                               path="/stock-adjustment"
-                              element={<GoodsReturnNote />}
+                              element={<StockAdjustment />}
                             />
                             <Route
                               path="/stock-adjustment/add"
-                              element={<AddRtn />}
+                              element={<AddAdj />}
                             />
 
                             <Route
                               path="/stock-adjustment/details/:docNo"
-                              element={<AddGti />}
+                              element={<AddAdj />}
                             />
                             <Route
                               path="/stock-adjustment/edit/:docNo"
-                              element={<AddRtn />}
+                              element={<AddAdj />}
                             />
                             <Route
                               path="/stock-adjustment/print/:docNo"
@@ -155,21 +177,21 @@ function App() {
 
                             <Route
                               path="/stock-usage-memo"
-                              element={<GoodsReturnNote />}
+                              element={<StockUsageMemo />}
                             />
 
                             <Route
                               path="/stock-usage-memo/add"
-                              element={<AddRtn />}
+                              element={<AddSum />}
                             />
 
                             <Route
                               path="/stock-usage-memo/details/:docNo"
-                              element={<AddGti />}
+                              element={<AddSum />}
                             />
                             <Route
                               path="/stock-usage-memo/edit/:docNo"
-                              element={<AddRtn />}
+                              element={<AddSum />}
                             />
                             <Route
                               path="/stock-usage-memo/print/:docNo"

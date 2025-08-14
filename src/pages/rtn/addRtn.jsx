@@ -264,6 +264,8 @@ function AddRtn({ docData }) {
   const [activeTab, setActiveTab] = useState("detail");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [postLoading, setPostLoading] = useState(false);
   const [itemTotal, setItemTotal] = useState(0);
   const [cartItems, setCartItems] = useState([]);
   const [searchValue, setSearchValue] = useState("");
@@ -327,6 +329,7 @@ function AddRtn({ docData }) {
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     postDate: "",
+    deliveryDate:"",
     createUser: userDetails?.username,
   });
   const [cartData, setCartData] = useState([]);
@@ -358,6 +361,13 @@ function AddRtn({ docData }) {
   const [tempFilters, setTempFilters] = useState({
     brand: [],
     range: [],
+  });
+
+  // Add these state declarations near other states
+  const [filters, setFilters] = useState({
+    brand: [],
+    range: [],
+    department: ["RETAIL PRODUCT", "SALON PRODUCT"],
   });
 
   // Add apply filters function
@@ -1058,7 +1068,7 @@ function AddRtn({ docData }) {
     if (cart.length === 0) errors.push("Cart shouldn't be empty");
 
     // Batch and Expiry Date Validation - Only for post
-    if (type === "post") {
+    if (type === "post" && window?.APP_CONFIG?.BATCH_NO === "Yes") {
       cart.forEach((item, index) => {
         if (!item.docBatchNo) {
           errors.push(
@@ -1098,19 +1108,19 @@ function AddRtn({ docData }) {
   // };
 
   const handleDateChange = (e, type) => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    if (type === "deliveryDate") {
-      let deliveryDate = moment.tz(e.target.value, tz).valueOf();
-      let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
-      if (deliveryDate > docDate) {
-        showError(
-          "Delivery Date should be less than or equal to Doc Create Date"
-        );
-        return;
-      }
-      console.log(deliveryDate, docDate, "date");
-    }
+    // if (type === "deliveryDate") {
+    //   let deliveryDate = moment.tz(e.target.value, tz).valueOf();
+    //   let docDate = moment.tz(stockHdrs.docDate, tz).valueOf();
+    //   if (deliveryDate > docDate) {
+    //     showError(
+    //       "Delivery Date should be less than or equal to Doc Create Date"
+    //     );
+    //     return;
+    //   }
+    //   console.log(deliveryDate, docDate, "date");
+    // }
     setStockHdrs((prev) => ({
       ...prev,
       [type]: e.target.value,
@@ -1408,6 +1418,8 @@ function AddRtn({ docData }) {
         const stktrns = details.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
+
+        console.log(stktrns, "stktrns");  
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         const itemRequests = stktrns.map((d) => {
           const filter = {
@@ -1594,31 +1606,7 @@ function AddRtn({ docData }) {
               },
             };
 
-            if (!window?.APP_CONFIG?.BATCH_NO === "Yes") {
-              console.log(d, "ddd");
-              const updateqty = {
-                itemcode: trimmedItemCode,
-                sitecode: userDetails.siteCode,
-                uom: d.itemUom,
-                qty: Number(d.trnQty),
-                batchcost: Number(d.trnCost),
-              };
-              await apiService
-                .post(`ItemBatches/updateqty`, updateqty)
-                .then((res) => {})
-                .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
-    } else {
+            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
               if (d.useExistingBatch) {
                 // For existing batches, first get the current batch data
                 // await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(fil))}`)
@@ -1702,6 +1690,33 @@ function AddRtn({ docData }) {
                   });
               }
             }
+            else{
+              batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: userDetails.siteCode,
+                uom: d.itemUom,
+                qty: Number(d.trnQty),
+                batchcost: Number(d.trnCost),
+
+                // expDate: d?.docExpdate ? d?.docExpdate : null
+              };
+
+            await apiService
+              .post("ItemBatches/updateqty", batchUpdate)
+              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .catch(async (err) => {
+                // Log qty update error
+                const errorLog = {
+                  trnDocNo: docNo,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: userDetails.siteCode,
+                  logMsg: `ItemBatches/updateqty ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // await apiService.post("Inventorylogs", errorLog);
+              });
+            }
           }
         } else {
           // Existing stktrns → log
@@ -1728,7 +1743,7 @@ function AddRtn({ docData }) {
           ? "Updated successfully"
           : "Created successfully"
       );
-      navigate("/goods-receive-note?tab=all");
+      navigate("/goods-return-note?tab=all");
     } catch (err) {
       console.error("onSubmit error:", err);
       toast.error(
@@ -1816,13 +1831,20 @@ function AddRtn({ docData }) {
                 Cancel
               </Button>
               <Button
+                disabled={stockHdrs.docStatus === 7 || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
-                Save
+                {saveLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
               </Button>
               <Button
                 variant="secondary"
@@ -1830,9 +1852,16 @@ function AddRtn({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={stockHdrs.docStatus === 7 || postLoading}
               >
-                Post
+                {postLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Posting...
+                  </>
+                ) : (
+                  "Post"
+                )}
               </Button>
             </div>
           </div>
@@ -1912,7 +1941,7 @@ function AddRtn({ docData }) {
                     <Input
                       disabled={urlStatus == 7}
                       type="date"
-                      value={stockHdrs.postDate}
+                      value={stockHdrs.deliveryDate}
                       onChange={(e) => handleDateChange(e, "deliveryDate")}
                     />
                   </div>
@@ -2043,13 +2072,8 @@ function AddRtn({ docData }) {
                       <div className="flex-1 mt-2">
                         <MultiSelect
                           options={brandOption}
-                          selected={tempFilters.brand}
-                          onChange={(selected) => {
-                            setTempFilters((prev) => ({
-                              ...prev,
-                              brand: selected,
-                            }));
-                          }}
+                          selected={filters.brand}
+                          onChange={handleBrandChange}
                           placeholder="Filter by brand..."
                         />
                       </div>
@@ -2057,13 +2081,8 @@ function AddRtn({ docData }) {
                       <div className="flex-1 mt-2">
                         <MultiSelect
                           options={rangeOptions}
-                          selected={tempFilters.range}
-                          onChange={(selected) => {
-                            setTempFilters((prev) => ({
-                              ...prev,
-                              range: selected,
-                            }));
-                          }}
+                          selected={filters.range}
+                          onChange={handleRangeChange}
                           placeholder="Filter by range..."
                         />
                       </div>
@@ -2081,27 +2100,12 @@ function AddRtn({ docData }) {
                         <Checkbox
                           id="retail"
                           className="w-5 h-5"
-                          checked={itemFilter.whereArray.department.includes(
+                          checked={filters.department.includes(
                             "RETAIL PRODUCT"
                           )}
-                          onCheckedChange={(checked) => {
-                            console.log(checked);
-                            setItemFilter((prev) => ({
-                              ...prev,
-                              whereArray: {
-                                ...prev.whereArray,
-                                department: checked
-                                  ? [
-                                      ...prev.whereArray.department,
-                                      "RETAIL PRODUCT",
-                                    ]
-                                  : prev.whereArray.department.filter(
-                                      (d) => d !== "RETAIL PRODUCT"
-                                    ),
-                              },
-                              skip: 0,
-                            }));
-                          }}
+                          onCheckedChange={() =>
+                            handleDepartmentChange("RETAIL PRODUCT")
+                          }
                         />
                         <label htmlFor="retail" className="text-sm">
                           Retail Product
@@ -2112,26 +2116,10 @@ function AddRtn({ docData }) {
                         <Checkbox
                           id="salon"
                           className="w-5 h-5"
-                          checked={itemFilter.whereArray.department.includes(
-                            "SALON PRODUCT"
-                          )}
-                          onCheckedChange={(checked) => {
-                            setItemFilter((prev) => ({
-                              ...prev,
-                              whereArray: {
-                                ...prev.whereArray,
-                                department: checked
-                                  ? [
-                                      ...prev.whereArray.department,
-                                      "SALON PRODUCT",
-                                    ]
-                                  : prev.whereArray.department.filter(
-                                      (d) => d !== "SALON PRODUCT"
-                                    ),
-                              },
-                              skip: 0,
-                            }));
-                          }}
+                          checked={filters.department.includes("SALON PRODUCT")}
+                          onCheckedChange={() =>
+                            handleDepartmentChange("SALON PRODUCT")
+                          }
                         />
                         <label htmlFor="salon" className="text-sm">
                           Salon Product
