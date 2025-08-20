@@ -27,6 +27,7 @@ import StockUsageMemo from "./pages/sum/stockUsageMemo";
 import AddSum from "./pages/sum/addSum";
 import AddTake from "./pages/take/addTake";
 import StockTake from "./pages/take/stockTake";
+import UserAuthorization from "./pages/userAuthorization";
 
 function App() {
   return (
@@ -72,7 +73,7 @@ function App() {
                             />
                             <Route
                               path="/goods-receive-note/print/:docNo"
-                              element={<PrintPreview />}
+                              element={<PrintPreview documentType="grn" />}
                             />
                             <Route
                               path="/goods-transfer-out"
@@ -92,7 +93,7 @@ function App() {
                             />
                             <Route
                               path="/goods-transfer-out/print/:docNo"
-                              element={<PrintPreview />}
+                              element={<PrintPreview documentType="gto" />}
                             />
                             <Route
                               path="/goods-transfer-in"
@@ -112,7 +113,7 @@ function App() {
                             />
                             <Route
                               path="/goods-transfer-in/print/:docNo"
-                              element={<PrintPreview />}
+                              element={<PrintPreview documentType="gti" />}
                             />
 
                             <Route
@@ -134,7 +135,7 @@ function App() {
                             />
                             <Route
                               path="/goods-return-note/print/:docNo"
-                              element={<PrintPreview />}
+                              element={<PrintPreview documentType="rtn" />}
                             />
 
                             <Route path="/stock-take" element={<StockTake />} />
@@ -172,7 +173,7 @@ function App() {
                             />
                             <Route
                               path="/stock-adjustment/print/:docNo"
-                              element={<PrintPreview />}
+                              element={<PrintPreview documentType="adj" />}
                             />
 
                             <Route
@@ -195,7 +196,7 @@ function App() {
                             />
                             <Route
                               path="/stock-usage-memo/print/:docNo"
-                              element={<PrintPreview />}
+                              element={<PrintPreview documentType="sum" />}
                             />
 
                             <Route
@@ -210,7 +211,8 @@ function App() {
                               path="/stock-transfer"
                               element={<h1>Stock Transfer</h1>}
                             />
-                            <Route path="/settings" element={<Settings />} />
+                            {/* <Route path="/settings" element={<Settings />} /> */}
+                            <Route path="/settings" element={<UserAuthorization />} />
                           </Routes>
                         </Layout>{" "}
                       </PrivateRoute>

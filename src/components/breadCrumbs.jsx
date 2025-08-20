@@ -122,7 +122,7 @@ export function BreadcrumbNav() {
                   ${
                     breadcrumb.path === "#"
                       ? "cursor-default pointer-events-none text-gray-600 font-semibold"
-                      : "text-gray-500 hover:text-primary/90"
+                      : "text-gray-500 hover:text-primary/90 cursor-pointer"
                   }
                 `}
               >

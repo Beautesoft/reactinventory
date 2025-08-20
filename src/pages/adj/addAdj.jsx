@@ -1,4 +1,5 @@
 import React, { useState, useEffect, use, memo, useCallback } from "react";
+// Stock Adjustment component - allows both positive and negative quantities for inventory adjustments
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import TableSpinner from "@/components/tabelSpinner";
+import apiService1 from "@/services/apiService1";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -80,14 +82,177 @@ const calculateTotals = (cartData) => {
 };
 
 const EditDialog = memo(
-  ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit }) => (
+  ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit, isBatchEdit }) => {
+    const [batchOptions, setBatchOptions] = useState([]);
+    const [selectedBatch, setSelectedBatch] = useState(null);
+    const [isExpiryReadOnly, setIsExpiryReadOnly] = useState(false);
+    const [newBatchNo, setNewBatchNo] = useState("");
+    const [useExistingBatch, setUseExistingBatch] = useState(true);
+    const [isLoadingBatches, setIsLoadingBatches] = useState(false);
+    const [validationErrors, setValidationErrors] = useState([]);
+
+
+
+    // Reset states when dialog closes
+    useEffect(() => {
+      if (!showEditDialog) {
+        setSelectedBatch(null);
+        setNewBatchNo("");
+        setUseExistingBatch(true);
+        setIsExpiryReadOnly(false);
+        setBatchOptions([]);
+        setValidationErrors([]);
+      }
+    }, [showEditDialog]);
+
+    useEffect(() => {
+      if (showEditDialog && editData?.itemcode) {
+        setIsLoadingBatches(true);
+        // Call getBatches when dialog opens
+        const filter = {
+          where: {
+            itemCode: editData.itemcode,
+            siteCode: JSON.parse(localStorage.getItem("userDetails"))?.siteCode,
+            uom: editData.docUom,
+          },
+        };
+
+        apiService
+          .get(`ItemBatches${buildFilterQuery(filter)}`)
+          .then((batches) => {
+            console.log("Fetched batches:", batches);
+            // Filter out items with empty or null batchNo
+            const validBatches = batches.filter(
+              (item) => item.batchNo && item.batchNo.trim() !== ""
+            );
+
+            // Remove duplicates based on batchNo
+            const uniqueBatches = validBatches.reduce((acc, current) => {
+              const exists = acc.find(
+                (item) => item.batchNo === current.batchNo
+              );
+              if (!exists) acc.push(current);
+              return acc;
+            }, []);
+
+            const formattedOptions = uniqueBatches.map((item) => ({
+              value: item.batchNo,
+              label: item.batchNo,
+              expDate: item.expDate,
+            }));
+
+            setBatchOptions(formattedOptions);
+
+            // If there's an existing batch number, try to find and select it
+            if (editData.docBatchNo) {
+              const existingBatch = formattedOptions.find(
+                (opt) => opt.value === editData.docBatchNo
+              );
+              if (existingBatch) {
+                setSelectedBatch(existingBatch);
+                setUseExistingBatch(true);
+                // Only make expiry readonly if there's a valid expiry date
+                setIsExpiryReadOnly(!!existingBatch.expDate);
+              } else {
+                setNewBatchNo(editData.docBatchNo);
+                setUseExistingBatch(false);
+                setIsExpiryReadOnly(false);
+              }
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching batches:", error);
+            setBatchOptions([]);
+          })
+          .finally(() => {
+            setIsLoadingBatches(false);
+          });
+      }
+    }, [showEditDialog]);
+
+    const handleExistingBatchChange = (value) => {
+      const selected = batchOptions.find((opt) => opt.value === value);
+      setSelectedBatch(selected);
+      setNewBatchNo("");
+      setUseExistingBatch(true);
+
+      if (selected && selected.expDate) {
+        // If batch exists in options and has expiry date, set it and make readonly
+        const formattedDate = selected.expDate.split("T")[0]; // Convert to yyyy-MM-dd format
+        onEditCart({ target: { value: formattedDate } }, "docExpdate");
+        editData.docExpdate = formattedDate;
+        setIsExpiryReadOnly(true);
+      } else {
+        // If batch doesn't exist or has no expiry date, allow manual entry
+        setIsExpiryReadOnly(false);
+      }
+
+      onEditCart({ target: { value } }, "docBatchNo");
+    };
+
+    const handleNewBatchChange = (e) => {
+      const value = e.target.value;
+      // Limit to 20 characters
+      if (value.length <= 20) {
+        setNewBatchNo(value);
+        setSelectedBatch(null);
+        setUseExistingBatch(false);
+        setIsExpiryReadOnly(false);
+        onEditCart({ target: { value } }, "docBatchNo");
+      }
+    };
+
+    const handleSubmit = () => {
+      const errors = [];
+
+      // Only validate quantity and price if not batch editing
+      if (!isBatchEdit) {
+        if (!editData?.docQty || editData.docQty === 0) {
+          errors.push("Quantity must be greater than 0");
+        }
+        if (!editData?.docPrice || editData.docPrice <= 0) {
+          errors.push("Price must be greater than 0");
+        }
+      }
+
+      // Validate batch number only if batch functionality is enabled
+      if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+        if (useExistingBatch && !selectedBatch?.value) {
+          errors.push("Please select an existing batch");
+        } else if (!useExistingBatch && !newBatchNo.trim()) {
+          errors.push("Please enter a new batch number");
+        }
+
+        // Validate expiry date only if batch functionality is enabled
+        if (!editData?.docExpdate) {
+          errors.push("Expiry date is required");
+        }
+      }
+
+      if (errors.length > 0) {
+        setValidationErrors(errors);
+        return;
+      }
+
+      const updatedEditData = {
+        ...editData,
+        useExistingBatch,
+        docBatchNo: useExistingBatch ? selectedBatch?.value : newBatchNo,
+      };
+
+      onSubmit(updatedEditData);
+    };
+
+    return (
     <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
       <DialogContent
         className="sm:max-w-[425px]"
         aria-describedby="edit-item-description"
       >
         <DialogHeader>
-          <DialogTitle>Edit Item Details</DialogTitle>
+            <DialogTitle>
+              {isBatchEdit ? "Edit Selected Item Details" : "Edit Item Details"}
+            </DialogTitle>
           <div
             id="edit-item-description"
             className="text-sm text-muted-foreground"
@@ -96,12 +261,23 @@ const EditDialog = memo(
           </div>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+            {validationErrors.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <ul className="list-disc pl-5 text-sm text-red-600">
+                  {validationErrors.map((error, index) => (
+                    <li key={index}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {/* Show Quantity and Price only for individual edit (not batch edit) */}
+            {!isBatchEdit && (
+              <>
           <div className="space-y-2">
             <Label htmlFor="qty">Quantity</Label>
             <Input
               id="qty"
               type="number"
-              min="0"
               value={editData?.docQty || ""}
               onChange={(e) => onEditCart(e, "docQty")}
               className="w-full"
@@ -118,6 +294,78 @@ const EditDialog = memo(
               className="w-full"
             />
           </div>
+              </>
+            )}
+            {/* Always show Batch No, Expiry Date, and Remarks */}
+            {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="batchNo">Batch No</Label>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="useExisting"
+                        checked={useExistingBatch}
+                        onCheckedChange={(checked) => {
+                          setUseExistingBatch(checked);
+                          if (checked) {
+                            setNewBatchNo("");
+                          } else {
+                            setSelectedBatch(null);
+                            onEditCart({ target: { value: "" } }, "docBatchNo");
+                          }
+                        }}
+                      />
+                      <label htmlFor="useExisting" className="text-sm">
+                        Use Existing Batch
+                      </label>
+                    </div>
+                    {useExistingBatch ? (
+                      <div className="relative">
+                        <Select
+                          value={selectedBatch?.value || ""}
+                          onValueChange={handleExistingBatchChange}
+                          disabled={isLoadingBatches}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={
+                                isLoadingBatches
+                                  ? "Loading batches..."
+                                  : "Select existing batch"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {isLoadingBatches ? (
+                              <div className="flex items-center justify-center p-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            </div>
+                            ) : batchOptions.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground text-center">
+                                No existing batches found
+                              </div>
+                            ) : (
+                              batchOptions.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <Input
+                        value={newBatchNo}
+                        onChange={handleNewBatchChange}
+                        placeholder="Enter new batch number"
+                        className="w-full"
+                        maxLength={20}
+                      />
+                    )}
+                  </div>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="expiry">Expiry Date</Label>
             <Input
@@ -126,16 +374,19 @@ const EditDialog = memo(
               value={editData?.docExpdate || ""}
               onChange={(e) => onEditCart(e, "docExpdate")}
               className="w-full"
+                    readOnly={isExpiryReadOnly}
             />
           </div>
+              </>
+            )}
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
             <Input
               id="remarks"
               value={editData?.itemRemark || ""}
-              onChange={(e) => onEditCart(e, "itemRemark")}
               placeholder="Enter remarks"
               className="w-full"
+                onChange={(e) => onEditCart(e, "itemRemark")}
             />
           </div>
         </div>
@@ -143,11 +394,12 @@ const EditDialog = memo(
           <Button variant="outline" onClick={() => setShowEditDialog(false)}>
             Cancel
           </Button>
-          <Button onClick={onSubmit}>Save Changes</Button>
+            <Button onClick={handleSubmit}>Save Changes</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+    );
+  }
 );
 
 function AddAdj({ docData }) {
@@ -168,6 +420,8 @@ function AddAdj({ docData }) {
   const [activeTab, setActiveTab] = useState("detail");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [postLoading, setPostLoading] = useState(false);
   const [itemTotal, setItemTotal] = useState(0);
   const [cartItems, setCartItems] = useState([]);
   const [supplyOptions, setSupplyOptions] = useState([]);
@@ -177,6 +431,11 @@ function AddAdj({ docData }) {
   const [editData, setEditData] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [isBatchEdit, setIsBatchEdit] = useState(false);
+  
+  // Log batch functionality status
+  console.log("Batch functionality enabled:", window?.APP_CONFIG?.BATCH_NO === "Yes");
 
   const [filter, setFilter] = useState({
     movCode: "ADJ",
@@ -254,6 +513,9 @@ function AddAdj({ docData }) {
 
   // Add these state declarations near other states
   const [searchTimer, setSearchTimer] = useState(null);
+
+  // Add sorting state for ItemTable
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   // Add apply filters function
   const handleApplyFilters = () => {
@@ -334,6 +596,23 @@ function AddAdj({ docData }) {
       ...prev,
       range: selected,
     }));
+  };
+
+  // Add sorting function for ItemTable
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+
+    const sortedList = [...stockList].sort((a, b) => {
+      if (a[key] < b[key]) return direction === "asc" ? -1 : 1;
+      if (a[key] > b[key]) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    setStockList(sortedList);
   };
 
   const handleDepartmentChange = (department) => {
@@ -491,7 +770,6 @@ function AddAdj({ docData }) {
           setInitial(false);
         } else {
           // If creating new document
-          await getDocNo();
           await getSupplyList();
           await getStockDetails();
           await getOptions();
@@ -661,48 +939,54 @@ function AddAdj({ docData }) {
 
 
   const getStockDetails = async () => {
-    // Remove the itemFilter dependency - fetch all data at once
+    // const filter = buildFilterObject(itemFilter);
+    // const countFilter = buildCountObject(itemFilter);
+    // console.log(countFilter, "filial");
+    // // const query = `?${qs.stringify({ filter }, { encode: false })}`;
+    // const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+    // const countQuery = `?where=${encodeURIComponent(
+    //   JSON.stringify(countFilter.where)
+    // )}`;
+    // const filt={
+    //   site:'MC01'
+    // }
+    //     const query = `?site=${encodeURIComponent(JSON.stringify(filt))}`;
+
     const query = `?Site=${userDetails.siteCode}`;
-    
-    try {
-      const response = await apiService.get(`PackageItemDetails${query}`);
-      const stockDetails = response;
-      const count = response.length;
-      
-      setLoading(false);
-      const updatedRes = stockDetails.map((item) => ({
-        ...item,
-        stockCode: item.stockCode || item.stock_code,
-        stockName: item.stockName || item.stock_name,
-        uomDescription: item.itemUom || item.uom_description,
-        Brand: item.brand || item.brand_code,
-        Range: item.range || item.range_code,
-        linkCode: item.linkCode || item.link_code,
-        barCode: item.brandCode || item.bar_code,
-        quantity: item.quantity || item.on_hand_qty,
-        Qty: 0,
-        Price: Number(item?.item_Price || item?.price || 0),
-        Cost: Number(item?.item_Price || item?.price || 0),
-        expiryDate: null,
-        docAmt: null,
-        isActive: "True",
-      }));
-      
-      console.log(updatedRes, "updatedRes");
-      console.log(count, "count");
-  
-      setStockList(updatedRes);
-      setOriginalStockList(updatedRes);
-      setItemTotal(count);
-    } catch (err) {
-      setLoading(false);
-      console.error("Error fetching stock details:", err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to fetch stock details",
+
+    // apiService.get(`PackageItemDetails${query}`),
+    // apiService.get(`PackageItemDetails/count${countQuery}`),
+
+    apiService1
+      .get(`api/GetInvitems${query}`)
+      // apiService1.get(`api/GetInvitems/count${countQuery}`),
+      // apiService.get(`GetInvItems${query}`),
+
+      .then((res) => {
+        const stockDetails = res.result;
+        const count = res.result.length;
+        setLoading(false);
+        const updatedRes = stockDetails.map((item) => ({
+          ...item,
+          Qty: 0,
+          expiryDate: null,
+          // Price: Number(item?.item_Price),
+          // Price: item?.Price,
+
+          docAmt: null,
+        }));
+        console.log(updatedRes, "updatedRes");
+        console.log(count, "count");
+
+        setStockList(updatedRes);
+        setOriginalStockList(updatedRes);
+        setItemTotal(count);
+      })
+      .catch((err) => {
+        setLoading(false);
+        console.error("Error fetching stock details:", err);
+        toast.error("Failed to fetch stock details");
       });
-    }
   };
   const getSupplyList = async (supplycode) => {
     try {
@@ -738,25 +1022,22 @@ function AddAdj({ docData }) {
 
   const getDocNo = async () => {
     try {
-      const codeDesc = "Stock Adjustment";
+      const codeDesc = "Adjustment Stock";
       const siteCode = userDetails?.siteCode;
       const res = await apiService.get(
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
       );
 
-      if (!res?.[0]) return;
+      if (!res?.[0]) return null;
 
       const docNo = res[0].controlPrefix + res[0].siteCode + res[0].controlNo;
 
-      setStockHdrs((prev) => ({
-        ...prev,
-        docNo: docNo,
-      }));
-
-      setControlData({
+      const controlData = {
         docNo: docNo,
         RunningNo: res[0].controlNo,
-      });
+      };
+
+      return { docNo, controlData };
     } catch (err) {
       console.error("Error fetching doc number:", err);
       toast({
@@ -764,6 +1045,7 @@ function AddAdj({ docData }) {
         title: "Error",
         description: "Failed to generate document number",
       });
+      return null;
     }
   };
 
@@ -773,7 +1055,7 @@ function AddAdj({ docData }) {
       const newControlNo = (parseInt(controlNo, 10) + 1).toString();
 
       const controlNosUpdate = {
-        controldescription: "Stock Adjustment",
+        controldescription: "Adjustment Stock",
         sitecode: userDetails.siteCode,
         controlnumber: newControlNo,
       };
@@ -808,19 +1090,22 @@ function AddAdj({ docData }) {
     }
   };
 
-  const postStockDetails = async () => {
+  const postStockDetails = async (cart) => {
     try {
+      console.log(cart, "cart");
+
       // First, find items to be deleted
       const itemsToDelete = cartItems.filter(
-        (cartItem) => !cartData.some((item) => item.docId === cartItem.docId)
+        (cartItem) => !cart.some((item) => item.docId === cartItem.docId)
       );
 
       // Group items by operation type
-      const itemsToUpdate = cartData.filter((item) => item.docId);
-      const itemsToCreate = cartData.filter((item) => !item.docId);
+      const itemsToUpdate = cart.filter((item) => item.docId);
+      const itemsToCreate = cart.filter((item) => !item.docId);
+      console.log(itemsToDelete, "itemsToDelete");
 
       // Execute deletions first (in parallel)
-      if (itemsToDelete > 0) {
+      if (itemsToDelete.length > 0) {
         await Promise.all(
           itemsToDelete.map((item) =>
             apiService
@@ -882,7 +1167,17 @@ function AddAdj({ docData }) {
       } catch (err) {
         console.error(err);
       }
-    } else {
+    } else if (type === "update") {
+      try {
+        let docNo = data.docNo;
+        const res = await apiService.post(
+          `StkMovdocHdrs/update?[where][docNo]=${docNo}`,
+          data
+        );
+      } catch (err) {
+        console.error(err);
+      }
+    } else if (type === "updateStatus") {
       try {
         let docNo = data.docNo;
         const res = await apiService.post(
@@ -897,6 +1192,25 @@ function AddAdj({ docData }) {
 
   const handleCalc = (e, index, field) => {
     const value = e.target.value;
+    
+    // Add validation for negative quantities to prevent exceeding available stock
+    if (field === "Qty" && Number(value) < 0) {
+      const currentItem = stockList[index];
+      const availableQty = Number(currentItem.quantity) || 0;
+      
+      if (Math.abs(Number(value)) > availableQty) {
+        // Don't allow the input if it exceeds available stock
+        toast.error(`Cannot decrease stock by ${Math.abs(Number(value))}. Only ${availableQty} available in stock.`);
+        return;
+      }
+    }
+
+    // Add validation for price to ensure it's positive
+    if (field === "Price" && Number(value) <= 0) {
+      toast.error("Price must be greater than 0");
+      return;
+    }
+    
     setStockList((prev) =>
       prev.map((item, i) =>
         i === index
@@ -904,7 +1218,7 @@ function AddAdj({ docData }) {
               ...item,
               [field]: field === "expiryDate" ? value : Number(value),
               docAmt:
-                field === "Qty" ? value * item.Price : item.Qty * item.Price,
+                field === "Qty" ? Number(value) * Number(item.Price) : Number(item.Qty) * Number(value),
             }
           : item
       )
@@ -925,55 +1239,58 @@ function AddAdj({ docData }) {
     });
   };
 
-  const validateForm = () => {
+  const validateForm = (hdrs = stockHdrs, cart = cartData) => {
     const errors = [];
 
     // Document Header Validations
-    if (!stockHdrs.docNo) {
+    if (!hdrs.docNo) {
       errors.push("Document number is required");
     }
 
-    if (!stockHdrs.docDate) {
+    if (!hdrs.docDate) {
       errors.push("Document date is required");
     }
 
-    if (!stockHdrs.supplyNo) {
-      errors.push("Supply number is required");
-    }
-
-    if (!stockHdrs.docTerm) {
-      errors.push("Document term is required");
-    }
-
-    if (!stockHdrs.postDate) {
-      errors.push("Delivery date is required");
-    }
-
     // Cart Validation
-    if (cartData.length === 0) {
+    if (cart.length === 0) {
       errors.push("Cart shouldn't be empty");
     }
 
-    // Supplier Info Validations
-    // if (!supplierInfo.Attn) {
-    //   errors.push("Attention To is required");
-    // }
+    // Validate that all cart items have valid quantities (can be negative for adjustments)
+    cart.forEach((item, index) => {
+      if (!item.docQty || item.docQty === 0) {
+        errors.push(`Item ${index + 1} (${item.itemcode}) must have a valid quantity (positive or negative)`);
+      }
+      
+      // Check if negative adjustment exceeds available stock
+      if (item.docQty < 0) {
+        // Find the original stock item to get available quantity
+        const originalItem = stockList.find(stockItem => stockItem.stockCode === item.itemcode);
+        if (originalItem) {
+          const availableQty = Number(originalItem.quantity) || 0;
+          
+          if (Math.abs(Number(item.docQty)) > availableQty) {
+            errors.push(`Item ${index + 1} (${item.itemcode}): Cannot decrease stock by ${Math.abs(Number(item.docQty))}. Only ${availableQty} available in stock.`);
+          }
+        }
+      }
+    });
 
-    // if (!supplierInfo.line1) {
-    //   errors.push("Address is required");
-    // }
-
-    // if (!supplierInfo.sline1) {
-    //   errors.push("Shipping address is required");
-    // }
-
-    // if (!supplierInfo.spcode) {
-    //   errors.push("Shipping postal code is required");
-    // }
-
-    // if (!supplierInfo.pcode) {
-    //   errors.push("Postal code is required");
-    // }
+    // Batch and Expiry Date Validation - Only when batch functionality is enabled
+    if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      cart.forEach((item, index) => {
+        if (!item.docBatchNo) {
+          errors.push(
+            `Batch number is required for item ${index + 1} (${item.itemcode})`
+          );
+        }
+        if (!item.docExpdate) {
+          errors.push(
+            `Expiry date is required for item ${index + 1} (${item.itemcode})`
+          );
+        }
+      });
+    }
 
     // Show errors if any
     if (errors.length > 0) {
@@ -1015,9 +1332,23 @@ function AddAdj({ docData }) {
   }, []);
 
   const handleEditSubmit = useCallback(() => {
-    if (!editData.docQty || !editData.docPrice) {
+    if (!editData.docQty || editData.docQty === 0 || !editData.docPrice) {
       toast.error("Quantity and Price are required");
       return;
+    }
+
+    // Check if negative adjustment exceeds available stock
+    if (editData.docQty < 0) {
+      // Find the original stock item to get available quantity
+      const originalItem = stockList.find(stockItem => stockItem.stockCode === editData.itemcode);
+      if (originalItem) {
+        const availableQty = Number(originalItem.quantity) || 0;
+        
+        if (Math.abs(Number(editData.docQty)) > availableQty) {
+          toast.error(`Cannot decrease stock by ${Math.abs(Number(editData.docQty))}. Only ${availableQty} available in stock.`);
+          return;
+        }
+      }
     }
 
     const updatedItem = {
@@ -1035,23 +1366,90 @@ function AddAdj({ docData }) {
     setEditData(null);
     setEditingIndex(null);
     toast.success("Item updated successfully");
-  }, [editData, editingIndex]);
+  }, [editData, editingIndex, stockList]);
 
   const editPopup = (item, index) => {
+    setIsBatchEdit(false);
     setEditData({
       ...item,
       docQty: Number(item.docQty) || 0,
       docPrice: Number(item.docPrice) || 0,
       docExpdate: item.docExpdate || "",
       itemRemark: item.itemRemark || "",
+      docBatchNo: item.docBatchNo || "",
     });
     setEditingIndex(index);
     setShowEditDialog(true);
   };
 
+  // Add batch edit functionality
+  const handleBatchEditClick = () => {
+    setIsBatchEdit(true);
+    setEditData({ docBatchNo: "", docExpdate: "", itemRemark: "" });
+    setShowEditDialog(true);
+  };
+
+  const handleBatchEditSubmit = (fields) => {
+    setCartData((prev) =>
+      prev.map((item, idx) =>
+        selectedRows.includes(idx) ? { ...item, ...fields } : item
+      )
+    );
+    setShowEditDialog(false);
+    setIsBatchEdit(false);
+    setSelectedRows([]);
+    toast.success("Batch update successful!");
+  };
+
   const onDeleteCart = (item, index) => {
     setCartData((prev) => prev.filter((_, i) => i !== index));
     toast.success("Item removed from cart");
+  };
+
+  const createTransactionObject = (item, docNo, storeNo, lineNo) => {
+    console.log(item, "trafr object");
+    const today = new Date();
+    const timeStr =
+      ("0" + today.getHours()).slice(-2) +
+      ("0" + today.getMinutes()).slice(-2) +
+      ("0" + today.getSeconds()).slice(-2);
+  
+    // For adjustments, we need to handle both positive and negative quantities
+    const isPositiveAdjustment = Number(item.docQty) > 0;
+    const isNegativeAdjustment = Number(item.docQty) < 0;
+  
+    return {
+      id: null,
+      trnPost: today.toISOString().split("T")[0],
+      trnDate: stockHdrs.docDate,
+      postTime: timeStr,
+      aperiod: null,
+      itemcode: item.itemcode + "0000",
+      storeNo: storeNo,
+      tstoreNo: null,
+      fstoreNo: null,
+      trnDocno: docNo,
+      trnType: "ADJ",
+      // For adjustments: positive quantities go to trnDbQty, negative to trnCrQty
+      trnDbQty: isPositiveAdjustment ? Math.abs(Number(item.docQty)) : null,
+      trnCrQty: isNegativeAdjustment ? Math.abs(Number(item.docQty)) : null,
+      trnQty: item.docQty, // Keep original signed quantity for reference
+      trnBalqty: item.docQty, // This will be calculated based on current stock
+      trnBalcst: item.docAmt, // This will be calculated based on current stock
+      trnAmt: item.docAmt,
+      trnCost: item.docAmt,
+      trnRef: null,
+      hqUpdate: false,
+      lineNo: item.docLineno,
+      itemUom: item.docUom,
+      movType: "ADJ",
+      itemBatch: item.docBatchNo || null, // Ensure null if no batch
+      itemBatchCost: item.docPrice,
+      stockIn: null,
+      transPackageLineNo: null,
+      docExpdate: item.docExpdate || null, // Ensure null if no expiry date
+      useExistingBatch: item.useExistingBatch || false, // Ensure boolean value
+    };
   };
 
   const addItemToCart = (newCartItem, index) => {
@@ -1066,8 +1464,24 @@ function AddAdj({ docData }) {
   };
 
   const addToCart = (index, item) => {
-    if (!item.Qty || item.Qty <= 0) {
-      toast.error("Please enter a valid quantity");
+    if (!item.Qty || item.Qty === 0) {
+      toast.error("Please enter a valid quantity (positive or negative)");
+      return;
+    }
+
+    // Check if negative adjustment exceeds available stock
+    if (item.Qty < 0) {
+      const availableQty = Number(item.quantity) || 0;
+      
+      if (Math.abs(Number(item.Qty)) > availableQty) {
+        toast.error(`Cannot decrease stock by ${Math.abs(Number(item.Qty))}. Only ${availableQty} available in stock.`);
+        return;
+      }
+    }
+
+    // Check if item has a price
+    if (!item.Price || item.Price <= 0) {
+      toast.error("Please enter a valid price");
       return;
     }
 
@@ -1076,7 +1490,7 @@ function AddAdj({ docData }) {
     const newCartItem = {
       id: index + 1,
       docAmt: amount,
-      docNo: stockHdrs.docNo,
+      docNo: stockHdrs.docNo || "",
       movCode: "ADJ",
       movType: "ADJ",
       docLineno: null,
@@ -1092,21 +1506,23 @@ function AddAdj({ docData }) {
       postedQty: 0,
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
-      docUom: item.itemUom,
+      docUom: item.uom || "",
       docExpdate: item.expiryDate || "",
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
-      DOCUOMDesc: item.itemUom,
+      DOCUOMDesc: item.uomDescription,
       itemRemark: "",
       docMdisc: 0,
       recTtl: 0,
-    };
+      ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+        docBatchNo: item.batchNo || "",
+      }),    };
 
     const existingItemIndex = cartData.findIndex(
       (cartItem) =>
-        cartItem.itemcode === item.stockCode && cartItem.docUom === item.itemUom
+        cartItem.itemcode === item.stockCode && cartItem.docUom === item.uom
     );
 
     if (existingItemIndex !== -1) {
@@ -1123,55 +1539,383 @@ function AddAdj({ docData }) {
     console.log(stockHdrs, "stockHdrs");
     console.log(cartData, "cartData");
 
-    if (validateForm()) {
+    // Set loading state based on action type
+    if (type === "save") {
+      setSaveLoading(true);
+    } else if (type === "post") {
+      setPostLoading(true);
+    }
+
+    try {
+      let docNo;
+      let controlData;
+      let hdr = stockHdrs;
+      let details = cartData;
+
+      // Get new docNo for both new creations and direct posts
+      if ((type === "save" || type === "post") && !urlDocNo) {
+        const result = await getDocNo();
+        if (!result) return;
+        docNo = result.docNo;
+        controlData = result.controlData;
+
+        // Update states with new docNo
+        hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
+        details = cartData.map((item, index) => ({
+          ...item,
+          docNo,
+          id: index + 1, // Use sequential index + 1 for new items
+        }));
+        setStockHdrs(hdr);
+        setCartData(details);
+        setControlData(controlData);
+
+        // Move validation here after docNo is set
+        if (!validateForm(hdr, details)) {
+          setSaveLoading(false);
+          setPostLoading(false);
+          return;
+        }
+      } else {
+        // Use existing docNo for updates and posts
+        docNo = urlDocNo || stockHdrs.docNo;
+
+        // Validate for updates and posts
+        if (!validateForm(stockHdrs, cartData)) {
+          setSaveLoading(false);
+          setPostLoading(false);
+          return;
+        }
+      }
+
       console.log("Form is valid, proceeding with submission.");
-      const totalCart = calculateTotals(cartData);
+      const totalCart = calculateTotals(details);
 
       let data = {
-        docNo: stockHdrs.docNo,
+        docNo: hdr.docNo,
         movCode: "ADJ",
         movType: "ADJ",
-        storeNo: stockHdrs.storeNo,
-        supplyNo: stockHdrs.supplyNo,
-        docRef1: stockHdrs.docRef1,
-        docRef2: stockHdrs.docRef2,
-        docLines: null,
-        docDate: stockHdrs.docDate,
-        postDate: stockHdrs.postDate,
-        docStatus: stockHdrs.docStatus,
-        docTerm: stockHdrs.docTerm,
+        storeNo: hdr.storeNo,
+        docRef1: hdr.docRef1,
+        docRef2: hdr.docRef2,
+        docLines: urlDocNo ? hdr.docLines : cartData.length,
+        docDate: hdr.docDate,
+        postDate: type === "post" ? new Date().toISOString() : "",
+        docStatus: hdr.docStatus, // Keep original status until final update
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
-        docRemk1: stockHdrs.docRemk1,
-        createUser: stockHdrs.createUser,
-        createDate: null,
-        staffNo: userDetails.usercode,
-
+        docRemk1: hdr.docRemk1,
+        createUser: hdr.createUser,
+        createDate:
+          type === "post" && urlDocNo
+            ? hdr.createDate
+            : new Date().toISOString(),
+        staffNo: userDetails.usercode || userDetails.username,
       };
 
-      if (stockHdrs?.poId) data.poId = stockHdrs?.poId;
-
       let message;
-      console.log(type, urlDocNo, stockHdrs?.docStatus);
+      console.log(type, urlDocNo, hdr?.docStatus);
 
-      try {
-        if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
+      if (type === "save" && !urlDocNo) {
           await postStockHdr(data, "create");
-          await postStockDetails();
+        await postStockDetails(details);
           await addNewControlNumber(controlData);
-
           message = "Stock Adjustment created successfully";
         } else if (type === "save" && urlDocNo) {
           await postStockHdr(data, "update");
-          await postStockDetails();
+        await postStockDetails(details);
           message = "Stock Adjustment updated successfully";
-        } else if (type === "post" && urlDocNo) {
-          data = {
-            ...data,
-            docStatus: 7,
-          };
+      } else if (type === "post") {
+        // For direct post without saving, create header first if needed
+        if (!urlDocNo) {
+          await postStockHdr(data, "create");
+          await addNewControlNumber(controlData);
+        } else {
           await postStockHdr(data, "updateStatus");
-          await postStockDetails();
+        }
+        await postStockDetails(details);
+
+        // Rest of the posting logic for stock adjustments
+        if (type === "post") {
+          // 5) Initial Inventory Log ("Post Started on ...")
+          const inventoryLog = {
+            trnDocNo: docNo,
+            loginUser: userDetails.username,
+            siteCode: userDetails.siteCode,
+            logMsg: `Post Started on ${new Date().toISOString()}`,
+            createdDate: new Date().toISOString().split("T")[0],
+          };
+          // await apiService.post("Inventorylogs", inventoryLog);
+
+          let batchId;
+          const stktrns = details.map((item) =>
+            createTransactionObject(item, docNo, userDetails.siteCode)
+          );
+          
+          // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
+          const itemRequests = stktrns.map((d) => {
+            const filter = {
+              where: {
+                and: [
+                  { itemcode: d.itemcode },
+                  { uom: d.itemUom },
+                  { sitecode: userDetails.siteCode },
+                ],
+              },
+            };
+
+            const url = `Itemonqties?filter=${encodeURIComponent(
+              JSON.stringify(filter)
+            )}`;
+            return apiService
+              .get(url)
+              .then((resp) => ({ resp, d }))
+              .catch((error) => ({ error, d }));
+          });
+
+          const results = await Promise.all(itemRequests);
+
+          for (const { resp, d, error } of results) {
+            if (error) {
+              const errorLog = {
+                trnDocNo: docNo,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `Itemonqties API failed for ${d.itemcode}: ${error.message}`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", errorLog);
+              continue;
+            }
+
+            if (resp.length) {
+              const on = resp[0];
+              // For adjustments: add the adjustment quantity to current balance
+              // Positive adjustments increase, negative adjustments decrease
+              d.trnBalqty = (
+                Number(on.trnBalqty || 0) + Number(d.trnQty)
+              ).toString();
+              d.trnBalcst = (
+                Number(on.trnBalcst || 0) + Number(d.trnAmt)
+              ).toString();
+              d.itemBatchCost = (d.itemBatchCost || 0).toString();
+            }
+            else {
+              const errorLog = {
+                trnDocNo: docNo,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `No data found in Itemonqties for ${d.itemcode}`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", errorLog);
+            }
+          }
+          
+          // 7) Check existing stktrns
+          const chkFilter = {
+            where: {
+              and: [{ trnDocno: docNo }, { storeNo: userDetails.siteCode }],
+            },
+          };
+          const stkResp = await apiService.get(
+            `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter))}`
+          );
+
+          if (stkResp.length === 0) {
+            // 8) Create and insert new Stktrns
+            await apiService.post("Stktrns", stktrns);
+
+            // 9) Per-item log and (optional) BatchSNO GET
+            for (const d of stktrns) {
+              // Log stktrns insert
+              const insertLog = {
+                trnDocNo: docNo,
+                itemCode: d.itemcode,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `${d.itemcode} Inserted on stktrn Table`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", insertLog);
+            }
+
+                          // 10) Update ItemBatches quantity
+              console.log("Starting ItemBatches updates for", stktrns.length, "items");
+              for (const d of stktrns) {
+              if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+                const params = new URLSearchParams({
+                  docNo: d.trnDocno,
+                  itemCode: d.itemcode,
+                  uom: d.itemUom,
+                  itemsiteCode: d.storeNo,
+                  Qty: d.trnQty,
+                  ExpDate: d?.docExpdate ? d?.docExpdate : null,
+                  batchCost: Number(d.trnCost),
+                });
+
+                const payload = {
+                  itemCode: d.itemcode?.replace(/0000$/, ""), // Remove 0000 suffix if present
+                  siteCode: d.storeNo,
+                  batchSNo: d.itemBatch, // or d.batchSNo if that's the correct field
+                  DocNo: d.trnDocno,
+                  DocOutNo: "", // Set this if you have an outbound doc number, else leave as empty string
+                  uom: d.itemUom,
+                  availability: true, // or set based on your logic
+                  expDate: d.docExpdate
+                    ? new Date(d.docExpdate).toISOString()
+                    : null,
+                  batchCost: Number(d.trnCost) || 0,
+                };
+
+                try {
+                  await apiService1.get(
+                    `api/postItemBatchSno?${params.toString()}`
+                  );
+                  // await apiService.post(`ItemBatchSnos`, payload);
+                } catch (err) {
+                  const errorLog = {
+                    trnDocNo: d.trnDocno,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `api/postItemBatchSno error: ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // Optionally log the error
+                  // await apiService.post("Inventorylogs", errorLog);
+                }
+              }
+
+              const trimmedItemCode = d.itemcode.replace(/0000$/, "");
+              let batchUpdate;
+
+              const batchFilter = {
+                itemCode: trimmedItemCode,
+                siteCode: userDetails.siteCode,
+                uom: d.itemUom,
+                batchNo: d.itemBatch,
+              };
+
+              const fil = {
+                where: {
+                  and: [
+                    { itemCode: trimmedItemCode },
+                    { siteCode: userDetails.siteCode },
+                    { uom: d.itemUom },
+                    { batchNo: d.itemBatch },
+                  ],
+                },
+              };
+
+              console.log("Batch configuration:", {
+                BATCH_NO: window?.APP_CONFIG?.BATCH_NO,
+                BATCH_SNO: window?.APP_CONFIG?.BATCH_SNO,
+                useExistingBatch: d.useExistingBatch,
+                itemBatch: d.itemBatch
+              });
+              
+              if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+                if (d.useExistingBatch) {
+                  // For existing batches, update quantity
+                  batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchcost: Number(d.trnCost),
+                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      batchno: d.itemBatch,
+                    }),                  };
+
+                  try {
+                    await apiService.post("ItemBatches/updateqty", batchUpdate);
+                    console.log(`Updated existing batch ${d.itemBatch} for item ${trimmedItemCode}`);
+                  } catch (err) {
+                    console.error(`Failed to update existing batch ${d.itemBatch}:`, err);
+                    const errorLog = {
+                      trnDocNo: docNo,
+                      itemCode: d.itemcode,
+                      loginUser: userDetails.username,
+                      siteCode: userDetails.siteCode,
+                      logMsg: `ItemBatches/updateqty error: ${err.message}`,
+                      createdDate: new Date().toISOString().split("T")[0],
+                    };
+                    // await apiService.post("Inventorylogs", errorLog);
+                  }
+                } else {
+                  // For new batches, create a new batch record
+                  batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchcost: Number(d.trnCost),
+                    batchNo: d.itemBatch,
+                    expDate: d?.docExpdate ? d?.docExpdate : null,
+                  };
+
+                  try {
+                    await apiService.post("ItemBatches", batchUpdate);
+                    console.log(`Created new batch ${d.itemBatch} for item ${trimmedItemCode}`);
+                  } catch (err) {
+                    console.error(`Failed to create new batch ${d.itemBatch}:`, err);
+                    const errorLog = {
+                      trnDocNo: docNo,
+                      itemCode: d.itemcode,
+                      loginUser: userDetails.username,
+                      siteCode: userDetails.siteCode,
+                      logMsg: `ItemBatches/create error: ${err.message}`,
+                      createdDate: new Date().toISOString().split("T")[0],
+                    };
+                    // await apiService.post("Inventorylogs", errorLog);
+                  }
+                }
+              } else {
+                // When batch functionality is disabled, still update ItemBatches for quantity tracking
+                batchUpdate = {
+                  itemcode: trimmedItemCode,
+                  sitecode: userDetails.siteCode,
+                  uom: d.itemUom,
+                  qty: Number(d.trnQty),
+                  batchcost: Number(d.trnCost),
+                };
+
+                try {
+                  await apiService.post("ItemBatches/updateqty", batchUpdate);
+                  console.log(`Updated ItemBatches for item ${trimmedItemCode} (no batch functionality)`);
+                } catch (err) {
+                  console.error(`Failed to update ItemBatches for item ${trimmedItemCode}:`, err);
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty error: ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                }
+              }
+            }
+          } else {
+            // Existing stktrns → log
+            const existsLog = {
+              trnDocNo: docNo,
+              loginUser: userDetails.username,
+              siteCode: userDetails.siteCode,
+              logMsg: "stktrn already exists",
+              createdDate: new Date().toISOString().split("T")[0],
+            };
+            // await apiService.post("Inventorylogs", existsLog);
+          }
+
+          // 11) Final header status update to 7 - Only after all operations are complete
+          await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
+            docStatus: "7",
+          });
+        }
+        
           message = "Stock Adjustment posted successfully";
         }
 
@@ -1180,9 +1924,10 @@ function AddAdj({ docData }) {
       } catch (error) {
         console.error("Submit error:", error);
         toast.error("Failed to submit form");
-      }
-    } else {
-      console.log("Form is invalid, fix the errors and resubmit.");
+    } finally {
+      // Reset loading states
+      setSaveLoading(false);
+      setPostLoading(false);
     }
   };
 
@@ -1226,13 +1971,20 @@ function AddAdj({ docData }) {
                 Cancel
               </Button>
               <Button
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
-                Save
+                {saveLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save"
+                )}
               </Button>
               <Button
                 variant="secondary"
@@ -1240,9 +1992,16 @@ function AddAdj({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || postLoading}
               >
-                Post
+                {postLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Posting...
+                  </>
+                ) : (
+                  "Post"
+                )}
               </Button>
             </div>
           </div>
@@ -1251,6 +2010,9 @@ function AddAdj({ docData }) {
           <Card>
             <CardHeader>
               <CardTitle className="text-xl">Stock Adjustment</CardTitle>
+              <div className="text-sm text-gray-600 mt-2">
+                Adjust inventory levels by entering positive quantities to increase stock or negative quantities to decrease stock
+              </div>
             </CardHeader>
             <CardContent className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1281,7 +2043,7 @@ function AddAdj({ docData }) {
                     <Label>Ref1</Label>
                     <Input
                       placeholder="Enter Ref 1"
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1315,7 +2077,7 @@ function AddAdj({ docData }) {
                   <div className="space-y-2">
                     <Label>Ref2</Label>
                     <Input
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
                       placeholder="Enter Ref 2"
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
@@ -1354,7 +2116,7 @@ function AddAdj({ docData }) {
                     <Label>Remark</Label>
                     <Input
                       placeholder="Enter remark"
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
                       value={stockHdrs.docRemk1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1385,6 +2147,9 @@ function AddAdj({ docData }) {
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
                   </CardTitle>
+                  <div className="ml-4 mb-4 text-sm text-gray-600">
+                    Note: Use positive quantities to increase stock, negative quantities to decrease stock
+                  </div>
                   <CardContent className="p-4 ">
                     {/* Search and Filter Section */}
                     <div className="flex items-center   gap-4 mb-6">
@@ -1469,9 +2234,14 @@ function AddAdj({ docData }) {
                       onPageChange={handlePageChange}
                       emptyMessage="No items Found"
                       showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
-                      qtyLabel="Adj Qty"
+                      qtyLabel="Adj Qty (±)"
                       priceLabel="Adj Price"
                       costLabel="Adj Cost"
+                      // Add sorting functionality
+                      enableSorting={true}
+                      onSort={handleSort}
+                      sortConfig={sortConfig}
+                      allowNegativeQty={true}
                     />
                   </CardContent>
                 </Card>
@@ -1479,6 +2249,19 @@ function AddAdj({ docData }) {
             </TabsContent>
           </Tabs>
 
+          {/* Move the Add Item Details button to the top right above the table */}
+          {cartData.length > 0 && (
+            <div className="flex justify-end my-5">
+              {selectedRows.length > 0 && (
+                <Button
+                  onClick={handleBatchEditClick}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
+                  Update Selected
+                </Button>
+              )}
+            </div>
+          )}
           {cartData.length > 0 && (
             <div className="rounded-md border border-slate-200 bg-slate-50/50 shadow-sm hover:shadow-md transition-shadow duration-200 mb-15">
               <CardTitle className="text-xl px-2 py-3">
@@ -1487,6 +2270,26 @@ function AddAdj({ docData }) {
               <Table>
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
+                  {urlStatus != 7 && (
+
+                      <TableHead>
+                        <input
+                          type="checkbox"
+                          className="w-5 h-5"
+                          checked={
+                            selectedRows.length === cartData.length &&
+                            cartData.length > 0
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRows(cartData.map((_, idx) => idx));
+                            } else {
+                              setSelectedRows([]);
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      )}
                     <TableHead className="font-semibold text-slate-700">
                       NO
                     </TableHead>
@@ -1500,17 +2303,22 @@ function AddAdj({ docData }) {
                     <TableHead className="font-semibold text-slate-700">
                       Amount
                     </TableHead>
+                      {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                        <>
                     <TableHead>Expiry Date</TableHead>
+                          <TableHead>Batch No</TableHead>
+                        </>
+                      )}
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 && <TableHead>Action</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableSpinner colSpan={9} />
+                    <TableSpinner colSpan={window?.APP_CONFIG?.BATCH_NO === "Yes" ? 11 : 9} />
                   ) : cartData.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
+                      <TableCell colSpan={window?.APP_CONFIG?.BATCH_NO === "Yes" ? 11 : 9} className="text-center py-10">
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -1524,23 +2332,46 @@ function AddAdj({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
+                          {urlStatus != 7 && (
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                className="w-5 h-5"
+                                checked={selectedRows.includes(index)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedRows([...selectedRows, index]);
+                                  } else {
+                                    setSelectedRows(
+                                      selectedRows.filter((i) => i !== index)
+                                    );
+                                  }
+                                }}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
                           <TableCell>{item.itemcode}</TableCell>
                           <TableCell>{item.itemdesc}</TableCell>
                           <TableCell>{item.docUom}</TableCell>
-                          <TableCell className="font-medium">
+                          <TableCell className={`font-medium ${item.docQty < 0 ? 'text-red-600' : ''}`}>
                             {item.docQty}
                           </TableCell>
                           <TableCell>{item.docPrice}</TableCell>
                           <TableCell className="font-semibold text-slate-700">
                             {item.docAmt}
                           </TableCell>
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                            <>
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
-                          <TableCell>{item.itemRemark}</TableCell>
+                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                            </>
+                          )}
+                          <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -1551,35 +2382,41 @@ function AddAdj({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {urlStatus != 7 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => onDeleteCart(item, index)}
+                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
-                          )}
+                          ) : null}
                         </TableRow>
                       ))}
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={4}
+                          colSpan={5}
                           className="text-right text-slate-700"
                         >
                           Totals:
                         </TableCell>
-                        <TableCell className="text-slate-700">
+                        <TableCell className={`text-slate-700 ${calculateTotals(cartData).totalQty < 0 ? 'text-red-600' : ''}`}>
                           {calculateTotals(cartData).totalQty}
                         </TableCell>
                         <TableCell />
                         <TableCell className="font-semibold text-slate-700">
                           {calculateTotals(cartData).totalAmt.toFixed(2)}
                         </TableCell>
+                        {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                          <TableCell colSpan={4} />
+                        ) : (
                         <TableCell colSpan={2} />
+                        )}
                       </TableRow>
                     </>
                   )}
@@ -1594,7 +2431,8 @@ function AddAdj({ docData }) {
         setShowEditDialog={setShowEditDialog}
         editData={editData}
         onEditCart={handleEditCart}
-        onSubmit={handleEditSubmit}
+        onSubmit={isBatchEdit ? handleBatchEditSubmit : handleEditSubmit}
+        isBatchEdit={isBatchEdit}
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

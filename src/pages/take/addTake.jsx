@@ -44,6 +44,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import apiService1 from "@/services/apiService1";
 import {
   buildCountObject,
   buildCountQuery,
@@ -56,6 +57,7 @@ import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import Pagination from "@/components/pagination";
+import ItemTable from "@/components/itemTable";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,8 +78,10 @@ const calculateTotals = (cartData) => {
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty),
       totalAmt: acc.totalAmt + Number(item.docAmt),
+      systemQty: acc.systemQty + Number(item.docTtlqty || 0),
+      variance: acc.variance + ((Number(item.docQty) || 0) - (Number(item.docTtlqty) || 0)),
     }),
-    { totalQty: 0, totalAmt: 0 }
+    { totalQty: 0, totalAmt: 0, systemQty: 0, variance: 0 }
   );
 };
 
@@ -109,27 +113,31 @@ const EditDialog = memo(
               className="w-full"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price</Label>
-            <Input
-              id="price"
-              type="number"
-              min="0"
-              value={editData?.docPrice || ""}
-              onChange={(e) => onEditCart(e, "docPrice")}
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="expiry">Expiry Date</Label>
-            <Input
-              id="expiry"
-              type="date"
-              value={editData?.docExpdate || ""}
-              onChange={(e) => onEditCart(e, "docExpdate")}
-              className="w-full"
-            />
-          </div>
+                     {/* Price field removed as it's not displayed in the cart table */}
+          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="batchNo">Batch No</Label>
+                <Input
+                  id="batchNo"
+                  value={editData?.docBatchNo || ""}
+                  onChange={(e) => onEditCart(e, "docBatchNo")}
+                  placeholder="Enter batch number"
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="expiry">Expiry Date</Label>
+                <Input
+                  id="expiry"
+                  type="date"
+                  value={editData?.docExpdate || ""}
+                  onChange={(e) => onEditCart(e, "docExpdate")}
+                  className="w-full"
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
             <Input
@@ -161,10 +169,12 @@ function AddTake({ docData }) {
   console.log(urlDocNo, "urlDocNo");
   console.log(urlStatus, "urlStatus");
 
-  // State management
+  // State management - Stock Take workflow states
   const statusOptions = [
-    { value: 0, label: "Open" },
-    { value: 7, label: "Posted" },
+    { value: 0, label: "Saved" },
+    { value: 1, label: "Submitted" },
+    { value: 2, label: "Approved" },
+    { value: 3, label: "Rejected" },
   ];
 
   const [activeTab, setActiveTab] = useState("detail");
@@ -177,20 +187,21 @@ function AddTake({ docData }) {
   const [supplyOptions, setSupplyOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [postLoading, setPostLoading] = useState(false);
   const [editData, setEditData] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [filter, setFilter] = useState({
-    movCode: "GRN",
+    movCode: "TKE",
     splyCode: "",
     docNo: "",
   });
 
   const [itemFilter, setItemFilter] = useState({
     // where: {
-    //   movCode: "GRN",
+    //   movCode: "TKE",
     // },
     whereArray: {
       department: ["RETAIL PRODUCT", "SALON PRODUCT"],
@@ -220,14 +231,9 @@ function AddTake({ docData }) {
   const [stockHdrs, setStockHdrs] = useState({
     docNo: "",
     docDate: new Date().toISOString().split("T")[0],
-    docStatus: 0,
-    supplyNo: "",
-    docRef1: "",
-    docRef2: "",
-    docTerm: "",
+    docStatus: null,
     storeNo: userDetails?.siteCode,
     docRemk1: "",
-    postDate: "",
     createUser: userDetails?.username,
   });
   const [cartData, setCartData] = useState([]);
@@ -261,6 +267,48 @@ function AddTake({ docData }) {
     range: [],
   });
 
+  // Add Stock Take specific state
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  // Function to check if user can edit based on status and permissions
+  const canEdit = () => {
+    if (!stockHdrs.docNo) {
+      return true; // New document - can edit
+    }
+    if (stockHdrs.docStatus === 0 || stockHdrs.docStatus === 3) {
+      return true; // Saved or Rejected - all users with access can edit
+    }
+    if (stockHdrs.docStatus === 1) {
+      return userDetails?.canApprove; // Submitted - only users with approval rights can edit
+    }
+    return false; // Approved - no one can edit
+  };
+
+  // Add sorting function
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+
+    const sortedList = [...stockList].sort((a, b) => {
+      if (a[key] < b[key]) return direction === "asc" ? -1 : 1;
+      if (a[key] > b[key]) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    setStockList(sortedList);
+  };
+
+  // Enhanced handleCalc to include remarks
+  const handleRemarksChange = (e, index) => {
+    const value = e.target.value;
+    setStockList((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, remarks: value } : item))
+    );
+  };
+
   // Add apply filters function
   const handleApplyFilters = () => {
     setItemFilter((prev) => ({
@@ -285,7 +333,7 @@ function AddTake({ docData }) {
           // If editing existing document
           const filter = {
             where: {
-              movCode: "GRN",
+              movCode: "TKE",
               docNo: urlDocNo,
             },
           };
@@ -298,12 +346,11 @@ function AddTake({ docData }) {
           }
 
           await getStockHdrDetails(filter);
-          await getSupplyList(stockHdrs.supplyNo);
+          await getSupplyList();
           setPageLoading(false);
           setInitial(false);
         } else {
           // If creating new document
-          await getDocNo();
           await getSupplyList();
           await getStockDetails();
           await getOptions();
@@ -364,13 +411,8 @@ function AddTake({ docData }) {
         docNo: data.docNo,
         docDate: moment(data.docDate).format("YYYY-MM-DD"),
         docStatus: data.docStatus,
-        supplyNo: data.supplyNo,
-        docRef1: data.docRef1,
-        docRef2: data.docRef2,
-        docTerm: data.docTerm,
         storeNo: data.storeNo,
         docRemk1: data.docRemk1,
-        postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
       setSupplierInfo({
         Attn: data?.docAttn,
@@ -422,46 +464,58 @@ function AddTake({ docData }) {
   };
 
   const getStockDetails = async () => {
-    const filter = buildFilterObject(itemFilter);
-    const countFilter = buildCountObject(itemFilter);
-    console.log(countFilter, "filial");
-    // const query = `?${qs.stringify({ filter }, { encode: false })}`;
-    const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-    const countQuery = `?where=${encodeURIComponent(
-      JSON.stringify(countFilter.where)
-    )}`;
+    // const filter = buildFilterObject(itemFilter);
+    // const countFilter = buildCountObject(itemFilter);
+    // console.log(countFilter, "filial");
+    // // const query = `?${qs.stringify({ filter }, { encode: false })}`;
+    // const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+    // const countQuery = `?where=${encodeURIComponent(
+    //   JSON.stringify(countFilter.where)
+    // )}`;
+    // const filt={
+    //   site:'MC01'
+    // }
+    //     const query = `?site=${encodeURIComponent(JSON.stringify(filt))}`;
 
-    Promise.all([
-      apiService.get(`PackageItemDetails${query}`),
-      apiService.get(`PackageItemDetails/count${countQuery}`),
-    ])
-      .then(([stockDetails, count]) => {
+    const query = `?Site=${userDetails.siteCode}`;
+
+    // apiService.get(`PackageItemDetails${query}`),
+    // apiService.get(`PackageItemDetails/count${countQuery}`),
+
+    apiService1
+      .get(`api/GetInvitems${query}`)
+      // apiService1.get(`api/GetInvitems/count${countQuery}`),
+      // apiService.get(`GetInvItems${query}`),
+
+      .then((res) => {
+        const stockDetails = res.result;
+        const count = res.result.length;
         setLoading(false);
         const updatedRes = stockDetails.map((item) => ({
           ...item,
           Qty: 0,
           expiryDate: null,
-          Price: Number(item?.item_Price),
+          batchNo: "",
+          remarks: "",
+          // Price: Number(item?.item_Price),
+          // Price: item?.Price,
+
           docAmt: null,
         }));
         console.log(updatedRes, "updatedRes");
         console.log(count, "count");
 
         setStockList(updatedRes);
-        setItemTotal(count.count);
+        setItemTotal(count);
       })
       .catch((err) => {
         setLoading(false);
         console.error("Error fetching stock details:", err);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to fetch stock details",
-        });
+        toast.error("Failed to fetch stock details");
       });
   };
 
-  const getSupplyList = async (supplycode) => {
+  const getSupplyList = async () => {
     try {
       const res = await apiService.get(
         `ItemSupplies${queryParamsGenerate(filter)}`
@@ -475,14 +529,6 @@ function AddTake({ docData }) {
         }));
 
       setSupplyOptions(supplyOption);
-
-      if (!urlDocNo) {
-        console.log("ddd1");
-        setStockHdrs((prev) => ({
-          ...prev,
-          supplyNo: supplycode ? supplycode : supplyOption[0]?.value || null,
-        }));
-      }
     } catch (err) {
       console.error("Error fetching supply list:", err);
       toast({
@@ -501,19 +547,17 @@ function AddTake({ docData }) {
         `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
       );
 
-      if (!res?.[0]) return;
+      if (!res?.[0]) return null;
 
       const docNo = res[0].controlPrefix + res[0].siteCode + res[0].controlNo;
 
-      setStockHdrs((prev) => ({
-        ...prev,
-        docNo: docNo,
-      }));
-
-      setControlData({
+      const controlData = {
         docNo: docNo,
         RunningNo: res[0].controlNo,
-      });
+      };
+      console.log("rescontrolData:", res);
+
+      return { docNo, controlData };
     } catch (err) {
       console.error("Error fetching doc number:", err);
       toast({
@@ -521,6 +565,37 @@ function AddTake({ docData }) {
         title: "Error",
         description: "Failed to generate document number",
       });
+      return null;
+    }
+  };
+
+  // Function to get document number for Stock Adjustment
+  const getAdjDocNo = async () => {
+    try {
+      const codeDesc = "Adjustment Stock";
+      const siteCode = userDetails?.siteCode;
+      const res = await apiService.get(
+        `ControlNos?filter={"where":{"and":[{"controlDescription":"${codeDesc}"},{"siteCode":"${siteCode}"}]}}`
+      );
+
+      if (!res?.[0]) return null;
+
+      const docNo = res[0].controlPrefix + res[0].siteCode + res[0].controlNo;
+
+      const controlData = {
+        docNo: docNo,
+        RunningNo: res[0].controlNo,
+      };
+
+      return { docNo, controlData };
+    } catch (err) {
+      console.error("Error fetching adjustment doc number:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to generate adjustment document number",
+      });
+      return null;
     }
   };
 
@@ -552,6 +627,35 @@ function AddTake({ docData }) {
     }
   };
 
+  // Function to add new control number for Stock Adjustment
+  const addNewAdjControlNumber = async (controlData) => {
+    try {
+      const controlNo = controlData.RunningNo;
+      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
+
+      const controlNosUpdate = {
+        controldescription: "Adjustment Stock",
+        sitecode: userDetails.siteCode,
+        controlnumber: newControlNo,
+      };
+
+      const response = await apiService.post(
+        "ControlNos/updatecontrol",
+        controlNosUpdate
+      );
+
+      if (!response) {
+        throw new Error("Failed to update adjustment control number");
+      }
+
+      return response;
+    } catch (error) {
+      console.error("Error updating adjustment control number:", error);
+      toast.error("Failed to update adjustment control number");
+      throw error;
+    }
+  };
+
   const getStockHdrDetails = async (filter) => {
     try {
       const response = await apiService.get(
@@ -565,16 +669,19 @@ function AddTake({ docData }) {
     }
   };
 
-  const postStockDetails = async () => {
+  const postStockDetails = async (cart) => {
     try {
+      console.log("postStockDetails called with cartData:", cartData);
+      console.log("Current stockHdrs.docNo:", stockHdrs.docNo);
+
       // First, find items to be deleted
       const itemsToDelete = cartItems.filter(
-        (cartItem) => !cartData.some((item) => item.docId === cartItem.docId)
+        (cartItem) => !cart.some((item) => item.docId === cartItem.docId)
       );
 
       // Group items by operation type
-      const itemsToUpdate = cartData.filter((item) => item.docId);
-      const itemsToCreate = cartData.filter((item) => !item.docId);
+      const itemsToUpdate = cart.filter((item) => item.docId);
+      const itemsToCreate = cart.filter((item) => !item.docId);
 
       // Execute deletions first (in parallel)
       if (itemsToDelete > 0) {
@@ -636,8 +743,10 @@ function AddTake({ docData }) {
       try {
         const res = await apiService.post("StkMovdocHdrs", data);
         console.log(res, "post");
+        return res;
       } catch (err) {
         console.error(err);
+        throw err;
       }
     } else {
       try {
@@ -646,27 +755,348 @@ function AddTake({ docData }) {
           `StkMovdocHdrs/update?[where][docNo]=${docNo}`,
           data
         );
+        return res;
       } catch (err) {
         console.error(err);
+        throw err;
       }
     }
   };
 
-  const handleCalc = (e, index, field) => {
-    const value = e.target.value;
-    setStockList((prev) =>
-      prev.map((item, i) =>
-        i === index
-          ? {
-              ...item,
-              [field]: field === "expiryDate" ? value : Number(value),
-              docAmt:
-                field === "Qty" ? value * item.Price : item.Qty * item.Price,
-            }
-          : item
-      )
-    );
+  const createStockAdjustmentFromStockTake = async (stockTakeDocNo) => {
+    try {
+      console.log("Creating Stock Adjustment from Stock Take:", stockTakeDocNo);
+
+      if (!stockTakeDocNo) {
+        throw new Error("Stock Take document number is required");
+      }
+
+      // Step 1: Get Stock Take details to calculate variances
+      const stockTakeDetailsResponse = await apiService.get(
+        `StkMovdocDtls?filter=${encodeURIComponent(
+          JSON.stringify({ where: { docNo: stockTakeDocNo } })
+        )}`
+      );
+
+      if (!stockTakeDetailsResponse || stockTakeDetailsResponse.length === 0) {
+        throw new Error("No stock take details found");
+      }
+
+      // Step 2: Calculate variances using docQty (counted) and docTtlqty (system)
+      const adjustmentItems = stockTakeDetailsResponse
+        .filter((item) => {
+          const variance =
+            (parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0);
+          return Math.abs(variance) > 0; // Only include items with variance
+        })
+        .map((item) => {
+          const variance =
+            (parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0);
+          return {
+            ...item,
+            docQty: Math.abs(variance), // Use absolute value for adjustment
+            docAmt: Math.abs(variance) * (parseFloat(item.docPrice) || 0),
+            trnQty: variance, // Keep signed variance for backend processing
+            remarks: `Stock Take Variance - ${stockTakeDocNo}`,
+            docBatchNo: item.docBatchNo || null,
+            expiryDate: item.docExpdate || null,
+            // Ensure all required fields are present
+            itmBrand: item.itmBrand || item.brandCode || "",
+            itmRange: item.itmRange || item.rangeCode || "",
+            itmBrandDesc: item.itmBrandDesc || item.brand || "",
+            itmRangeDesc: item.itmRangeDesc || item.range || "",
+            docUom: item.docUom || item.itemUom || "",
+            docPrice: item.docPrice || item.Price || 0,
+            docTtlqty: item.docTtlqty || item.quantity || 0,
+          };
+        });
+
+      if (adjustmentItems.length === 0) {
+        console.log("No variances found, skipping adjustment creation");
+        return null;
+      }
+
+      // Step 3: Generate new adjustment document number
+      const adjDocResult = await getAdjDocNo();
+      
+      if (!adjDocResult) {
+        throw new Error("Failed to generate adjustment document number");
+      }
+
+      const adjustmentDocNo = adjDocResult.docNo;
+      const adjControlData = adjDocResult.controlData;
+
+      // Step 4: Calculate totals
+      const totalQty = adjustmentItems.reduce(
+        (sum, item) => sum + Math.abs(parseFloat(item.trnQty) || 0),
+        0
+      );
+      const totalAmt = adjustmentItems.reduce(
+        (sum, item) => sum + (parseFloat(item.docAmt) || 0),
+        0
+      );
+
+      // Step 5: Create Stock Adjustment header
+      const adjustmentHeader = {
+        docNo: adjustmentDocNo,
+        movCode: "ADJ",
+        movType: "ADJ",
+        storeNo: stockHdrs.storeNo,
+        supplyNo: stockHdrs.supplyNo || "",
+        docRef1: stockTakeDocNo, // Reference to original Stock Take
+        docRef2: "Auto-generated from Stock Take",
+        docLines: adjustmentItems.length, // Set actual number of lines
+        docDate: moment().format("YYYY-MM-DD"),
+        postDate: moment().format("YYYY-MM-DD"),
+        docStatus: 0, // Open status
+        docTerm: stockHdrs.docTerm || "",
+        docQty: totalQty,
+        docAmt: totalAmt,
+        docAttn: supplierInfo.Attn || "",
+        docRemk1: `Auto-generated adjustment from Stock Take ${stockTakeDocNo}`,
+        bname: supplierInfo.Attn || "",
+        baddr1: supplierInfo.line1 || "",
+        baddr2: supplierInfo.line2 || "",
+        baddr3: supplierInfo.line3 || "",
+        bpostcode: supplierInfo.pcode || "",
+        daddr1: supplierInfo.sline1 || "",
+        daddr2: supplierInfo.sline2 || "",
+        daddr3: supplierInfo.sline3 || "",
+        dpostcode: supplierInfo.spcode || "",
+        createUser: userDetails?.username || "SYSTEM",
+        createDate: new Date().toISOString(),
+        staffNo: userDetails?.usercode || userDetails?.username || "SYSTEM",
+        // Additional fields that might be required
+        docPdisc: 0,
+        docDisc: 0,
+        docMdisc: 0,
+        recQty1: 0,
+        postedQty: 0,
+        cancelQty: 0,
+        recTtl: 0,
+      };
+
+      // Step 6: Create the adjustment header
+      const headerResponse = await apiService.post(
+        "StkMovdocHdrs",
+        adjustmentHeader
+      );
+      console.log("Stock Adjustment header created:", headerResponse);
+
+      // Step 7: Create adjustment details
+      const adjustmentDetails = adjustmentItems.map((item, index) => ({
+        id: index + 1,
+        docAmt: item.docAmt,
+        docNo: adjustmentDocNo,
+        movCode: "ADJ",
+        movType: "ADJ",
+        docLineno: item.lineNo || null,
+        itemcode: item.itemcode,
+        itemdesc: item.itemdesc,
+        docQty: Math.abs(item.trnQty), // Use absolute value for adjustment
+        docFocqty: 0,
+        docTtlqty: Math.abs(item.trnQty), // Use absolute value for adjustment
+        docPrice: item.docPrice,
+        docPdisc: 0,
+        docDisc: 0,
+        recQty1: 0,
+        postedQty: 0,
+        cancelQty: 0,
+        createUser: userDetails?.username || "SYSTEM",
+        docUom: item.docUom || "",
+        docExpdate: item.docExpdate || "",
+        itmBrand: item.itmBrand || "",
+        itmRange: item.itmRange || "",
+        itmBrandDesc: item.itmBrandDesc || "",
+        itmRangeDesc: item.itmRangeDesc || "",
+        DOCUOMDesc: item.docUom || "",
+        itemRemark: item.remarks || "",
+        docMdisc: 0,
+        recTtl: 0,
+        docBatchNo: item.docBatchNo || null,
+        // Additional fields for reference
+        trnQty: item.trnQty, // Keep signed variance for backend processing
+        systemQty: item.docTtlqty, // Use docTtlqty for system quantity
+        stockTakeQty: item.docQty, // Use docQty for counted quantity
+        createDate: null,
+        // Additional fields that might be required by the system
+        useExistingBatch: false, // Default to false for new adjustments
+        itemBatch: item.docBatchNo || null, // Alternative field name for batch
+      }));
+
+      // Step 8: Insert adjustment details
+      for (const detail of adjustmentDetails) {
+        try {
+          await apiService.post("StkMovdocDtls", detail);
+        } catch (detailError) {
+          console.error("Error inserting adjustment detail:", detailError);
+          throw new Error(
+            `Failed to insert adjustment detail for item ${detail.itemcode}: ${detailError.message}`
+          );
+        }
+      }
+
+      // Step 9: Update control number
+      try {
+        await addNewAdjControlNumber(adjControlData);
+      } catch (controlError) {
+        console.error("Error updating adjustment control number:", controlError);
+        // Don't throw error for control number update failure as the main document is already created
+        console.warn(
+          "Control number update failed, but adjustment document was created successfully"
+        );
+      }
+
+      console.log("Stock Adjustment created successfully:", adjustmentDocNo);
+      return adjustmentDocNo;
+    } catch (error) {
+      console.error("Error creating Stock Adjustment:", error);
+      throw error;
+    }
   };
+
+  // Function to update stock quantities and item batches when stock take is approved
+  const updateStockQuantitiesAndBatches = async (stockTakeDocNo) => {
+    try {
+      console.log("Updating stock quantities and batches for Stock Take:", stockTakeDocNo);
+
+      // Step 1: Get Stock Take details
+      const stockTakeDetailsResponse = await apiService.get(
+        `StkMovdocDtls?filter=${encodeURIComponent(
+          JSON.stringify({ where: { docNo: stockTakeDocNo } })
+        )}`
+      );
+
+      if (!stockTakeDetailsResponse || stockTakeDetailsResponse.length === 0) {
+        throw new Error("No stock take details found");
+      }
+
+      // Step 2: Create Stktrns records for each item
+      const stktrns = stockTakeDetailsResponse.map((item) => {
+        const variance = (parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0);
+        const trimmedItemCode = item.itemcode.replace(/0000$/, "");
+        
+        return {
+          trnDocno: stockTakeDocNo,
+          trnDate: moment().format("YYYY-MM-DD"),
+          storeNo: stockHdrs.storeNo,
+          itemcode: item.itemcode,
+          itemUom: item.docUom || item.itemUom || "",
+          trnQty: variance, // Use signed variance (positive for increase, negative for decrease)
+          trnCost: (parseFloat(item.docPrice) || 0) * Math.abs(variance),
+          trnBalqty: (parseFloat(item.docTtlqty) || 0) + variance, // Update balance
+          trnBalcst: (parseFloat(item.docTtlqty) || 0) * (parseFloat(item.docPrice) || 0),
+          trnType: "TKE", // Stock Take transaction type
+          loginUser: userDetails?.username || "SYSTEM",
+          siteCode: userDetails?.siteCode,
+          itemBatch: item.docBatchNo || null,
+          docExpdate: item.docExpdate || null,
+        };
+      });
+
+      // Step 3: Check if Stktrns already exist
+      const chkFilter = {
+        where: {
+          and: [{ trnDocno: stockTakeDocNo }, { storeNo: stockHdrs.storeNo }],
+        },
+      };
+      const stkResp = await apiService.get(
+        `Stktrns?filter=${encodeURIComponent(JSON.stringify(chkFilter))}`
+      );
+
+      if (stkResp.length === 0) {
+        // Step 4: Create new Stktrns records
+        await apiService.post("Stktrns", stktrns);
+        console.log("Stktrns records created successfully");
+
+        // Step 5: Update ItemBatches quantities
+        for (const d of stktrns) {
+          const trimmedItemCode = d.itemcode.replace(/0000$/, "");
+
+          if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+            // With batch functionality enabled
+            const batchUpdate = {
+              itemcode: trimmedItemCode,
+              sitecode: d.storeNo,
+              uom: d.itemUom,
+              qty: Number(d.trnQty), // Use signed variance
+              batchcost: Number(d.trnCost),
+              batchno: d.itemBatch || "",
+            };
+
+            try {
+              await apiService.post("ItemBatches/updateqty", batchUpdate);
+              console.log(`Updated ItemBatches for item ${trimmedItemCode} with batch ${d.itemBatch}`);
+            } catch (err) {
+              console.error(`Failed to update ItemBatches for item ${trimmedItemCode}:`, err);
+              // Log error but don't fail the entire process
+              const errorLog = {
+                trnDocNo: stockTakeDocNo,
+                itemCode: d.itemcode,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `ItemBatches/updateqty error: ${err.message}`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", errorLog);
+            }
+          } else {
+            // Without batch functionality
+            const batchUpdate = {
+              itemcode: trimmedItemCode,
+              sitecode: d.storeNo,
+              uom: d.itemUom,
+              qty: Number(d.trnQty), // Use signed variance
+              batchcost: Number(d.trnCost),
+            };
+
+            try {
+              await apiService.post("ItemBatches/updateqty", batchUpdate);
+              console.log(`Updated ItemBatches for item ${trimmedItemCode} (no batch functionality)`);
+            } catch (err) {
+              console.error(`Failed to update ItemBatches for item ${trimmedItemCode}:`, err);
+              // Log error but don't fail the entire process
+              const errorLog = {
+                trnDocNo: stockTakeDocNo,
+                itemCode: d.itemcode,
+                loginUser: userDetails.username,
+                siteCode: userDetails.siteCode,
+                logMsg: `ItemBatches/updateqty error: ${err.message}`,
+                createdDate: new Date().toISOString().split("T")[0],
+              };
+              // await apiService.post("Inventorylogs", errorLog);
+            }
+          }
+        }
+      } else {
+        console.log("Stktrns already exist for this document");
+      }
+
+      console.log("Stock quantities and batches updated successfully");
+      return true;
+    } catch (error) {
+      console.error("Error updating stock quantities and batches:", error);
+      throw error;
+    }
+  };
+
+     const handleCalc = (e, index, field) => {
+     const value = e.target.value;
+     setStockList((prev) =>
+       prev.map((item, i) =>
+         i === index
+           ? {
+               ...item,
+               [field]:
+                 field === "expiryDate" || field === "batchNo"
+                   ? value
+                   : Number(value),
+               // docAmt calculation removed as it's not displayed
+             }
+           : item
+       )
+     );
+   };
 
   const handleSearch = (e) => {
     const searchValue = e.target.value.trim();
@@ -712,55 +1142,53 @@ function AddTake({ docData }) {
     }));
   };
 
-  const validateForm = () => {
+  const validateForm = (hdrs = stockHdrs, cart = cartData, type = "save") => {
     const errors = [];
 
     // Document Header Validations
-    if (!stockHdrs.docNo) {
-      errors.push("Document number is required");
-    }
+    // if (!stockHdrs.docNo) {
+    //   errors.push("Document number is required");
+    // }
+    console.log(hdrs, "hdrs");
 
-    if (!stockHdrs.docDate) {
+    if (!hdrs.docDate) {
       errors.push("Document date is required");
     }
 
-    if (!stockHdrs.supplyNo) {
-      errors.push("Supply number is required");
-    }
-
-    if (!stockHdrs.docTerm) {
-      errors.push("Document term is required");
-    }
-
-    if (!stockHdrs.postDate) {
-      errors.push("Delivery date is required");
+    // Additional validation for submission
+    if (type === "submit") {
+      // Ensure all items have proper quantities
+      cart.forEach((item, index) => {
+        if (!item.docQty || item.docQty <= 0) {
+          errors.push(
+            `Quantity must be greater than 0 for item ${index + 1} (${
+              item.itemcode
+            })`
+          );
+        }
+      });
     }
 
     // Cart Validation
-    if (cartData.length === 0) {
+    if (cart.length === 0) {
       errors.push("Cart shouldn't be empty");
     }
 
-    // Supplier Info Validations
-    // if (!supplierInfo.Attn) {
-    //   errors.push("Attention To is required");
-    // }
-
-    // if (!supplierInfo.line1) {
-    //   errors.push("Address is required");
-    // }
-
-    // if (!supplierInfo.sline1) {
-    //   errors.push("Shipping address is required");
-    // }
-
-    // if (!supplierInfo.spcode) {
-    //   errors.push("Shipping postal code is required");
-    // }
-
-    // if (!supplierInfo.pcode) {
-    //   errors.push("Postal code is required");
-    // }
+    // Batch and Expiry Date Validation - Only for submit and when batch functionality is enabled
+    if (type === "submit" && window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      cart.forEach((item, index) => {
+        if (!item.docBatchNo) {
+          errors.push(
+            `Batch number is required for item ${index + 1} (${item.itemcode})`
+          );
+        }
+        if (!item.docExpdate) {
+          errors.push(
+            `Expiry date is required for item ${index + 1} (${item.itemcode})`
+          );
+        }
+      });
+    }
 
     // Show errors if any
     if (errors.length > 0) {
@@ -779,14 +1207,6 @@ function AddTake({ docData }) {
   };
 
   const handleDateChange = (e, type) => {
-    if (type === "postDate") {
-      let postDate = moment(e.target.value).valueOf();
-      let docDate = moment(stockHdrs.docDate).valueOf();
-      if (docDate > postDate) {
-        showError("Post date should be greater than doc date");
-        return;
-      }
-    }
     setStockHdrs((prev) => ({
       ...prev,
       [type]: e.target.value,
@@ -801,18 +1221,19 @@ function AddTake({ docData }) {
     }));
   }, []);
 
-  const handleEditSubmit = useCallback(() => {
-    if (!editData.docQty || !editData.docPrice) {
-      toast.error("Quantity and Price are required");
-      return;
-    }
-
-    const updatedItem = {
-      ...editData,
-      docQty: Number(editData.docQty),
-      docPrice: Number(editData.docPrice),
-      docAmt: Number(editData.docQty) * Number(editData.docPrice),
-    };
+     const handleEditSubmit = useCallback(() => {
+     if (!editData.docQty) {
+       toast.error("Quantity is required");
+       return;
+     }
+ 
+     const updatedItem = {
+       ...editData,
+       docQty: Number(editData.docQty),
+       // Keep existing price and amount values
+       docPrice: editData.docPrice || 0,
+       docAmt: (Number(editData.docQty) * Number(editData.docPrice || 0)),
+     };
 
     setCartData((prev) =>
       prev.map((item, index) => (index === editingIndex ? updatedItem : item))
@@ -824,17 +1245,19 @@ function AddTake({ docData }) {
     toast.success("Item updated successfully");
   }, [editData, editingIndex]);
 
-  const editPopup = (item, index) => {
-    setEditData({
-      ...item,
-      docQty: Number(item.docQty) || 0,
-      docPrice: Number(item.docPrice) || 0,
-      docExpdate: item.docExpdate || "",
-      itemRemark: item.itemRemark || "",
-    });
-    setEditingIndex(index);
-    setShowEditDialog(true);
-  };
+     const editPopup = (item, index) => {
+     setEditData({
+       ...item,
+       docQty: Number(item.docQty) || 0,
+       docExpdate: item.docExpdate || "",
+       itemRemark: item.itemRemark || "",
+       ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+         docBatchNo: item.docBatchNo || "",
+       }),
+     });
+     setEditingIndex(index);
+     setShowEditDialog(true);
+   };
 
   const onDeleteCart = (item, index) => {
     setCartData((prev) => prev.filter((_, i) => i !== index));
@@ -852,44 +1275,49 @@ function AddTake({ docData }) {
     );
   };
 
-  const addToCart = (index, item) => {
-    if (!item.Qty || item.Qty <= 0) {
-      toast.error("Please enter a valid quantity");
-      return;
-    }
+     const addToCart = (index, item) => {
+     if (!item.Qty || item.Qty <= 0) {
+       toast.error("Please enter a valid quantity");
+       return;
+     }
+ 
+     // Amount calculation kept for backend processing but not displayed
+     const amount = Number(item.Qty) * Number(item.Price);
 
-    const amount = Number(item.Qty) * Number(item.Price);
-
-    const newCartItem = {
-      id: index + 1,
-      docAmt: amount,
-      docNo: stockHdrs.docNo,
-      movCode: "GRN",
-      movType: "GRN",
-      docLineno: null,
-      itemcode: item.stockCode,
-      itemdesc: item.stockName,
-      docQty: Number(item.Qty),
-      docFocqty: 0,
-      docTtlqty: Number(item.Qty),
-      docPrice: Number(item.Price),
-      docPdisc: 0,
-      docDisc: 0,
-      recQty1: 0,
-      postedQty: 0,
-      cancelQty: 0,
-      createUser: userDetails?.username || "SYSTEM",
-      docUom: item.itemUom,
-      docExpdate: item.expiryDate || "",
-      itmBrand: item.brandCode,
-      itmRange: item.rangeCode,
-      itmBrandDesc: item.brand,
-      itmRangeDesc: item.range || "",
-      DOCUOMDesc: item.itemUom,
-      itemRemark: "",
-      docMdisc: 0,
-      recTtl: 0,
-    };
+         const newCartItem = {
+       id: cartData.length + 1,
+       // docAmt kept for backend processing but not displayed
+       docAmt: amount,
+       docNo: stockHdrs.docNo,
+       movCode: "TKE",
+       movType: "TKE",
+       docLineno: null,
+       itemcode: item.stockCode,
+       itemdesc: item.stockName,
+       docQty: Number(item.Qty), // Counted quantity
+       docFocqty: 0,
+       docTtlqty: Number(item.quantity), // System Quantity (what system shows)
+       docPrice: Number(item.Price),
+       docPdisc: 0,
+       docDisc: 0,
+       recQty1: 0,
+       postedQty: 0,
+       cancelQty: 0,
+       createUser: userDetails?.username || "SYSTEM",
+       docUom: item.uom || "",
+       docExpdate: item.expiryDate || "",
+       itmBrand: item.brandCode,
+       itmRange: item.rangeCode,
+       itmBrandDesc: item.brand,
+       itmRangeDesc: item.range || "",
+       DOCUOMDesc: item.uomDescription,
+       itemRemark: "",
+       docMdisc: 0,
+       recTtl: 0,
+       ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+         docBatchNo: item.batchNo || "",
+       }),
+     };
 
     const existingItemIndex = cartData.findIndex(
       (cartItem) =>
@@ -909,80 +1337,195 @@ function AddTake({ docData }) {
     e?.preventDefault();
     console.log(stockHdrs, "stockHdrs");
     console.log(cartData, "cartData");
-    console.log(supplierInfo, "supplierInfo");
-
-    return
-    if (validateForm()) {
+    
+    // Set loading states based on action type
+    if (type === "save") {
+      setSaveLoading(true);
+    } else if (type === "submit") {
+      setPostLoading(true);
+    }
+  
+    try {
+      let docNo;
+      let controlData;
+      let hdr = stockHdrs;
+      let details = cartData;
+  
+      // Get new docNo for both new creations and direct submissions
+      if ((type === "save" || type === "submit") && !urlDocNo) {
+        const result = await getDocNo();
+        console.log(result, "redd");
+        if (!result) {
+          setSaveLoading(false);
+          setPostLoading(false);
+          return;
+        }
+        docNo = result.docNo;
+        controlData = result.controlData;
+  
+        // Update states with new docNo
+        hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
+        details = cartData.map((item, index) => ({
+          ...item,
+          docNo,
+          id: index + 1, // Use sequential index + 1 for new items
+        }));
+        console.log(details, "details");
+        setStockHdrs(hdr);
+        setCartData(details);
+        setControlData(controlData);
+  
+        // Move validation here after docNo is set
+        if (!validateForm(hdr, details, type)) {
+          setSaveLoading(false);
+          setPostLoading(false);
+          return;
+        }
+      } else {
+        // Use existing docNo for updates and submissions
+        docNo = urlDocNo || stockHdrs.docNo;
+  
+        // Validate for updates and submissions
+        if (!validateForm(hdr, details, type)) {
+          setSaveLoading(false);
+          setPostLoading(false);
+          return;
+        }
+      }
+  
       console.log("Form is valid, proceeding with submission.");
-      const totalCart = calculateTotals(cartData);
-
+      const totalCart = calculateTotals(details);
+  
       let data = {
-        docNo: stockHdrs.docNo,
-        movCode: "GRN",
-        movType: "GRN",
-        storeNo: stockHdrs.storeNo,
-        supplyNo: stockHdrs.supplyNo,
-        docRef1: stockHdrs.docRef1,
-        docRef2: stockHdrs.docRef2,
+        docNo: hdr.docNo,
+        movCode: "TKE",
+        movType: "TKE",
+        storeNo: hdr.storeNo,
         docLines: null,
-        docDate: stockHdrs.docDate,
-        postDate: stockHdrs.postDate,
-        docStatus: stockHdrs.docStatus,
-        docTerm: stockHdrs.docTerm,
+        docDate: hdr.docDate,
+        docStatus: type === "save" ? 0 : type === "submit" ? 1 : hdr.docStatus,
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
-        docAttn: supplierInfo.Attn,
-        docRemk1: stockHdrs.docRemk1,
-
-        bname: supplierInfo.Attn,
-        baddr1: supplierInfo.line1,
-        baddr2: supplierInfo.line2,
-        baddr3: supplierInfo.line3,
-        bpostcode: supplierInfo.pcode,
-
-        daddr1: supplierInfo.sline1,
-        daddr2: supplierInfo.sline2,
-        daddr3: supplierInfo.sline3,
-        dpostcode: supplierInfo.spcode,
-
-        createUser: stockHdrs.createUser,
-        createDate: null,
+        docRemk1: hdr.docRemk1,
+        createUser: hdr.createUser,
+        postDate: type === "submit" ? new Date().toISOString() : "",
+        createDate: urlDocNo ? hdr.createDate : new Date().toISOString(),
+        staffNo: userDetails.usercode || userDetails.username,
       };
-
-      if (stockHdrs?.poId) data.poId = stockHdrs?.poId;
-
+  
+      if (hdr?.poId) data.poId = hdr?.poId;
+  
       let message;
-      console.log(type, urlDocNo, stockHdrs?.docStatus);
-
-      try {
-        if (type === "save" && !urlDocNo && stockHdrs?.docStatus === 0) {
+      console.log(type, urlDocNo, hdr?.docStatus);
+  
+      if (type === "save") {
+        // Save functionality - can be used for both new and existing documents
+        if (!urlDocNo) {
+          // Creating new document
           await postStockHdr(data, "create");
-          await postStockDetails();
+          await postStockDetails(details);
           await addNewControlNumber(controlData);
-
-          message = "Note created successfully";
-        } else if (type === "save" && urlDocNo) {
+          message = "Stock Take saved successfully";
+        } else {
+          // Updating existing document
           await postStockHdr(data, "update");
-          await postStockDetails();
-          message = "Note updated successfully";
-        } else if (type === "post" && urlDocNo) {
-          data = {
-            ...data,
-            docStatus: 7,
-          };
-          await postStockHdr(data, "updateStatus");
-          await postStockDetails();
-          message = "Note posted successfully";
+          await postStockDetails(details);
+          message = "Stock Take updated successfully";
         }
+      } else if (type === "submit") {
+        // Submit for approval - status changes to 1 (Submitted)
+        data.docStatus = 1;
+        data.submitDate = new Date().toISOString();
+        data.submittedBy = userDetails?.username;
+  
+        if (!urlDocNo) {
+          // Direct submit without saving first - create header and details
+          await postStockHdr(data, "create");
+          await postStockDetails(details);
+          await addNewControlNumber(controlData);
+          message = "Stock Take submitted for approval successfully";
+        } else {
+          // Update existing document to submitted status
+          await postStockHdr(data, "update");
+          await postStockDetails(details);
+          message = "Stock Take submitted for approval";
+        }
+      } else if (type === "approve") {
+        // Approve stock take - status changes to 2 (Approved)
+        data.docStatus = 2;
+        data.approveDate = new Date().toISOString();
+        data.approvedBy = userDetails?.username;
+  
+        // Step 1: Update Stock Take status to Approved
+        const updateResponse = await postStockHdr(data, "update");
+        await postStockDetails(details);
+  
+                 // Step 2: Check if update was successful (response should have count: 1)
+         if (updateResponse && updateResponse.count === 1) {
+           // Step 3: Update stock quantities and item batches
+           try {
+             await updateStockQuantitiesAndBatches(docNo);
+             console.log("Stock quantities and batches updated successfully");
+           } catch (stockUpdateError) {
+             console.error("Error updating stock quantities:", stockUpdateError);
+             // Log error but don't fail the approval process
+             toast.warning("Stock Take approved but failed to update stock quantities");
+           }
 
-        toast.success(message);
-        navigate("/stock-take?tab=all"); // Navigate back to list
-      } catch (error) {
-        console.error("Submit error:", error);
-        toast.error("Failed to submit form");
+           // Step 4: Create Stock Adjustment document
+           try {
+             const adjustmentDocNo = await createStockAdjustmentFromStockTake(
+               docNo
+             );
+             if (adjustmentDocNo) {
+               message = `Stock Take approved and Stock Adjustment ${adjustmentDocNo} created successfully`;
+               toast.success(
+                 `Stock Adjustment ${adjustmentDocNo} created successfully`
+               );
+             } else {
+               message =
+                 "Stock Take approved (no variances found for adjustment)";
+               toast.info("No variances found - no adjustment document needed");
+             }
+           } catch (adjustmentError) {
+             console.error("Error creating adjustment:", adjustmentError);
+             message =
+               "Stock Take approved but failed to create adjustment document";
+             toast.error(
+               "Failed to create adjustment document: " + adjustmentError.message
+             );
+           }
+         } else {
+           throw new Error("Failed to update Stock Take status");
+         }
+      } else if (type === "reject") {
+        // Reject stock take - status changes to 3 (Rejected)
+        data.docStatus = 3;
+        data.rejectDate = new Date().toISOString();
+        data.rejectedBy = userDetails?.username;
+        data.rejectReason = ""; // You might want to add a reject reason field
+  
+        await postStockHdr(data, "update");
+        await postStockDetails(details);
+  
+        message = "Stock Take rejected";
       }
-    } else {
-      console.log("Form is invalid, fix the errors and resubmit.");
+  
+      toast.success(message);
+  
+      // Refresh the page data after status change
+      if (urlDocNo) {
+        navigate("/stock-take?tab=all");
+      } else {
+        navigate("/stock-take?tab=all");
+      }
+    } catch (error) {
+      console.error("Submit error:", error);
+      toast.error("Failed to process Stock Take");
+    } finally {
+      // Always reset loading states
+      setSaveLoading(false);
+      setPostLoading(false);
     }
   };
 
@@ -1013,11 +1556,17 @@ function AddTake({ docData }) {
           {/* Header Section */}
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
-              {urlStatus == 7
-                ? "View Stock Take"
-                : urlStatus == 0
-                ? "Update Stock Take"
-                : "Add Stock Take"}
+              {!stockHdrs.docNo
+                ? "Add Stock Take"
+                : stockHdrs.docStatus === 0
+                ? "Saved Stock Take"
+                : stockHdrs.docStatus === 1
+                ? "Review Stock Take"
+                : stockHdrs.docStatus === 2
+                ? "Approved Stock Take"
+                : stockHdrs.docStatus === 3
+                ? "Rejected Stock Take - Edit Required"
+                : "Stock Take"}
             </h1>
             <div className="flex gap-4">
               <Button
@@ -1027,32 +1576,83 @@ function AddTake({ docData }) {
               >
                 Cancel
               </Button>
-              <Button
-                onClick={(e) => {
-                  onSubmit(e, "save");
-                }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
-                className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
-              >
-                Save
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={(e) => {
-                  onSubmit(e, "post");
-                }}
-                className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
-              >
-                Post
-              </Button>
+              {/* Save button - show when creating new or when status is Saved or Rejected */}
+              {(!stockHdrs.docNo ||
+                stockHdrs.docStatus === 0 ||
+                stockHdrs.docStatus === 3) && (
+                <Button
+                  onClick={(e) => {
+                    onSubmit(e, "save");
+                  }}
+                  disabled={saveLoading}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
+                  {saveLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              )}
+
+              {/* Submit button - show when creating new or when status is Saved or Rejected */}
+              {(!stockHdrs.docNo ||
+                stockHdrs.docStatus === 0 ||
+                stockHdrs.docStatus === 3) && (
+                <Button
+                  variant="secondary"
+                  onClick={(e) => {
+                    onSubmit(e, "submit");
+                  }}
+                  disabled={postLoading}
+                  className="cursor-pointer hover:bg-green-600 hover:text-white transition-colors duration-150"
+                >
+                  {postLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit"
+                  )}
+                </Button>
+              )}
+
+              {/* Approve button - only show when status is Submitted and user has approval rights */}
+              {stockHdrs.docStatus === 1 && (
+                <Button
+                  variant="default"
+                  onClick={(e) => {
+                    onSubmit(e, "approve");
+                  }}
+                  className="cursor-pointer hover:bg-green-600 transition-colors duration-150"
+                >
+                  Approve
+                </Button>
+              )}
+
+              {/* Reject button - only show when status is Submitted and user has approval rights */}
+              {stockHdrs.docStatus === 1 && (
+                <Button
+                  variant="destructive"
+                  onClick={(e) => {
+                    onSubmit(e, "reject");
+                  }}
+                  className="cursor-pointer hover:bg-red-700 transition-colors duration-150"
+                >
+                  Reject
+                </Button>
+              )}
             </div>
           </div>
 
           {/* Header Card */}
           <Card>
             <CardContent className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* First Column */}
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -1077,74 +1677,18 @@ function AddTake({ docData }) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>GR Ref 1</Label>
+                    <Label>
+                      Store Code<span className="text-red-500">*</span>
+                    </Label>
                     <Input
-                      placeholder="Enter GR Ref 1"
-                      disabled={urlStatus == 7}
-                      value={stockHdrs.docRef1}
-                      onChange={(e) =>
-                        setStockHdrs((prev) => ({
-                          ...prev,
-                          docRef1: e.target.value,
-                        }))
-                      }
+                      value={userDetails.siteName}
+                      disabled
+                      className="bg-gray-50"
                     />
                   </div>
                 </div>
 
                 {/* Second Column */}
-                <div className="space-y-4">
-                  <div className="space-y-2 w-full">
-                    <Label>
-                      Supply No<span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      disabled={urlStatus == 7}
-                      value={stockHdrs.supplyNo}
-                      onValueChange={(value) =>
-                        setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select supplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supplyOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>
-                      Delivery Date<span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      disabled={urlStatus == 7}
-                      type="date"
-                      value={stockHdrs.postDate}
-                      onChange={(e) => handleDateChange(e, "postDate")}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>GR Ref 2</Label>
-                    <Input
-                      disabled={urlStatus == 7}
-                      placeholder="Enter GR Ref 2"
-                      value={stockHdrs.docRef2}
-                      onChange={(e) =>
-                        setStockHdrs((prev) => ({
-                          ...prev,
-                          docRef2: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* Third Column */}
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
@@ -1165,59 +1709,28 @@ function AddTake({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Term<span className="text-red-500">*</span>
+                      Created By<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      type="number"
-                      disabled={urlStatus == 7}
-                      placeholder="Enter term"
-                      value={stockHdrs.docTerm}
-                      onChange={(e) =>
-                        setStockHdrs((prev) => ({
-                          ...prev,
-                          docTerm: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>
-                      Store Code<span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      value={userDetails.siteName}
+                      value={stockHdrs.createUser}
                       disabled
                       className="bg-gray-50"
                     />
                   </div>
-                </div>
-              </div>
-
-              {/* Additional Row for Created By and Remarks */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                <div className="space-y-2">
-                  <Label>
-                    Created By<span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    value={stockHdrs.createUser}
-                    disabled
-                    className="bg-gray-50"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Remarks</Label>
-                  <Input
-                    placeholder="Enter remarks"
-                    disabled={urlStatus == 7}
-                    value={stockHdrs.docRemk1}
-                    onChange={(e) =>
-                      setStockHdrs((prev) => ({
-                        ...prev,
-                        docRemk1: e.target.value,
-                      }))
-                    }
-                  />
+                  <div className="space-y-2">
+                    <Label>Remarks</Label>
+                    <Input
+                      placeholder="Enter remarks"
+                      disabled={urlStatus == 7}
+                      value={stockHdrs.docRemk1}
+                      onChange={(e) =>
+                        setStockHdrs((prev) => ({
+                          ...prev,
+                          docRemk1: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -1225,17 +1738,18 @@ function AddTake({ docData }) {
 
           {/* Tabs Section */}
           <Tabs
-            defaultValue={activeTab}
+            defaultValue="detail"
             className="w-full"
-            onValueChange={setActiveTab}
+            // onValueChange={setActiveTab}
           >
-            <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+            <TabsList className="grid w-full grid-cols-1 lg:w-[200px]">
               <TabsTrigger value="detail">Details</TabsTrigger>
-              <TabsTrigger value="supplier">Supplier Info</TabsTrigger>
             </TabsList>
 
             <TabsContent value="detail" className="space-y-4">
-              {urlStatus != 7 && (
+              {(!stockHdrs.docNo ||
+                stockHdrs.docStatus === 0 ||
+                stockHdrs.docStatus === 3) && (
                 <Card className={"p-0 gap-0"}>
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
@@ -1352,189 +1866,43 @@ function AddTake({ docData }) {
                     </div>
 
                     {/* Items Table */}
-                    <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200">
-                      <Table>
-                        <TableHeader className="bg-gray-50">
-                          <TableRow>
-                            <TableHead className="font-semibold">
-                              Item Code
-                            </TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead>UOM</TableHead>
-                            <TableHead>Brand</TableHead>
-                            <TableHead>Link Code</TableHead>
-                            <TableHead>Bar Code</TableHead>
-                            <TableHead>Range</TableHead>
-                            <TableHead>On Hand Qty</TableHead>
-                            <TableHead>Qty</TableHead>
-                            <TableHead>Price</TableHead>
-                            <TableHead>Expiry date</TableHead>
-                            <TableHead>Action</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {loading ? (
-                            <TableSpinner colSpan={14} message="Loading..." />
-                          ) : stockList.length === 0 ? (
-                            <TableRow>
-                              <TableCell
-                                colSpan={14}
-                                className="text-center py-10"
-                              >
-                                <div className="flex flex-col items-center gap-2 text-gray-500">
-                                  <FileText size={40} />
-                                  <p>No items Found</p>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            stockList.map((item, index) => (
-                              <TableRow
-                                key={index}
-                                className="hover:bg-gray-50 transition-colors duration-150"
-                              >
-                                <TableCell>{item.stockCode || "-"}</TableCell>
-                                <TableCell className="max-w-[200px] whitespace-normal break-words">
-                                  {item.stockName || "-"}
-                                </TableCell>
-                                <TableCell>{item.itemUom || "-"}</TableCell>
-                                <TableCell>{item.brand || "-"}</TableCell>
-                                <TableCell>{item.linkCode || "-"}</TableCell>
-                                <TableCell>{item.brandCode || "-"}</TableCell>
-                                <TableCell>{item.range || "-"}</TableCell>
-                                <TableCell>{item.quantity || "0"}</TableCell>
-                                <TableCell className="text-start">
-                                  <Input
-                                    type="number"
-                                    className="w-20"
-                                    value={item.Qty}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "Qty")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="number"
-                                    className="w-20"
-                                    value={item.Price}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "Price")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    type="date"
-                                    className="w-35"
-                                    value={item.expiryDate}
-                                    onChange={(e) =>
-                                      handleCalc(e, index, "expiryDate")
-                                    }
-                                    min="0"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => addToCart(index, item)}
-                                    className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    <Pagination
+                    <ItemTable
+                      data={stockList}
+                      loading={loading}
+                      onQtyChange={(e, index) => handleCalc(e, index, "Qty")}
+                      onPriceChange={(e, index) =>
+                        handleCalc(e, index, "Price")
+                      }
+                      onAddToCart={addToCart}
                       currentPage={
                         Math.ceil(itemFilter.skip / itemFilter.limit) + 1
                       }
+                      itemsPerPage={itemFilter.limit}
                       totalPages={Math.ceil(itemTotal / itemFilter.limit)}
                       onPageChange={handlePageChange}
+                      emptyMessage="No items Found"
+                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      qtyLabel="Stock Take Qty"
+                      priceLabel="Price"
+                      costLabel="Cost"
+                      // Stock Take specific props
+                      enableSorting={true}
+                      onSort={handleSort}
+                      sortConfig={sortConfig}
+                      showVariance={true}
+                      showRemarks={true}
+                      onRemarksChange={handleRemarksChange}
+                      canEdit={canEdit}
+                      onBatchNoChange={(e, index) =>
+                        handleCalc(e, index, "batchNo")
+                      }
+                      onExpiryDateChangeBatch={(e, index) =>
+                        handleCalc(e, index, "expiryDate")
+                      }
                     />
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
-
-            <TabsContent value="supplier" className="space-y-6">
-              <Card>
-                <CardContent className="p-6">
-                  {/* Attention To */}
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Attn To</Label>
-                      <Input
-                        value={supplierInfo.Attn}
-                        onChange={(e) => handleSupplierChange(e, "Attn")}
-                        placeholder="Enter attention to"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Address and Ship To Address */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                    <div className="space-y-4">
-                      <Label>Address</Label>
-                      <div className="space-y-2">
-                        <Input
-                          value={supplierInfo.line1}
-                          onChange={(e) => handleSupplierChange(e, "line1")}
-                          placeholder="Address Line 1"
-                        />
-                        <Input
-                          value={supplierInfo.line2}
-                          onChange={(e) => handleSupplierChange(e, "line2")}
-                          placeholder="Address Line 2"
-                        />
-                        <Input
-                          value={supplierInfo.line3}
-                          onChange={(e) => handleSupplierChange(e, "line3")}
-                          placeholder="Address Line 3"
-                        />
-                        <Input
-                          value={supplierInfo.pcode}
-                          onChange={(e) => handleSupplierChange(e, "pcode")}
-                          placeholder="Post Code"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Label>Ship To Address</Label>
-                      <div className="space-y-2">
-                        <Input
-                          value={supplierInfo.sline1}
-                          onChange={(e) => handleSupplierChange(e, "sline1")}
-                          placeholder="Ship To Address Line 1"
-                        />
-                        <Input
-                          value={supplierInfo.sline2}
-                          onChange={(e) => handleSupplierChange(e, "sline2")}
-                          placeholder="Ship To Address Line 2"
-                        />
-                        <Input
-                          value={supplierInfo.sline3}
-                          onChange={(e) => handleSupplierChange(e, "sline3")}
-                          placeholder="Ship To Address Line 3"
-                        />
-                        <Input
-                          value={supplierInfo.spcode}
-                          onChange={(e) => handleSupplierChange(e, "spcode")}
-                          placeholder="Ship To Post Code"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
           </Tabs>
 
@@ -1552,24 +1920,40 @@ function AddTake({ docData }) {
                     <TableHead className="font-semibold text-slate-700">
                       Item Code
                     </TableHead>
-                    <TableHead>Item Description</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Amount
-                    </TableHead>
-                    <TableHead>Expiry Date</TableHead>
+                                         <TableHead>Item Description</TableHead>
+                     <TableHead>UOM</TableHead>
+                     <TableHead>System Qty</TableHead>
+                     <TableHead>Counted Qty</TableHead>
+                     <TableHead className="font-semibold text-slate-700">
+                       Variance
+                     </TableHead>
+                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                      <>
+                        <TableHead>Batch No</TableHead>
+                        <TableHead>Expiry Date</TableHead>
+                      </>
+                    )}
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 && <TableHead>Action</TableHead>}
+                    {(!stockHdrs.docNo ||
+                      stockHdrs.docStatus === 0 ||
+                      stockHdrs.docStatus === 3) && (
+                      <TableHead>Action</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {loading ? (
-                    <TableSpinner colSpan={9} />
-                  ) : cartData.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
+                                     {loading ? (
+                     <TableSpinner
+                       colSpan={window?.APP_CONFIG?.BATCH_NO === "Yes" ? 10 : 8}
+                     />
+                   ) : cartData.length === 0 ? (
+                     <TableRow>
+                       <TableCell
+                         colSpan={
+                           window?.APP_CONFIG?.BATCH_NO === "Yes" ? 10 : 8
+                         }
+                         className="text-center py-10"
+                       >
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -1586,20 +1970,37 @@ function AddTake({ docData }) {
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
-                          <TableCell>{item.itemcode}</TableCell>
-                          <TableCell>{item.itemdesc}</TableCell>
-                          <TableCell>{item.docUom}</TableCell>
-                          <TableCell className="font-medium">
-                            {item.docQty}
-                          </TableCell>
-                          <TableCell>{item.docPrice}</TableCell>
-                          <TableCell className="font-semibold text-slate-700">
-                            {item.docAmt}
-                          </TableCell>
-                          <TableCell>{format_Date(item.docExpdate)}</TableCell>
+                                                     <TableCell>{item.itemcode}</TableCell>
+                           <TableCell>{item.itemdesc}</TableCell>
+                           <TableCell>{item.docUom}</TableCell>
+                           <TableCell className="font-medium">
+                             {item.docTtlqty || 0}
+                           </TableCell>
+                           <TableCell className="font-medium">
+                             {item.docQty}
+                           </TableCell>
+                           <TableCell className={`font-semibold ${
+                             ((parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0)) > 0 
+                               ? 'text-green-600' 
+                               : ((parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0)) < 0 
+                                 ? 'text-red-600' 
+                                 : 'text-slate-700'
+                           }`}>
+                             {((parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0)).toFixed(2)}
+                           </TableCell>
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                            <>
+                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
+                              <TableCell>
+                                {format_Date(item.docExpdate)}
+                              </TableCell>
+                            </>
+                          )}
                           <TableCell>{item.itemRemark}</TableCell>
 
-                          {urlStatus != 7 && (
+                          {(!stockHdrs.docNo ||
+                            stockHdrs.docStatus === 0 ||
+                            stockHdrs.docStatus === 3) && (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -1623,23 +2024,32 @@ function AddTake({ docData }) {
                           )}
                         </TableRow>
                       ))}
-                      {/* Totals Row */}
-                      <TableRow className="bg-slate-100 font-medium">
-                        <TableCell
-                          colSpan={4}
-                          className="text-right text-slate-700"
-                        >
-                          Totals:
-                        </TableCell>
-                        <TableCell className="text-slate-700">
-                          {calculateTotals(cartData).totalQty}
-                        </TableCell>
-                        <TableCell />
-                        <TableCell className="font-semibold text-slate-700">
-                          {calculateTotals(cartData).totalAmt.toFixed(2)}
-                        </TableCell>
-                        <TableCell colSpan={2} />
-                      </TableRow>
+                                             {/* Totals Row */}
+                       <TableRow className="bg-slate-100 font-medium">
+                         <TableCell
+                           colSpan={3}
+                           className="text-right text-slate-700"
+                         >
+                           Totals:
+                         </TableCell>
+                         <TableCell className="text-slate-700">
+                           {cartData.reduce((sum, item) => sum + (parseFloat(item.docTtlqty) || 0), 0).toFixed(2)}
+                         </TableCell>
+                         <TableCell className="text-slate-700">
+                           {cartData.reduce((sum, item) => sum + (parseFloat(item.docQty) || 0), 0).toFixed(2)}
+                         </TableCell>
+                         <TableCell className="font-semibold text-slate-700">
+                           {cartData.reduce((sum, item) => {
+                             const variance = (parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0);
+                             return sum + variance;
+                           }, 0).toFixed(2)}
+                         </TableCell>
+                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                           <TableCell colSpan={4} />
+                         ) : (
+                           <TableCell colSpan={2} />
+                         )}
+                       </TableRow>
                     </>
                   )}
                 </TableBody>

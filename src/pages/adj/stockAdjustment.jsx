@@ -50,7 +50,7 @@ function StockAdjustment() {
     like: null,
     skip: 0,
     limit: 10,
-    order: "docDate DESC",
+    order: "docNo DESC",
   });
   const [supplierOptions, setSupplierOptions] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -249,20 +249,20 @@ function StockAdjustment() {
 
               <Button
                 onClick={handleRoute}
-                className="bg-blue-950 text-white hover:bg-blue-700"
+                className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
               >
                 + Create New
               </Button>
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" />
             </TabsContent>
           </Tabs>
 

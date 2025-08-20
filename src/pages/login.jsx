@@ -18,6 +18,7 @@ import bslogo from "@/assets/companylogo.png";
 
 import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
+import apiService1 from "@/services/apiService1";
 import axios from "axios";
 
 
@@ -32,6 +33,22 @@ const Login = () => {
   const [selectedSalon, setSelectedSalon] = useState({});
   const [salon, setSalon] = useState("");
   const [salonDetail, setSalonDetail] = useState(null);
+
+  // Function to fetch user authorizations
+  const fetchUserAuthorizations = async (userCode) => {
+    try {
+      const response = await apiService1.get(`api/getInventoryAuth?userCode=${userCode}`);
+      if (response && response.result) {
+        const authData = Array.isArray(response.result) ? response.result : [];
+        return authData;
+      } else {
+        return [];
+      }
+    } catch (error) {
+      console.error("Error fetching user authorizations:", error);
+      return [];
+    }
+  };
 
   useEffect(() => {
     console.log("salon", salon);
@@ -93,12 +110,17 @@ const Login = () => {
       console.log(selectedSalon, "sadet");
 
       if (response.success === "1") {
+        // Fetch user authorizations
+        const userAuthorizations = await fetchUserAuthorizations(response.userCode||username);
+        
         const successData = {
           // emp_code: data.emp_code ?? "",
           username: username,
-          usercode:response.userCode,
-          isSettingEnabled:response.isSettingEnabled,
-          isSettingViewCost:response.isSettingViewCost,
+          usercode: response.userCode,
+          isSettingEnabled: response.isSettingEnabled,
+          isSettingViewCost: response.isSettingViewCost,
+          isSettingViewPrice: response.isSettingViewPrice,
+          isSettingPostedChangePrice: response.isSettingPostedChangePrice,
           // token: data.token,
           siteCode: selectedSalon.itemsiteCode,
           siteName: selectedSalon.itemsiteDesc,
@@ -108,11 +130,11 @@ const Login = () => {
           siteState: selectedSalon.itemsiteState,
           sitePostCode: selectedSalon.itemsitePostcode,
           sitePhone: selectedSalon.itemsitePhone1,
-
-
           // role: data.role,
         };
-        // setSalonOptions(sites);
+
+        // Store user authorizations in localStorage
+        localStorage.setItem("userAuthorizations", JSON.stringify(userAuthorizations));
 
         // First update auth state
         const success = await loginSuccess(successData);
@@ -246,7 +268,7 @@ const Login = () => {
               </div>
             )}
 
-            <Button type="submit" className="w-full h-12 text-lg" disabled={isLoading}>
+            <Button type="submit" className="w-full h-12 text-lg cursor-pointer" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
             </Button>
           </form>

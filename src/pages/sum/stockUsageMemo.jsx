@@ -174,6 +174,14 @@ function StockUsageMemo() {
     console.log("Create New clicked");
     navigate("/stock-adjustment/add/"); // Navigate to the add page
   };
+  
+  const handleSort = (key, direction) => {
+    setPagination((prev) => ({
+      ...prev,
+      order: `${key} ${direction === "ascending" ? "ASC" : "DESC"}, docNo DESC`,
+      skip: 0, // Reset to first page when sorting
+    }));
+  };
 
   return (
     <>
@@ -249,20 +257,23 @@ function StockUsageMemo() {
 
               <Button
                 onClick={handleRoute}
-                className="bg-blue-950 text-white hover:bg-blue-700"
+                className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
               >
                 + Create New
               </Button>
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading}
+                              onSort={handleSort}
+
+              type="sum" />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="sum" />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="sum" />
             </TabsContent>
           </Tabs>
 

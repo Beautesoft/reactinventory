@@ -49,7 +49,7 @@ export function MultiSelect({ options, selected, onChange, placeholder }) {
   return (
     <Command className="overflow-visible bg-white w-full" ref={containerRef}>
       <div
-        className="group border border-input px-3 py-2 text-sm ring-offset-background rounded-md focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+        className="group border border-input px-3 py-2 text-sm ring-offset-background rounded-md focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 cursor-pointer"
         onClick={() => setOpen(true)}
       >
         <div className="flex gap-1 flex-wrap">
@@ -58,7 +58,7 @@ export function MultiSelect({ options, selected, onChange, placeholder }) {
               <Badge key={option.value} variant="secondary">
                 {option.label}
                 <button
-                  className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();

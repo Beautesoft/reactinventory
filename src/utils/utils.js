@@ -391,3 +391,37 @@ export const format_Date = (dateString) => {
     return "-";
   }
 };
+
+// User Authorization Utilities
+export const getUserAuthorizations = () => {
+  try {
+    const authData = localStorage.getItem("userAuthorizations");
+    return authData ? JSON.parse(authData) : [];
+  } catch (error) {
+    console.error("Error parsing user authorizations:", error);
+    return [];
+  }
+};
+
+export const hasUserAuthorization = (authCode) => {
+  const userAuths = getUserAuthorizations();
+  const auth = userAuths.find(a => a.Code === authCode);
+  return auth && auth.Active === "Y";
+};
+
+// Menu item to authorization code mapping
+export const MENU_AUTH_MAPPING = {
+  "Goods Receive Note": "F10001",
+  "Goods Transfer Out": "F10002",
+  "Goods Transfer In": "F10003",
+  "Goods Return Note": "F10004",
+  "Stock Adjustment": "F10005",
+  "Stock Usage Memo": "F10010",
+  "Stock Take": "F10011",
+};
+
+export const checkMenuAuthorization = (menuTitle) => {
+  const authCode = MENU_AUTH_MAPPING[menuTitle];
+  if (!authCode) return true; // If no auth code mapped, allow access
+  return hasUserAuthorization(authCode);
+};

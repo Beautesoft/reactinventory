@@ -282,7 +282,7 @@ function GoodsTransferOut() {
                     </Button>
                     <Button
                       onClick={handleRoute}
-                      className="bg-blue-950 text-white hover:bg-blue-700"
+                      className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
                     >
                       + Create New
                     </Button>

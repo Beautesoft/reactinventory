@@ -702,6 +702,9 @@ function AddGrn({ docData }) {
   // Add this near other state declarations
   const [searchTimer, setSearchTimer] = useState(null);
 
+  // Add sorting state for ItemTable
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
   const handleSearch = (e) => {
     const searchValue = e.target.value.trim().toLowerCase();
 
@@ -760,6 +763,23 @@ function AddGrn({ docData }) {
       }
     };
   }, [searchTimer]);
+
+  // Add sorting function for ItemTable
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+
+    const sortedList = [...stockList].sort((a, b) => {
+      if (a[key] < b[key]) return direction === "asc" ? -1 : 1;
+      if (a[key] > b[key]) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    setStockList(sortedList);
+  };
 
   useEffect(() => {
     const initializeData = async () => {
@@ -1420,7 +1440,8 @@ function AddGrn({ docData }) {
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
       itemRemark: item?.itemRemark || null,
-      itemprice: 0,
+      // itemprice: 0,
+      itemprice: Number(item.Cost) || 0,
       docBatchNo: null,
       docMdisc: 0,
       recTtl: 0,
@@ -1559,7 +1580,7 @@ function AddGrn({ docData }) {
         docAmt: calculateTotals(details).totalAmt,
         docAttn: supplierInfo.Attn,
         docRemk1: hdr.docRemk1,
-        staffNo: userDetails.usercode,
+        staffNo: userDetails.usercode|| userDetails.username,
         bname: supplierInfo.Attn,
         baddr1: supplierInfo.line1,
         baddr2: supplierInfo.line2,
@@ -2021,7 +2042,7 @@ function AddGrn({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={stockHdrs.docStatus === 7 || saveLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -2042,7 +2063,7 @@ function AddGrn({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || postLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || postLoading}
               >
                 {postLoading ? (
                   <>
@@ -2332,6 +2353,10 @@ function AddGrn({ docData }) {
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
                       showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      // Add sorting functionality
+                      enableSorting={true}
+                      onSort={handleSort}
+                      sortConfig={sortConfig}
                     />
                   </CardContent>
                 </Card>
@@ -2415,7 +2440,7 @@ function AddGrn({ docData }) {
           {/* Move the Add Item Details button to the top right above the table */}
           {cartData.length > 0 && (
             <div className="flex justify-end my-5">
-              {selectedRows.length > 0 && (
+              {selectedRows.length > 0 && (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
                 <Button
                   onClick={handleBatchEditClick}
                   className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
@@ -2431,9 +2456,9 @@ function AddGrn({ docData }) {
                 Selected Items
               </CardTitle>
               <Table>
-                {urlStatus != 7 && (
                   <TableHeader className="bg-slate-100">
                     <TableRow className="border-b border-slate-200">
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -2451,6 +2476,7 @@ function AddGrn({ docData }) {
                           }}
                         />
                       </TableHead>
+                    ) : null}  
                       <TableHead className="font-semibold text-slate-700">
                         NO
                       </TableHead>
@@ -2471,10 +2497,11 @@ function AddGrn({ docData }) {
                         </>
                       )}
                       <TableHead>Remarks</TableHead>
-                      {urlStatus != 7 && <TableHead>Action</TableHead>}
+                      {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                        <TableHead>Action</TableHead>
+                      ) : null}
                     </TableRow>
                   </TableHeader>
-                )}
                 <TableBody>
                   {loading ? (
                     <TableSpinner colSpan={9} />
@@ -2494,7 +2521,7 @@ function AddGrn({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -2511,7 +2538,7 @@ function AddGrn({ docData }) {
                                 }}
                               />
                             </TableCell>
-                          )}
+                          ) : null}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
@@ -2533,7 +2560,7 @@ function AddGrn({ docData }) {
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -2544,17 +2571,19 @@ function AddGrn({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => onDeleteCart(item, index)}
+                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
-                          )}
+                          ) : null}
                         </TableRow>
                       ))}
                       {/* Totals Row */}

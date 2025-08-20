@@ -50,7 +50,7 @@ function StockTake() {
     like: null,
     skip: 0,
     limit: 10,
-    order: "docDate DESC",
+    order: "docNo DESC",
   });
   const [supplierOptions, setSupplierOptions] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -151,7 +151,12 @@ function StockTake() {
   };
 
   const handleTabChange = (value) => {
-    const status = value === "open" ? 0 : value === "posted" ? 7 : null;
+    let status = null;
+    if (value === "saved") status = 0;
+    else if (value === "submitted") status = 1;
+    else if (value === "approved") status = 2;
+    else if (value === "rejected") status = 3;
+    
     setActiveTab(value);
     setPagination((prev) => ({
       ...prev,
@@ -172,7 +177,7 @@ function StockTake() {
 
   const handleRoute = () => {
     console.log("Create New clicked");
-    navigate("/goods-receive-note/add/"); // Navigate to the add page
+    navigate("/stock-take/add/"); // Navigate to the add page
   };
 
   return (
@@ -235,34 +240,46 @@ function StockTake() {
                 </Select>
               </div>
 
-              <TabsList className="w-[25%] bg-gray-200 h-[38px]">
+              <TabsList className="w-[40%] bg-gray-200 h-[38px]">
                 <TabsTrigger className="cursor-pointer" value="all">
                   All
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="open">
-                  Open
+                <TabsTrigger className="cursor-pointer" value="saved">
+                  Saved
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="posted">
-                  Posted
+                <TabsTrigger className="cursor-pointer" value="submitted">
+                  Submitted
+                </TabsTrigger>
+                <TabsTrigger className="cursor-pointer" value="approved">
+                  Approved
+                </TabsTrigger>
+                <TabsTrigger className="cursor-pointer" value="rejected">
+                  Rejected
                 </TabsTrigger>
               </TabsList>
 
               <Button
                 onClick={handleRoute}
-                className="bg-blue-950 text-white hover:bg-blue-700"
+                className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
               >
                 + Create New
               </Button>
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
             </TabsContent>
-            <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+            <TabsContent value="saved">
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
             </TabsContent>
-            <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} />
+            <TabsContent value="submitted">
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+            </TabsContent>
+            <TabsContent value="approved">
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+            </TabsContent>
+            <TabsContent value="rejected">
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
             </TabsContent>
           </Tabs>
 

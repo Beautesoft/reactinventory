@@ -19,7 +19,7 @@ const MySidebar = () => {
       {/* Mobile Toggle Button */}
       <button
         onClick={() => setOpen(!open)} // Toggle the sidebar
-        className="lg:hidden p-4 text-white bg-gray-800"
+        className="lg:hidden p-4 text-white bg-gray-800 cursor-pointer"
       >
         <FiMenu className="text-2xl" />
       </button>
@@ -38,7 +38,7 @@ const MySidebar = () => {
         <Sidebar.Body>
           <ul>
             {navItems.map((item, index) => (
-              <li key={index} className="flex items-center space-x-3 py-3 px-4 hover:bg-gray-700">
+              <li key={index} className="flex items-center space-x-3 py-3 px-4 hover:bg-gray-700 cursor-pointer">
                 {item.icon}
                 {/* Use Link instead of a */}
                 <Link to={item.to}>{item.label}</Link>

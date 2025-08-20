@@ -351,6 +351,9 @@ function AddGto({ docData }) {
   const [originalStockList, setOriginalStockList] = useState([]);
   const [searchTimer, setSearchTimer] = useState(null);
 
+  // Add sorting state for ItemTable
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 6,
@@ -586,6 +589,23 @@ function AddGto({ docData }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Add sorting function for ItemTable
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+
+    const sortedList = [...stockList].sort((a, b) => {
+      if (a[key] < b[key]) return direction === "asc" ? -1 : 1;
+      if (a[key] > b[key]) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    setStockList(sortedList);
   };
 
   // const getSupplyList = async (supplycode) => {
@@ -1931,7 +1951,7 @@ function AddGto({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={stockHdrs.docStatus === 7 || saveLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -1952,7 +1972,7 @@ function AddGto({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || postLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || postLoading}
               >
                 {postLoading ? (
                   <>
@@ -2218,6 +2238,9 @@ function AddGto({ docData }) {
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
                       showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      enableSorting={true}
+                      onSort={handleSort}
+                      sortConfig={sortConfig}
                     />
                     {/* </div> */}
                   </CardContent>
@@ -2227,7 +2250,7 @@ function AddGto({ docData }) {
           </Tabs>
           {cartData.length > 0 && (
             <div className="flex justify-end my-5">
-              {selectedRows.length > 0 && (
+              {selectedRows.length > 0 && (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
                 <Button
                   onClick={handleBatchEditClick}
                   className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
@@ -2246,7 +2269,7 @@ function AddGto({ docData }) {
               <Table>
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
-                    {urlStatus != 7 && (
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -2264,7 +2287,7 @@ function AddGto({ docData }) {
                           }}
                         />
                       </TableHead>
-                    )}
+                    ) : null}
                     <TableHead className="font-semibold text-slate-700">
                       NO
                     </TableHead>
@@ -2285,7 +2308,9 @@ function AddGto({ docData }) {
                       </>
                     )}
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 && <TableHead>Action</TableHead>}
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                      <TableHead>Action</TableHead>
+                    ) : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2307,7 +2332,7 @@ function AddGto({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -2324,7 +2349,7 @@ function AddGto({ docData }) {
                                 }}
                               />
                             </TableCell>
-                          )}
+                          ) : null}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
@@ -2345,7 +2370,7 @@ function AddGto({ docData }) {
                             </>
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -2356,17 +2381,19 @@ function AddGto({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => onDeleteCart(item, index)}
+                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
-                          )}
+                          ) : null}
                         </TableRow>
                       ))}
                       <TableRow className="bg-slate-100 font-medium">

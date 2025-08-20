@@ -152,6 +152,7 @@ export const AuthProvider = ({ children }) => {
       deleteCookie("token");
       // localStorage.removeItem("userId");
       localStorage.removeItem("userDetails");
+      localStorage.removeItem("userAuthorizations"); // Clear user authorizations
       window.location.href = "/login"; // Redirect to login page
 
       setState({

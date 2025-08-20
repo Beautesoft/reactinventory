@@ -88,16 +88,118 @@ const ZOOM_OPTIONS = [
   { value: "200", label: "200%" },
 ];
 
-function PrintPreview() {
+// Document type configurations
+const DOCUMENT_CONFIGS = {
+  'grn': {
+    title: 'Goods Receive Note',
+    docType: 'GRN',
+    fields: {
+      docNo: 'GRN No.',
+      docDate: 'GRN Date',
+      docRef1: 'PO1 Reference',
+      docRef2: 'GR1 Reference',
+      supplier: 'Supplier',
+      remarks: ['Remark 1', 'Remark 2']
+    }
+  },
+  'gto': {
+    title: 'Goods Transfer Out',
+    docType: 'GTO',
+    fields: {
+      docNo: 'TFR No.',
+      docDate: 'TFR Date',
+      fromStore: 'From Store',
+      toStore: 'To Store',
+      remarks: ['Remark 1', 'Remark 2']
+    }
+  },
+  'gti': {
+    title: 'Goods Transfer In', 
+    docType: 'GTI',
+    fields: {
+      docNo: 'TFR No.',
+      docDate: 'TFR Date',
+      fromStore: 'From Store',
+      toStore: 'To Store',
+      remarks: ['Remark 1', 'Remark 2']
+    }
+  },
+  'rtn': {
+    title: 'Goods Return Note',
+    docType: 'RTN',
+    fields: {
+      docNo: 'RTN No.',
+      docDate: 'RTN Date',
+      docRef1: 'PO1 Reference',
+      docRef2: 'GR1 Reference',
+      supplier: 'Supplier',
+      remarks: ['Remark 1', 'Remark 2']
+    }
+  },
+  'adj': {
+    title: 'Stock Adjustment',
+    docType: 'ADJ',
+    fields: {
+      docNo: 'Adjustment Stock No.',
+      docDate: 'Adjustment Stock Date',
+      remarks: ['Remark 1', 'Remark 2']
+    }
+  },
+  'sum': {
+    title: 'Stock Usage Memo',
+    docType: 'SUM',
+    fields: {
+      docNo: 'Adjustment Stock No.',
+      docDate: 'Adjustment Stock Date',
+      remarks: ['Remark 1', 'Remark 2']
+    }
+  }
+};
+
+function PrintPreview({ 
+  documentType = 'grn',
+  data,
+  customFields,
+  customTitle,
+  showSupplier = true,
+  showStoreInfo = true,
+  customHeaders = [],
+  customFooter = null
+}) {
   const location = useLocation();
   const navigate = useNavigate();
-  const data = location.state?.item || SAMPLE_DATA;
+  const documentData = data || location.state?.item || SAMPLE_DATA;
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+  console.log(documentData,'sss')
 
-  // Get document type from URL path
-  const isGTO = location.pathname.includes('goods-transfer-out');
-  const documentType = isGTO ? 'GTO' : 'GRN';
-  const documentTitle = isGTO ? 'Goods Transfer Out' : 'Goods Receive Note';
+  // Get document configuration
+  const config = DOCUMENT_CONFIGS[documentType] || DOCUMENT_CONFIGS['grn'];
+  const finalTitle = customTitle || config.title;
+  const finalFields = { ...config.fields, ...customFields };
+
+  // Mode detection based on userDetails flags
+  const isAdminMode = userDetails?.isSettingViewCost === "Y" || userDetails?.isSettingViewPrice === "Y";
+  // const isAdminMode = true;
+
+  const currentMode = isAdminMode ? 'admin' : 'user';
+
+  // Column configurations for different modes
+  const columnConfigs = {
+    user: {
+      headers: ['No', 'Item Code', 'Item Description', 'UOM', 'Qty'],
+      keys: ['no', 'itemcode', 'itemdesc', 'uom', 'docQty'],
+      widths: [8, 18, 45, 12, 15],
+      alignments: ['left', 'left', 'left', 'center', 'right'],
+      colSpan: 4
+    },
+    admin: {
+      headers: ['No', 'Item Code', 'Item Description', 'UOM', 'Qty', 'Unit Price', 'Amount', 'Item Cost', 'Total Cost'],
+      keys: ['no', 'itemcode', 'itemdesc', 'uom', 'docQty', 'docPrice', 'docAmt', 'itemprice', 'totalCost'],
+      widths: [8, 15, 30, 10, 10, 15, 15, 15, 15],
+      alignments: ['left', 'left', 'left', 'center', 'right', 'right', 'right', 'right', 'right'],
+      colSpan: 4
+    }
+  };
 
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -105,17 +207,38 @@ function PrintPreview() {
   const [zoom, setZoom] = useState("100");
   const [filteredItems, setFilteredItems] = useState([]);
   const [exportFormat, setExportFormat] = useState("");
+  const [selectedMode, setSelectedMode] = useState('user'); // Add mode selection state
+
+  // Update current mode based on selection and permissions
+  const effectiveMode = isAdminMode ? selectedMode : 'user';
+  const currentColumnConfig = columnConfigs[effectiveMode];
 
   useEffect(() => {
     const filter = {
       where: {
-        // movCode: data.movCode,
-        docNo: data.docNo,
+        docNo: documentData.docNo,
       },
     };
 
     getDocumentDetails(filter);
-  }, [data.movCode, data.docNo]);
+  }, [documentData.docNo]);
+
+  // Debug mode detection
+  useEffect(() => {
+    console.log('PrintPreview Mode Detection:', {
+      userDetails,
+      isSettingViewCost: userDetails?.isSettingViewCost,
+      isSettingViewPrice: userDetails?.isSettingViewPrice,
+      isAdminMode,
+      selectedMode,
+      effectiveMode,
+      columnConfig: currentColumnConfig,
+      headers: currentColumnConfig.headers,
+      colSpan: currentColumnConfig.colSpan,
+      headerCount: currentColumnConfig.headers.length,
+      expectedColSpan: effectiveMode === 'admin' ? 4 : 4
+    });
+  }, [userDetails, isAdminMode, selectedMode, effectiveMode, currentColumnConfig]);
 
   useEffect(() => {
     if (items.length > 0) {
@@ -131,11 +254,8 @@ function PrintPreview() {
 
   const getDocumentDetails = async (filter) => {
     try {
-      // const response = await apiService.get(
-      //   `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
-      // );
       const response = await apiService.get(
-        `Stkprintlists${buildFilterQuery(filter ?? filter)}`
+        `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
       );
       setItems(response);
     } catch (err) {
@@ -162,8 +282,90 @@ function PrintPreview() {
     }
   };
 
+  // Dynamic field rendering based on document type
+  const renderDocumentFields = (config, data) => {
+    const fields = config.fields;
+    
+    return (
+      <div className="grid grid-cols-2 text-sm mb-4">
+        <div>
+          <p><span className="w-32 inline-block">{fields.docNo}</span>: {data?.docNo}</p>
+          <p><span className="w-32 inline-block">{fields.docDate}</span>: {new Date(data?.docDate).toLocaleDateString()}</p>
+          
+          {/* Conditional fields based on document type */}
+          {fields.docRef1 && (
+            <p><span className="w-32 inline-block">{fields.docRef1}</span>: {data?.docRef1 || "-"}</p>
+          )}
+          {fields.docRef2 && (
+            <p><span className="w-32 inline-block">{fields.docRef2}</span>: {data?.docRef2 || "-"}</p>
+          )}
+          {fields.supplier && showSupplier && (
+            <p><span className="w-32 inline-block">{fields.supplier}</span>: {data?.supplyNo || "-"}</p>
+          )}
+          {fields.fromStore && showStoreInfo && (
+            <p><span className="w-32 inline-block">{fields.fromStore}</span>: {data?.fstoreNo || "-"}</p>
+          )}
+          {fields.toStore && showStoreInfo && (
+            <p><span className="w-32 inline-block">{fields.toStore}</span>: {data?.tstoreNo || "-"}</p>
+          )}
+          
+          {/* Remarks */}
+          {fields.remarks?.map((remark, index) => (
+            <p key={index}>
+              <span className="w-32 inline-block">{remark}</span>: {data?.[`docRemk${index + 1}`] || "-"}
+            </p>
+          ))}
+        </div>
+        <div>
+          <p><span className="w-32 inline-block">Print Date</span>: {new Date().toLocaleDateString()}</p>
+          <p><span className="w-32 inline-block">Print Time</span>: {new Date().toLocaleTimeString()}</p>
+          <p><span className="w-32 inline-block">Staff Name</span>: {data?.createUser || data?.docAttn || "Support"}</p>
+          <p><span className="w-32 inline-block">StoreNo</span>: {data?.storeNo || "-"}</p>
+        </div>
+      </div>
+    );
+  };
+
+  // Dynamic export headers based on document type
+  const getExportHeaders = (config) => {
+    const baseHeaders = [
+      ["Company:", userDetails?.siteName],
+      ["Address:", userDetails?.siteAddress],
+      ["City:", `${userDetails?.siteCity} ${userDetails?.sitePostCode}`],
+      ["Phone:", userDetails?.sitePhone],
+      [""],
+      [`${config.docType} No:`, documentData?.docNo],
+    ];
+    
+    // Add document-specific headers
+    if (config.fields.docRef1) {
+      baseHeaders.push([config.fields.docRef1, documentData?.docRef1 || "-"]);
+    }
+    if (config.fields.docRef2) {
+      baseHeaders.push([config.fields.docRef2, documentData?.docRef2 || "-"]);
+    }
+    if (config.fields.supplier && showSupplier) {
+      baseHeaders.push([config.fields.supplier, documentData?.supplyNo || "-"]);
+    }
+    if (config.fields.fromStore && showStoreInfo) {
+      baseHeaders.push([config.fields.fromStore, documentData?.fstoreNo || "-"]);
+    }
+    if (config.fields.toStore && showStoreInfo) {
+      baseHeaders.push([config.fields.toStore, documentData?.tstoreNo || "-"]);
+    }
+    
+    baseHeaders.push(
+      ["Staff Name:", documentData?.docAttn || documentData?.createUser || "Support"],
+      [`${config.docType} Date:`, new Date(documentData?.docDate).toLocaleDateString()],
+      ["Store:", documentData?.storeNo || "-"],
+      [""]
+    );
+    
+    return baseHeaders;
+  };
+
   const handleExport = async (format) => {
-    const fileName = `${data?.docNo || "GRN"}_${
+    const fileName = `${documentData?.docNo || config.docType}_${
       new Date().toISOString().split("T")[0]
     }`;
 
@@ -172,42 +374,33 @@ function PrintPreview() {
         const workbook = XLSX.utils.book_new();
 
         // Add header information
-        const headerData = [
-          ["Company:", userDetails?.siteName],
-          ["Address:", userDetails?.siteAddress],
-          ["City:", `${userDetails?.siteCity} ${userDetails?.sitePostCode}`],
-          ["Phone:", userDetails?.sitePhone],
-          [""],
-          ["GRN No:", data?.docNo],
-          ["PO1 Reference:", data?.docRef1 || "-"],
-          ["GR1 Reference:", data?.docRef2 || "-"],
-          ["Staff Name:", data?.createUser || "Support"],
-          ["GRN Date:", new Date(data?.docDate).toLocaleDateString()],
-          [""],
-        ];
+        const headerData = getExportHeaders(config);
 
         // Convert items to Excel format
         const tableHeaders = [
-          [
-            "No",
-            "Item Code",
-            "Description",
-            "Quantity",
-            "Unit Price",
-            "Amount",
-            "Item Cost",
-            "Total Cost"
-          ],
+          currentColumnConfig.headers
         ];
 
-        const itemsData = filteredItems.map((item, index) => [
-          index + 1,
-          item.itemcode,
-          item.itemdesc,
-          item.docQty,
-          item.docPrice,
-          item.docAmt,
-        ]);
+        const itemsData = filteredItems.map((item, index) => {
+          const row = [
+            index + 1,
+            item.itemcode,
+            item.itemdesc,
+            item.DOCUOMDesc || item.docUom || "-",
+            item.docQty,
+          ];
+          
+          if (effectiveMode === 'admin') {
+            row.push(
+              item.docPrice,
+              item.docAmt,
+                             (item.itemprice || 0).toFixed(1),
+                             ((item.docQty * item.itemprice) || 0).toFixed(1)
+            );
+          }
+          
+          return row;
+        });
 
         // Add totals
         const totalQty = filteredItems.reduce(
@@ -219,7 +412,11 @@ function PrintPreview() {
           0
         );
 
-        const totalsData = [["", "", "Grand Total", totalQty, "", totalAmt]];
+        const totalsRow = ["", "", "", "Grand Total", totalQty];
+        if (effectiveMode === 'admin') {
+          totalsRow.push("", totalAmt, "", "");
+        }
+        const totalsData = [totalsRow];
 
         // Combine all data
         const excelData = [
@@ -232,18 +429,11 @@ function PrintPreview() {
 
         const worksheet = XLSX.utils.aoa_to_sheet(excelData);
 
-        // Set column widths
-        const columnWidths = [
-          { wch: 5 }, // No
-          { wch: 15 }, // Item Code
-          { wch: 40 }, // Description
-          { wch: 10 }, // Quantity
-          { wch: 12 }, // Unit Price
-          { wch: 12 }, // Amount
-        ];
+        // Set column widths based on current mode
+        const columnWidths = currentColumnConfig.widths.map(width => ({ wch: width }));
         worksheet["!cols"] = columnWidths;
 
-        XLSX.utils.book_append_sheet(workbook, worksheet, "GRN Details");
+        XLSX.utils.book_append_sheet(workbook, worksheet, `${config.docType} Details`);
         XLSX.writeFile(workbook, `${fileName}.xlsx`);
         break;
 
@@ -326,6 +516,8 @@ function PrintPreview() {
   return (
     <div className="container mx-auto p-4">
       <div className="print:hidden mb-6">
+     
+        
         <div className="flex items-center justify-between border-b pb-4">
           <Button
             variant="ghost"
@@ -337,6 +529,20 @@ function PrintPreview() {
           </Button>
 
           <div className="flex items-center gap-2">
+             {/* Mode Selector - At the very top */}
+        {isAdminMode && (
+          <div className=" flex justify-start">
+            <Select value={selectedMode} onValueChange={setSelectedMode}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select Mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="user">User Print Preview</SelectItem>
+                <SelectItem value="admin">Admin Print Preview</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
             <Input
               placeholder="Search in document..."
               value={searchTerm}
@@ -414,7 +620,7 @@ function PrintPreview() {
 
       <div
         id="printable-content"
-        className="print-content max-w-4xl mx-auto p-4 border rounded-lg"
+        className="print-content max-w-6xl mx-auto p-6 border rounded-lg"
       >
         <div className="text-center mb-6">
           <h2 className="font-bold">{userDetails?.siteName}</h2>
@@ -425,115 +631,111 @@ function PrintPreview() {
           <p className="text-sm">Tel: {userDetails?.sitePhone}</p>
         </div>
 
-        <div className="bg-gray-100 py-1 px-2 mb-4">
-          <h3 className="font-bold">{documentTitle}</h3>
-        </div>
-
-        <div className="grid grid-cols-2 text-sm mb-4">
-          <div>
-            <p>
-              <span className="w-32 inline-block">{documentType} No.</span>: {data?.docNo}
-            </p>
-            <p>
-              <span className="w-32 inline-block">PO1 Reference</span>:{" "}
-              {data?.docRef1 || "-"}
-            </p>
-            <p>
-              <span className="w-32 inline-block">GR1 Reference</span>:{" "}
-              {data?.docRef2 || "-"}
-            </p>
-            <p>
-              <span className="w-32 inline-block">Staff Name</span>:{" "}
-              {data?.createUser || "Support"}
-            </p>
-            <p>
-              <span className="w-32 inline-block">Remark 1</span>:{" "}
-              {data?.docRemk1 || "-"}
-            </p>
-            <p>
-              <span className="w-32 inline-block">Remark 2</span>:{" "}
-              {data?.docRemk2 || "-"}
-            </p>
-          </div>
-          <div>
-            <p>
-              <span className="w-32 inline-block">Print Date</span>:{" "}
-              {new Date().toLocaleDateString()}
-            </p>
-            <p>
-              <span className="w-32 inline-block">Print Time</span>:{" "}
-              {new Date().toLocaleTimeString()}
-            </p>
-            <p>
-              <span className="w-32 inline-block">GRN Date</span>:{" "}
-              {new Date(data?.docDate).toLocaleDateString()}
-            </p>
+        <div className="bg-gray-100 py-2 px-4 mb-6">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-lg">{finalTitle}</h3>
           </div>
         </div>
 
-        <table className="w-full text-sm border-collapse">
+        {/* Dynamic document fields */}
+        {renderDocumentFields({ ...config, fields: finalFields }, documentData)}
+
+        <table className="w-full text-sm border-collapse mb-6">
           <thead>
-            <tr className="border-y">
-              <th className="py-1 text-left">No</th>
-              <th className="py-1 text-left">ITEM CODE</th>
-              <th className="py-1 text-left">ITEM DESCRIPTION</th>
-              <th className="py-1 text-right">QTY</th>
-              <th className="py-1 text-right">UNIT PRICE</th>
-              <th className="py-1 text-right">AMOUNT</th>
-              {/* <th className="py-1 text-right">ITEM COST</th>
-              <th className="py-1 text-right">TOTAL COST</th> */}
-
+            <tr className="border-y bg-gray-50">
+              {currentColumnConfig.headers.map((header, index) => (
+                <th 
+                  key={index} 
+                  className={`py-3 px-4 text-${currentColumnConfig.alignments[index]} font-semibold`}
+                >
+                  {header}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {currentItems.map((item, index) => (
-              <tr key={index} className="border-b">
-                <td className="py-1">
+              <tr key={index} className="border-b hover:bg-gray-50">
+                <td className="py-3 px-4">
                   {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
                 </td>
-                <td className="py-1">{item.itemcode}</td>
-                <td className="py-1">{item.itemdesc}</td>
-                <td className="py-1 text-right">{item.docQty}</td>
-                <td className="py-1 text-right">{item.docPrice}</td>
-                <td className="py-1 text-right">{item.docAmt}</td>
-                {/* <td className="py-1 text-right">{(item.docQty * item.docAmt).toFixed(2)}</td> */}
-                {/* <td className="py-1 text-right">{item.docPrice}</td>
-                <td className="py-1 text-right">{(item.docQty * item.docPrice).toFixed(2)}</td> */}
-
+                <td className="py-3 px-4 font-medium">{item.itemcode}</td>
+                <td className="py-3 px-4">{item.itemdesc}</td>
+                <td className="py-3 px-4 text-center">{item.DOCUOMDesc || item.docUom || "-"}</td>
+                <td className="py-3 px-4 text-right font-medium">{item.docQty}</td>
+                {effectiveMode === 'admin' && (
+                  <>
+                    <td className="py-3 px-4 text-right">{item.docPrice || "-"}</td>
+                    <td className="py-3 px-4 text-right font-medium">{item.docAmt || "-"}</td>
+                                         <td className="py-3 px-4 text-right">{(item.itemprice || 0).toFixed(2)}</td>
+                    <td className="py-3 px-4 text-right font-medium">{((item.docQty * item.itemprice) || 0).toFixed(1)}</td>
+                  </>
+                )}
               </tr>
             ))}
 
-            <tr className="border-t font-medium">
-              <td colSpan={3} className="py-1 text-right">
+            {/* Page Total Row */}
+            <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold">
+              <td colSpan={currentColumnConfig.colSpan} className="py-3 px-4 text-right font-bold">
                 Page Total:
               </td>
-              <td className="py-1 text-right">
+              <td className="py-3 px-4 text-right font-bold text-blue-600">
                 {currentItems.reduce(
                   (sum, item) => sum + (item.docQty || 0),
                   0
                 )}
               </td>
-              <td></td>
-              <td className="py-1 text-right">
-                {currentItems.reduce(
-                  (sum, item) => sum + (item.docAmt || 0),
-                  0
-                )}
-              </td>
+              {effectiveMode === 'admin' && (
+                <>
+                  <td className="py-3 px-4 text-right">-</td>
+                  <td className="py-3 px-4 text-right font-bold text-blue-600">
+                    {currentItems.reduce(
+                      (sum, item) => sum + (item.docAmt || 0),
+                      0
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-right">-</td>
+                  <td className="py-3 px-4 text-right">-</td>
+                </>
+              )}
             </tr>
 
+            {/* Grand Total Row - Only show on last page */}
             {currentPage === totalPages && (
-              <tr className="border-t border-double border-black font-bold">
-                <td colSpan={3} className="py-1 text-right">
+              <tr className="border-t-4 border-double border-black bg-blue-50 font-bold text-lg">
+                <td colSpan={currentColumnConfig.colSpan} className="py-4 px-4 text-right">
                   Grand Total:
                 </td>
-                <td className="py-1 text-right">{data?.docQty || 0}</td>
-                <td></td>
-                <td className="py-1 text-right">{data?.docAmt || 0}</td>
+                <td className="py-4 px-4 text-right text-blue-800">
+                  {filteredItems.reduce(
+                    (sum, item) => sum + (item.docQty || 0),
+                    0
+                  )}
+                </td>
+                {effectiveMode === 'admin' && (
+                  <>
+                    <td className="py-4 px-4 text-right">-</td>
+                    <td className="py-4 px-4 text-right text-blue-800">
+                      {filteredItems.reduce(
+                        (sum, item) => sum + (item.docAmt || 0),
+                        0
+                      )}
+                    </td>
+                    <td className="py-4 px-4 text-right">-</td>
+                    <td className="py-4 px-4 text-right">-</td>
+                  </>
+                )}
               </tr>
             )}
           </tbody>
         </table>
+
+        {/* Custom footer if provided */}
+        {customFooter && (
+          <div className="mt-4">
+            {customFooter}
+          </div>
+        )}
       </div>
     </div>
   );

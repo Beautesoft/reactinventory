@@ -68,6 +68,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import TableSpinner from "@/components/tabelSpinner";
+import apiService1 from "@/services/apiService1";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -661,48 +662,54 @@ function AddSum({ docData }) {
 
 
   const getStockDetails = async () => {
-    // Remove the itemFilter dependency - fetch all data at once
+    // const filter = buildFilterObject(itemFilter);
+    // const countFilter = buildCountObject(itemFilter);
+    // console.log(countFilter, "filial");
+    // // const query = `?${qs.stringify({ filter }, { encode: false })}`;
+    // const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+    // const countQuery = `?where=${encodeURIComponent(
+    //   JSON.stringify(countFilter.where)
+    // )}`;
+    // const filt={
+    //   site:'MC01'
+    // }
+    //     const query = `?site=${encodeURIComponent(JSON.stringify(filt))}`;
+
     const query = `?Site=${userDetails.siteCode}`;
-    
-    try {
-      const response = await apiService.get(`PackageItemDetails${query}`);
-      const stockDetails = response;
-      const count = response.length;
-      
-      setLoading(false);
-      const updatedRes = stockDetails.map((item) => ({
-        ...item,
-        stockCode: item.stockCode || item.stock_code,
-        stockName: item.stockName || item.stock_name,
-        uomDescription: item.itemUom || item.uom_description,
-        Brand: item.brand || item.brand_code,
-        Range: item.range || item.range_code,
-        linkCode: item.linkCode || item.link_code,
-        barCode: item.brandCode || item.bar_code,
-        quantity: item.quantity || item.on_hand_qty,
-        Qty: 0,
-        Price: Number(item?.item_Price || item?.price || 0),
-        Cost: Number(item?.item_Price || item?.price || 0),
-        expiryDate: null,
-        docAmt: null,
-        isActive: "True",
-      }));
-      
-      console.log(updatedRes, "updatedRes");
-      console.log(count, "count");
-  
-      setStockList(updatedRes);
-      setOriginalStockList(updatedRes);
-      setItemTotal(count);
-    } catch (err) {
-      setLoading(false);
-      console.error("Error fetching stock details:", err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to fetch stock details",
+
+    // apiService.get(`PackageItemDetails${query}`),
+    // apiService.get(`PackageItemDetails/count${countQuery}`),
+
+    apiService1
+      .get(`api/GetInvitems${query}`)
+      // apiService1.get(`api/GetInvitems/count${countQuery}`),
+      // apiService.get(`GetInvItems${query}`),
+
+      .then((res) => {
+        const stockDetails = res.result;
+        const count = res.result.length;
+        setLoading(false);
+        const updatedRes = stockDetails.map((item) => ({
+          ...item,
+          Qty: 0,
+          expiryDate: null,
+          // Price: Number(item?.item_Price),
+          // Price: item?.Price,
+
+          docAmt: null,
+        }));
+        console.log(updatedRes, "updatedRes");
+        console.log(count, "count");
+
+        setStockList(updatedRes);
+        setOriginalStockList(updatedRes);
+        setItemTotal(count);
+      })
+      .catch((err) => {
+        setLoading(false);
+        console.error("Error fetching stock details:", err);
+        toast.error("Failed to fetch stock details");
       });
-    }
   };
   const getSupplyList = async (supplycode) => {
     try {
@@ -1231,7 +1238,7 @@ function AddSum({ docData }) {
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
@@ -1242,7 +1249,7 @@ function AddSum({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || !stockHdrs.docNo}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || !stockHdrs.docNo}
               >
                 Post
               </Button>
@@ -1283,7 +1290,7 @@ function AddSum({ docData }) {
                     <Label>Ref1</Label>
                     <Input
                       placeholder="Enter Ref 1"
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1317,7 +1324,7 @@ function AddSum({ docData }) {
                   <div className="space-y-2">
                     <Label>Ref2</Label>
                     <Input
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
                       placeholder="Enter Ref 2"
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
@@ -1356,7 +1363,7 @@ function AddSum({ docData }) {
                     <Label>Remark</Label>
                     <Input
                       placeholder="Enter remark"
-                      disabled={urlStatus == 7}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
                       value={stockHdrs.docRemk1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1504,7 +1511,9 @@ function AddSum({ docData }) {
                     </TableHead>
                     <TableHead>Expiry Date</TableHead>
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 && <TableHead>Action</TableHead>}
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                      <TableHead>Action</TableHead>
+                    ) : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1542,7 +1551,7 @@ function AddSum({ docData }) {
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
                           <TableCell>{item.itemRemark}</TableCell>
 
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -1553,17 +1562,19 @@ function AddSum({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => onDeleteCart(item, index)}
+                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
-                          )}
+                          ) : null}
                         </TableRow>
                       ))}
                       {/* Totals Row */}

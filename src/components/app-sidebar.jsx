@@ -21,6 +21,7 @@ import {
   BookOpen,
   Settings2,
   LogOut,
+  Shield,
 } from "lucide-react";
 import { FiHome, FiPackage } from "react-icons/fi";
 import bslogo from "../assets/BsoftheaderLogo.png";
@@ -41,6 +42,7 @@ import {
 
 import { NavMain } from "./nav-main";
 import useAuth from "@/hooks/useAuth";
+import { getUserAuthorizations, MENU_AUTH_MAPPING, hasUserAuthorization } from "@/utils/utils";
 
 const menu_items = [
   { title: "Dashboard", url: "/dashboard", icon: FiHome },
@@ -51,68 +53,150 @@ const menu_items = [
 export function AppSidebar() {
   const { logout } = useAuth();
 
-  const navMain = [
-    {
-      title: "Dashboard",
-      url: "/dashboard",
-      icon: SquareTerminal,
-      isActive: true,
-    },
-    {
-      title: "Stock Control ",
-      url: "#",
-      icon: Bot,
-      items: [
-        {
-          title: "Goods Receive Note",
-          url: "/goods-receive-note",
-          icon: FiClipboard,
-        },
-        {
-          title: "Goods Transfer Out",
-          url: "/goods-transfer-out",
-          icon: FiArrowRightCircle,
-        },
-        {
-          title: "Goods Transfer In",
-          url: "/goods-transfer-in",
-          icon: FiArrowLeftCircle,
-        },
-        {
-          title: "Goods Return Note",
-          url: "/goods-return-note",
-          icon: FiRotateCw,
-        },
-        { title: "Stock Take", 
-          url: "/stock-take", 
-          icon: FiEdit },
-          
-        { title: "Stock Adjustment", 
-          url: "/stock-adjustment", 
-          icon: FiEdit },
-        {
-          title: "Stock Usage Memo",
-          url: "/stock-usage-memo",
-          icon: FiFileText,
-        },
-      ],
-    },
+  // Check if user has authorization for a specific menu item
+  const hasAuthorization = (menuTitle) => {
+    const authCode = MENU_AUTH_MAPPING[menuTitle];
+    if (!authCode) return true; // If no auth code mapped, allow access
+    return hasUserAuthorization(authCode);
+  };
 
-    {
-      title: "Settings",
-      url: "/settings",
-      icon: Settings2,
-    },
-    {
-      title: "Logout",
-      url: "#",
-      icon: LogOut,
-      onClick: () => {
-        console.log("Logout clicked");
-        logout();
+  // Filter menu items based on user authorizations
+  const getFilteredNavMain = () => {
+    const userAuths = getUserAuthorizations();
+    
+    // If no authorizations found, show all menu items (fallback)
+    if (!userAuths || userAuths.length === 0) {
+      return [
+        {
+          title: "Dashboard",
+          url: "/dashboard",
+          icon: SquareTerminal,
+          isActive: true,
+        },
+        {
+          title: "Stock Control ",
+          url: "#",
+          icon: Bot,
+          items: [
+            {
+              title: "Goods Receive Note",
+              url: "/goods-receive-note",
+              icon: FiClipboard,
+            },
+            {
+              title: "Goods Transfer Out",
+              url: "/goods-transfer-out",
+              icon: FiArrowRightCircle,
+            },
+            {
+              title: "Goods Transfer In",
+              url: "/goods-transfer-in",
+              icon: FiArrowLeftCircle,
+            },
+            {
+              title: "Goods Return Note",
+              url: "/goods-return-note",
+              icon: FiRotateCw,
+            },
+            { title: "Stock Take", 
+              url: "/stock-take", 
+              icon: FiEdit },
+              
+            { title: "Stock Adjustment", 
+              url: "/stock-adjustment", 
+              icon: FiEdit },
+            {
+              title: "Stock Usage Memo",
+              url: "/stock-usage-memo",
+              icon: FiFileText,
+            },
+          ],
+        },
+        {
+          title: "Settings",
+          url: "/settings",
+          icon: Settings2,
+        },
+        {
+          title: "Logout",
+          url: "#",
+          icon: LogOut,
+          onClick: () => {
+            console.log("Logout clicked");
+            logout();
+          },
+        },
+      ];
+    }
+
+    // Filter stock control items based on authorizations
+    const stockControlItems = [
+      {
+        title: "Goods Receive Note",
+        url: "/goods-receive-note",
+        icon: FiClipboard,
       },
-    },
-  ];
+      {
+        title: "Goods Transfer Out",
+        url: "/goods-transfer-out",
+        icon: FiArrowRightCircle,
+      },
+      {
+        title: "Goods Transfer In",
+        url: "/goods-transfer-in",
+        icon: FiArrowLeftCircle,
+      },
+      {
+        title: "Goods Return Note",
+        url: "/goods-return-note",
+        icon: FiRotateCw,
+      },
+      { title: "Stock Take", 
+        url: "/stock-take", 
+        icon: FiEdit },
+        
+      { title: "Stock Adjustment", 
+        url: "/stock-adjustment", 
+        icon: FiEdit },
+      {
+        title: "Stock Usage Memo",
+        url: "/stock-usage-memo",
+        icon: FiFileText,
+      },
+    ].filter(item => hasAuthorization(item.title));
+
+    return [
+      {
+        title: "Dashboard",
+        url: "/dashboard",
+        icon: SquareTerminal,
+        isActive: true,
+      },
+      // Only show Stock Control if user has at least one authorization
+      ...(stockControlItems.length > 0 ? [{
+        title: "Stock Control ",
+        url: "#",
+        icon: Bot,
+        items: stockControlItems,
+      }] : []),
+      {
+        title: "Settings",
+        url: "/settings",
+        icon: Settings2,
+      },
+      {
+        title: "Logout",
+        url: "#",
+        icon: LogOut,
+        onClick: () => {
+          console.log("Logout clicked");
+          logout();
+        },
+      },
+    ];
+  };
+
+  const navMain = getFilteredNavMain();
 
   return (
     <Sidebar
@@ -134,7 +218,7 @@ export function AppSidebar() {
             <p className="m-[10px]">Inventory</p>
           </SidebarGroupLabel>
 
-          <SidebarGroupContent>
+          <SidebarGroupContent >
             <NavMain items={navMain} />
           </SidebarGroupContent>
         </SidebarGroup>

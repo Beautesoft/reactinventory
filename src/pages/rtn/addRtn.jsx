@@ -146,22 +146,22 @@ const EditDialog = memo(
     };
 
     return (
-    <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-      <DialogContent
-        className="sm:max-w-[425px]"
-        aria-describedby="edit-item-description"
-      >
-        <DialogHeader>
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent
+          className="sm:max-w-[425px]"
+          aria-describedby="edit-item-description"
+        >
+          <DialogHeader>
             <DialogTitle>
               {isBatchEdit ? "Edit Selected Item Details" : "Edit Item Details"}
             </DialogTitle>
-          <div
-            id="edit-item-description"
-            className="text-sm text-muted-foreground"
-          >
-            Modify item details
-          </div>
-        </DialogHeader>
+            <div
+              id="edit-item-description"
+              className="text-sm text-muted-foreground"
+            >
+              Modify item details
+            </div>
+          </DialogHeader>
           {validationErrors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-md p-3">
               <ul className="list-disc pl-5 text-sm text-red-600">
@@ -174,43 +174,43 @@ const EditDialog = memo(
           {/* Show Quantity and Price only for individual edit (not batch edit) */}
           {!isBatchEdit && (
             <>
-          <div className="space-y-2">
-            <Label htmlFor="qty">Quantity</Label>
-            <Input
-              id="qty"
-              type="number"
-              min="0"
-              value={editData?.docQty || ""}
-              onChange={(e) => onEditCart(e, "docQty")}
-              className="w-full"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price</Label>
-            <Input
-              id="price"
-              type="number"
-              min="0"
-              value={editData?.docPrice || ""}
+              <div className="space-y-2">
+                <Label htmlFor="qty">Quantity</Label>
+                <Input
+                  id="qty"
+                  type="number"
+                  min="0"
+                  value={editData?.docQty || ""}
+                  onChange={(e) => onEditCart(e, "docQty")}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="price">Price</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  value={editData?.docPrice || ""}
                   isBatchEdit
-              onChange={(e) => onEditCart(e, "docPrice")}
-              className="w-full"
-            />
-          </div>
+                  onChange={(e) => onEditCart(e, "docPrice")}
+                  className="w-full"
+                />
+              </div>
             </>
           )}
           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
             <>
-          <div className="space-y-2">
-            <Label htmlFor="expiry">Expiry Date</Label>
-            <Input
-              id="expiry"
-              type="date"
-              value={editData?.docExpdate || ""}
-              onChange={(e) => onEditCart(e, "docExpdate")}
-              className="w-full"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="expiry">Expiry Date</Label>
+                <Input
+                  id="expiry"
+                  type="date"
+                  value={editData?.docExpdate || ""}
+                  onChange={(e) => onEditCart(e, "docExpdate")}
+                  className="w-full"
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="batchNo">Batch No</Label>
                 <Input
@@ -233,15 +233,15 @@ const EditDialog = memo(
               placeholder="Enter remarks"
               className="w-full"
             />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-            Cancel
-          </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleSubmit}>Save Changes</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     );
   }
 );
@@ -329,7 +329,7 @@ function AddRtn({ docData }) {
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     postDate: "",
-    deliveryDate:"",
+    deliveryDate: "",
     createUser: userDetails?.username,
   });
   const [cartData, setCartData] = useState([]);
@@ -369,6 +369,9 @@ function AddRtn({ docData }) {
     range: [],
     department: ["RETAIL PRODUCT", "SALON PRODUCT"],
   });
+
+  // Add sorting state for ItemTable
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   // Add apply filters function
   // const handleApplyFilters = () => {
@@ -451,6 +454,23 @@ function AddRtn({ docData }) {
       ...prev,
       range: selected,
     }));
+  };
+
+  // Add sorting function for ItemTable
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+
+    const sortedList = [...stockList].sort((a, b) => {
+      if (a[key] < b[key]) return direction === "asc" ? -1 : 1;
+      if (a[key] > b[key]) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    setStockList(sortedList);
   };
 
   const handleDepartmentChange = (department) => {
@@ -1138,28 +1158,28 @@ function AddRtn({ docData }) {
   const handleEditSubmit = useCallback(
     (updatedEditData) => {
       if (!updatedEditData.docQty || !updatedEditData.docPrice) {
-      toast.error("Quantity and Price are required");
-      return;
-    }
+        toast.error("Quantity and Price are required");
+        return;
+      }
 
       console.log(updatedEditData, "updatedEditData");
 
-    const updatedItem = {
+      const updatedItem = {
         ...updatedEditData,
         docQty: Number(updatedEditData.docQty),
         docPrice: Number(updatedEditData.docPrice),
         docAmt:
           Number(updatedEditData.docQty) * Number(updatedEditData.docPrice),
-    };
+      };
 
-    setCartData((prev) =>
-      prev.map((item, index) => (index === editingIndex ? updatedItem : item))
-    );
+      setCartData((prev) =>
+        prev.map((item, index) => (index === editingIndex ? updatedItem : item))
+      );
 
-    setShowEditDialog(false);
-    setEditData(null);
-    setEditingIndex(null);
-    toast.success("Item updated successfully");
+      setShowEditDialog(false);
+      setEditData(null);
+      setEditingIndex(null);
+      toast.success("Item updated successfully");
     },
     [editingIndex]
   );
@@ -1235,7 +1255,6 @@ function AddRtn({ docData }) {
       docBatchNo: null,
       docMdisc: 0,
       recTtl: 0,
-
     };
     // console.log(item.itemUom,cartData[0].docUom)
 
@@ -1424,7 +1443,7 @@ function AddRtn({ docData }) {
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
 
-        console.log(stktrns, "stktrns");  
+        console.log(stktrns, "stktrns");
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         const itemRequests = stktrns.map((d) => {
           const filter = {
@@ -1694,8 +1713,7 @@ function AddRtn({ docData }) {
                     };
                   });
               }
-            }
-            else{
+            } else {
               batchUpdate = {
                 itemcode: trimmedItemCode,
                 sitecode: userDetails.siteCode,
@@ -1706,21 +1724,21 @@ function AddRtn({ docData }) {
                 // expDate: d?.docExpdate ? d?.docExpdate : null
               };
 
-            await apiService
-              .post("ItemBatches/updateqty", batchUpdate)
-              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+              await apiService
+                .post("ItemBatches/updateqty", batchUpdate)
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
             }
           }
         } else {
@@ -1836,7 +1854,11 @@ function AddRtn({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={stockHdrs.docStatus === 7 || saveLoading}
+                disabled={
+                  (stockHdrs.docStatus === 7 &&
+                    userDetails?.isSettingPostedChangePrice !== "Y") ||
+                  saveLoading
+                }
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -1857,7 +1879,11 @@ function AddRtn({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={stockHdrs.docStatus === 7 || postLoading}
+                disabled={
+                  (stockHdrs.docStatus === 7 &&
+                    userDetails?.isSettingPostedChangePrice !== "Y") ||
+                  postLoading
+                }
               >
                 {postLoading ? (
                   <>
@@ -2137,17 +2163,21 @@ function AddRtn({ docData }) {
                       loading={loading}
                       onQtyChange={(e, index) => handleCalc(e, index, "Qty")}
                       onPriceChange={(e, index) =>
-                                      handleCalc(e, index, "Price")
-                                    }
+                        handleCalc(e, index, "Price")
+                      }
                       onExpiryDateChange={(e, index) =>
-                                      handleCalc(e, index, "expiryDate")
-                                    }
+                        handleCalc(e, index, "expiryDate")
+                      }
                       onAddToCart={(index, item) => addToCart(index, item)}
                       currentPage={pagination.page}
                       itemsPerPage={6}
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
                       showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      // Add sorting functionality
+                      enableSorting={true}
+                      onSort={handleSort}
+                      sortConfig={sortConfig}
                     />
                   </CardContent>
                 </Card>
@@ -2247,9 +2277,11 @@ function AddRtn({ docData }) {
                 Selected Items
               </CardTitle>
               <Table>
-                {urlStatus != 7 && (
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
+                    {urlStatus != 7 ||
+                    (urlStatus == 7 &&
+                      userDetails?.isSettingPostedChangePrice === "Y") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -2267,30 +2299,34 @@ function AddRtn({ docData }) {
                           }}
                         />
                       </TableHead>
+                    ) : null}
                     <TableHead className="font-semibold text-slate-700">
                       NO
                     </TableHead>
                     <TableHead className="font-semibold text-slate-700">
                       Item Code
                     </TableHead>
-                    <TableHead>Item Description</TableHead>
+                    {/* <TableHead>Item Description</TableHead> */}
                     <TableHead>UOM</TableHead>
                     <TableHead>Quantity</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead className="font-semibold text-slate-700">
                       Amount
                     </TableHead>
-                      {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-                        <>
-                    <TableHead>Expiry Date</TableHead>
-                          <TableHead>Batch No</TableHead>
-                        </>
-                      )}
+                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                      <>
+                        <TableHead>Expiry Date</TableHead>
+                        <TableHead>Batch No</TableHead>
+                      </>
+                    )}
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 && <TableHead>Action</TableHead>}
+                    {urlStatus != 7 ||
+                    (urlStatus == 7 &&
+                      userDetails?.isSettingPostedChangePrice === "Y") ? (
+                      <TableHead>Action</TableHead>
+                    ) : null}{" "}
                   </TableRow>
                 </TableHeader>
-                )}
                 <TableBody>
                   {loading ? (
                     <TableSpinner colSpan={9} />
@@ -2310,7 +2346,9 @@ function AddRtn({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 ||
+                          (urlStatus == 7 &&
+                            userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -2327,7 +2365,7 @@ function AddRtn({ docData }) {
                                 }}
                               />
                             </TableCell>
-                          )}
+                          ) : null}
                           <TableCell className="font-medium">
                             {index + 1}
                           </TableCell>
@@ -2351,7 +2389,9 @@ function AddRtn({ docData }) {
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
-                          {urlStatus != 7 && (
+                          {urlStatus != 7 ||
+                          (urlStatus == 7 &&
+                            userDetails?.isSettingPostedChangePrice === "Y") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -2362,17 +2402,22 @@ function AddRtn({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {(urlStatus != 7 ||
+                                  (urlStatus == 7 &&
+                                    userDetails?.isSettingPostedChangePrice ===
+                                      "Y")) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => onDeleteCart(item, index)}
+                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
-                          )}
+                          ) : null}
                         </TableRow>
                       ))}
                       {/* Totals Row */}
@@ -2393,7 +2438,7 @@ function AddRtn({ docData }) {
                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
                           <TableCell colSpan={4} />
                         ) : (
-                        <TableCell colSpan={2} />
+                          <TableCell colSpan={2} />
                         )}
                       </TableRow>
                     </>

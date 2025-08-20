@@ -31,7 +31,23 @@ function ItemTable({
   qtyLabel = "Qty",
   priceLabel = "Price",
   costLabel = "Cost",
+  // New props for Stock Take features
+  enableSorting = false,
+  onSort = null,
+  sortConfig = null,
+  showVariance = false,
+  showRemarks = false,
+  onRemarksChange = null,
+  canEdit = () => true,
+  onBatchNoChange = null,
+  onExpiryDateChangeBatch = null,
+  allowNegativeQty = false, // New prop to allow negative quantities
 }) {
+  // Get user details from localStorage
+  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  const showPrice = (userDetails?.isSettingViewPrice === "Y");
+  const showCost = (userDetails?.isSettingViewCost === "Y");
+  const showPriceAndCost = showPrice || showCost;
   // const [currentPage, setCurrentPage] = useState(1);
   // const totalPages = Math.ceil(data.length / itemsPerPage);
 
@@ -44,35 +60,152 @@ function ItemTable({
     onPageChange(newPage);
   };
 
+  // Handle sorting
+  const handleSort = (key) => {
+    if (enableSorting && onSort) {
+      onSort(key);
+    }
+  };
+
+  // Calculate variance for Stock Take
+  const calculateVariance = (item) => {
+    if (!showVariance) return null;
+    const stockTakeQty = parseFloat(item.Qty) || 0;
+    const onHandQty = parseFloat(item.quantity) || 0;
+    return stockTakeQty - onHandQty;
+  };
+
+  // Get variance styling
+  const getVarianceStyle = (variance) => {
+    if (variance === null) return "";
+    if (variance > 0) return "text-green-600";
+    if (variance < 0) return "text-red-600";
+    return "text-gray-600";
+  };
+
+  // Get row styling for variance
+  const getRowStyle = (item) => {
+    if (!showVariance) return "hover:bg-gray-50 transition-colors duration-150";
+    const variance = calculateVariance(item);
+    return `hover:bg-gray-50 transition-colors duration-150 ${
+      variance !== 0 ? "bg-yellow-50" : ""
+    }`;
+  };
+
+  // Get input styling for variance
+  const getInputStyle = (item) => {
+    if (!showVariance) return "";
+    const variance = calculateVariance(item);
+    return `${
+      !canEdit() ? "bg-gray-100" : ""
+    } ${
+      variance !== 0 ? "border-yellow-400 bg-yellow-50" : ""
+    }`;
+  };
+
+  // Calculate column span for different modes
+  const getColSpan = () => {
+    let span = 12; // Base columns
+    if (showBatchColumns) span += 2;
+    if (showVariance) span += 1;
+    if (showRemarks) span += 1;
+    if (showPrice) span += 1; // Price column
+    if (showCost) span += 1; // Cost column
+    return span;
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-md border shadow-sm hover:shadow-md transition-shadow duration-200">
         <Table>
           <TableHeader className="bg-gray-50">
             <TableRow>
-              <TableHead className="font-semibold">Item Code</TableHead>
-              <TableHead>Description</TableHead>
+              <TableHead 
+                className={`font-semibold ${enableSorting ? "cursor-pointer hover:bg-gray-100" : ""}`}
+                onClick={() => handleSort("stockCode")}
+              >
+                Item Code{" "}
+                {enableSorting && (
+                  sortConfig?.key === "stockCode" ? 
+                    (sortConfig.direction === "asc" ? "↑" : "↓") : 
+                    "↕"
+                )}
+              </TableHead>
+              <TableHead 
+                className={enableSorting ? "cursor-pointer hover:bg-gray-100" : ""}
+                onClick={() => handleSort("stockName")}
+              >
+                Description{" "}
+                {enableSorting && (
+                  sortConfig?.key === "stockName" ? 
+                    (sortConfig.direction === "asc" ? "↑" : "↓") : 
+                    "↕"
+                )}
+              </TableHead>
               <TableHead>UOM</TableHead>
-              <TableHead>Brand</TableHead>
+              <TableHead 
+                className={enableSorting ? "cursor-pointer hover:bg-gray-100" : ""}
+                onClick={() => handleSort("Brand")}
+              >
+                Brand{" "}
+                {enableSorting && (
+                  sortConfig?.key === "Brand" ? 
+                    (sortConfig.direction === "asc" ? "↑" : "↓") : 
+                    "↕"
+                )}
+              </TableHead>
               <TableHead>Link Code</TableHead>
               <TableHead>Bar Code</TableHead>
-              <TableHead>Range</TableHead>
-              <TableHead>On Hand Qty</TableHead>
+              <TableHead 
+                className={enableSorting ? "cursor-pointer hover:bg-gray-100" : ""}
+                onClick={() => handleSort("Range")}
+              >
+                Range{" "}
+                {enableSorting && (
+                  sortConfig?.key === "Range" ? 
+                    (sortConfig.direction === "asc" ? "↑" : "↓") : 
+                    "↕"
+                )}
+              </TableHead>
+              <TableHead 
+                className={enableSorting ? "cursor-pointer hover:bg-gray-100" : ""}
+                onClick={() => handleSort("quantity")}
+              >
+                On Hand Qty{" "}
+                {enableSorting && (
+                  sortConfig?.key === "quantity" ? 
+                    (sortConfig.direction === "asc" ? "↑" : "↓") : 
+                    "↕"
+                )}
+              </TableHead>
               {showBatchColumns && <TableHead>Batch No</TableHead>}
               {showBatchColumns && <TableHead>Batch Expiry</TableHead>}
-              <TableHead>{qtyLabel}</TableHead>
-              <TableHead>{priceLabel}</TableHead>
-              <TableHead>{costLabel}</TableHead>
-              {/* <TableHead>Expiry date</TableHead> */}
+              <TableHead className="font-semibold">{qtyLabel}</TableHead>
+              {showVariance && (
+                <TableHead 
+                  className={enableSorting ? "cursor-pointer hover:bg-gray-100" : ""}
+                  onClick={() => handleSort("variance")}
+                >
+                  Variance{" "}
+                  {enableSorting && (
+                    sortConfig?.key === "variance" ? 
+                      (sortConfig.direction === "asc" ? "↑" : "↓") : 
+                      "↕"
+                  )}
+                </TableHead>
+              )}
+              {showRemarks && <TableHead>Remarks</TableHead>}
+              {showPrice && <TableHead>{priceLabel}</TableHead>}
+              {showCost && <TableHead>{costLabel}</TableHead>}
               <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSpinner colSpan={showBatchColumns ? 14 : 12} message="Loading..." />
+              <TableSpinner colSpan={getColSpan()} message="Loading..." />
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showBatchColumns ? 14 : 12} className="text-center py-10">
+                <TableCell colSpan={getColSpan()} className="text-center py-10">
                   <div className="flex flex-col items-center gap-2 text-gray-500">
                     <FileText size={40} />
                     <p>{emptyMessage || "No items Found"}</p>
@@ -82,63 +215,108 @@ function ItemTable({
             ) : (
               currentItems
                 .filter((ite) => ite.isActive === "True")
-                .map((item, index) => (
-                  <TableRow
-                    key={index}
-                    className="hover:bg-gray-50 transition-colors duration-150"
-                  >
-                    <TableCell>{item.stockCode || "-"}</TableCell>
-                    <TableCell className="max-w-[200px] whitespace-normal break-words">
-                      {item.stockName || "-"}
-                    </TableCell>
-                    <TableCell>{item.uomDescription || "-"}</TableCell>
-                    <TableCell>{item.Brand || "-"}</TableCell>
-                    <TableCell>{item.linkCode || "-"}</TableCell>
-                    <TableCell>{item.barCode || "-"}</TableCell>
-                    <TableCell>{item.Range || "-"}</TableCell>
-                    <TableCell>{item.quantity || "0"}</TableCell>
-                    {showBatchColumns && <TableCell>{item.batchno || "-"}</TableCell>}
-                    {showBatchColumns && <TableCell>{item.batchexpirydate || "-"}</TableCell>}
-                    <TableCell className="text-start">
-                      <Input
-                        type="number"
-                        className="w-20"
-                        value={item.Qty}
-                        onChange={(e) => onQtyChange(e, startIndex + index)}
-                        min="0"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        className="w-20"
-                        value={item.Price}
-                        onChange={(e) => onPriceChange(e, startIndex + index)}
-                        min="0"
-                      />
-                    </TableCell>
-                    <TableCell>{item.Cost || "0"}</TableCell>
-                    {/* <TableCell>
-                    <Input
-                      type="date"
-                      className="w-35"
-                      value={item.expiryDate}
-                      onChange={(e) => onExpiryDateChange(e, startIndex + index)}
-                      min="0"
-                    />
-                  </TableCell> */}
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onAddToCart(startIndex + index, item)}
-                        className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                .map((item, index) => {
+                  const variance = calculateVariance(item);
+                  
+                  return (
+                    <TableRow
+                      key={index}
+                      className={getRowStyle(item)}
+                    >
+                      <TableCell className="font-medium">
+                        {item.stockCode || "-"}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] whitespace-normal break-words">
+                        {item.stockName || "-"}
+                      </TableCell>
+                      <TableCell>{item.uomDescription || item.itemUom || "-"}</TableCell>
+                      <TableCell>{item.Brand || item.brand || "-"}</TableCell>
+                      <TableCell>{item.linkCode || "-"}</TableCell>
+                      <TableCell>{item.barCode || item.brandCode || "-"}</TableCell>
+                      <TableCell>{item.Range || item.range || "-"}</TableCell>
+                      <TableCell className="text-left  font-medium">
+                        {item.quantity || "0"}
+                      </TableCell>
+                      {showBatchColumns && (
+                        <TableCell>
+                          <Input
+                            value={item.batchNo || ""}
+                            onChange={(e) => onBatchNoChange && onBatchNoChange(e, startIndex + index)}
+                            placeholder="Enter batch no"
+                            className="w-32"
+                            disabled={!canEdit()}
+                          />
+                        </TableCell>
+                      )}
+                      {showBatchColumns && (
+                        <TableCell>
+                          <Input
+                            type="date"
+                            className="w-35"
+                            value={item.expiryDate}
+                            onChange={(e) => onExpiryDateChangeBatch && onExpiryDateChangeBatch(e, startIndex + index)}
+                            disabled={!canEdit()}
+                          />
+                        </TableCell>
+                      )}
+                      <TableCell className="text-start">
+                        <Input
+                          type="number"
+                          className={`w-20 text-right ${getInputStyle(item)}`}
+                          value={item.Qty}
+                          onChange={(e) => onQtyChange(e, startIndex + index)}
+                          min={allowNegativeQty ? undefined : "0"}
+                          // Remove max restriction to allow unlimited positive quantities
+                          // step="0.01"
+                          disabled={!canEdit()}
+                          placeholder="0"
+                        />
+                      </TableCell>
+                      {showVariance && (
+                        <TableCell
+                          className={`text-right font-medium ${getVarianceStyle(variance)}`}
+                        >
+                          {variance > 0 ? "+" : ""}
+                          {variance}
+                        </TableCell>
+                      )}
+                      {showRemarks && (
+                        <TableCell>
+                          <Input
+                            className="w-32"
+                            value={item.remarks || ""}
+                            onChange={(e) => onRemarksChange && onRemarksChange(e, startIndex + index)}
+                            placeholder="Add remarks"
+                            disabled={!canEdit()}
+                          />
+                        </TableCell>
+                      )}
+                      {showPrice && (
+                        <TableCell>
+                          <Input
+                            type="number"
+                            className="w-20"
+                            value={item.Price}
+                            onChange={(e) => onPriceChange(e, startIndex + index)}
+                            min="0"
+                          />
+                        </TableCell>
+                      )}
+                      {showCost && <TableCell>{item.Cost || "0"}</TableCell>}
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onAddToCart(startIndex + index, item)}
+                          className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
+                          disabled={!canEdit()}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
             )}
           </TableBody>
         </Table>

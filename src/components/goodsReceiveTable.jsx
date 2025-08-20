@@ -20,9 +20,14 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
   const { setDefaultdata: setGrnDefault } = useGrn();
   const { setDefaultdata: setGtoDefault } = useGto();
 
+  // Get user details from localStorage
+  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  const showTotalAmount = userDetails?.isSettingViewPrice === "Y";
+
   // Use ref for caching supplier details
   const supplierCache = useRef(new Map());
   const [supplierDetails, setSupplierDetails] = useState({});
+  const [stockTakeDetails, setStockTakeDetails] = useState({});
   const [sortConfig, setSortConfig] = useState({
     key: null,
     direction: 'ascending'
@@ -73,17 +78,73 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
     }
   }, [data, type]);
 
+  // Fetch stock take details for tke type
+  useEffect(() => {
+    if (type === "tke" && data?.length > 0) {
+      const fetchStockTakeDetails = async () => {
+        try {
+          const docNos = data.map(item => item.docNo);
+          const promises = docNos.map(async (docNo) => {
+            try {
+              const response = await apiService.get(
+                `StkMovdocDtls?filter=${encodeURIComponent(JSON.stringify({where: {docNo: docNo}}))}`
+              );
+              
+              const stockCount = response.length;
+              const totalSystemQty = response.reduce((sum, item) => sum + (parseFloat(item.systemQty) || 0), 0);
+              const totalCountedQty = response.reduce((sum, item) => sum + (parseFloat(item.trnQty) || 0), 0);
+              const variance = totalCountedQty - totalSystemQty;
+              
+              return {
+                docNo,
+                stockCount,
+                totalSystemQty,
+                totalCountedQty,
+                variance
+              };
+            } catch (error) {
+              console.error(`Error fetching details for ${docNo}:`, error);
+              return {
+                docNo,
+                stockCount: 0,
+                totalSystemQty: 0,
+                totalCountedQty: 0,
+                variance: 0
+              };
+            }
+          });
+          
+          const results = await Promise.all(promises);
+          const detailsMap = {};
+          results.forEach(result => {
+            detailsMap[result.docNo] = result;
+          });
+          
+          setStockTakeDetails(detailsMap);
+        } catch (error) {
+          console.error("Error fetching stock take details:", error);
+        }
+      };
+      
+      fetchStockTakeDetails();
+    }
+  }, [data, type]);
+
   const dateConvert = (date) => {
     if (!date) return "-";
+    console.log(date)
     
     if (type === "gtoOwn") {
       // For gto type, date is already in DD/MM/YYYY format
       return date;
     }
     
-    // For other types, convert the date
-    const options = { year: "numeric", month: "2-digit", day: "2-digit" };
-    return new Date(date).toLocaleDateString(undefined, options);
+    // For other types, convert the date to DD/MM/YYYY
+    const d = new Date(date);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
   };
 
   const handleDetails = (item) => {
@@ -96,6 +157,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       : type === "rtn" ? "goods-return-note"
       : type === "adj" ? "stock-adjustment" 
       : type === "sum" ? "stock-usage-memo"
+      : type === "tke" ? "stock-take"
       : "goods-transfer-in";
 
     navigate(`/${basePath}/details/${item.docNo}?status=${status}`, {
@@ -105,8 +167,16 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
   };
 
   const printNote = (item) => {
-    const basePath =
-    type === "grn" ? "goods-receive-note" :"gto"? "goods-transfer-out":'goods-transfer-in';
+    console.log(item,'item')
+    const basePath = 
+      type === "grn" ? "goods-receive-note" 
+      : type === "gto" ? "goods-transfer-out"
+      : type === "gti" ? "goods-transfer-in"
+      : type === "rtn" ? "goods-return-note"
+      : type === "adj" ? "stock-adjustment" 
+      : type === "sum" ? "stock-usage-memo"
+      : type === "tke" ? "stock-take"
+      : "goods-receive-note";
     navigate(`/${basePath}/print/${item.docNo}`, { state: { item } });
   };
 
@@ -165,7 +235,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docRef1", label: "Ref Number" },
       { key: "supplyNo", label: "Supplier" },
       { key: "docQty", label: "Total Quantity" },
-      { key: "docAmt", label: "Total Amount" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
@@ -175,7 +245,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docRef1", label: "Ref Number" },
       { key: "supplyNo", label: "Supplier" },
       { key: "docQty", label: "Total Quantity" },
-      { key: "docAmt", label: "Total Amount" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
@@ -185,7 +255,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docRef1", label: "Ref Number 1" },
       { key: "docRef2", label: "Ref Number 2" },
       { key: "docQty", label: "Total Quantity" },
-      { key: "docAmt", label: "Total Amount" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
@@ -195,7 +265,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docRef1", label: "Ref Number 1" },
       { key: "docRef2", label: "Ref Number 2" },
       { key: "docQty", label: "Total Quantity" },
-      { key: "docAmt", label: "Total Amount" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
@@ -206,7 +276,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docRef2", label: "Ref Number 2" },
       { key: "docRemark", label: "Remarks" },
       { key: "docQty", label: "Total Quantity" },
-      { key: "docAmt", label: "Total Amount" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
     ],
     gtiOwn: [
       { key: "docNo", label: "Doc Number" },
@@ -215,7 +285,16 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       { key: "docRef2", label: "Ref Number 2" },
       { key: "docRemark", label: "Remarks" },
       { key: "docQty", label: "Total Quantity" },
-      { key: "docAmt", label: "Total Amount" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
+    ],
+    tke: [
+      { key: "docNo", label: "Doc Number" },
+      { key: "docDate", label: "Date" },
+      { key: "stockCount", label: "No of Stock" },
+      { key: "docQty", label: "Total Quantity Counted" },
+      { key: "variance", label: "Variance" },
+      { key: "docStatus", label: "Status" },
+      { key: "print", label: "Print" },
     ],
   };
 
@@ -226,75 +305,146 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
       <Table>
         <TableHeader className="bg-gray-100 p-2">
           <TableRow>
-            {headers.map((header) => (
-              <TableHead
-                key={header.key}
-                className={`${header.key === "docNo" ? "w-[100px]" : ""} ${
-                  header.key !== "print" ? "cursor-pointer hover:bg-gray-200" : ""
-                }`}
-                onClick={() => header.key !== "print" && handleSort(header.key)}
-              >
-                <div className="flex items-center">
-                  {header.label}
-                  {header.key !== "print" && getSortIcon(header.key)}
-                </div>
-              </TableHead>
-            ))}
+            {headers.map((header) => {
+              // Determine alignment based on header key and type
+              let alignmentClass = "text-left";
+              if (type === "tke") {
+                if (header.key === "docNo") alignmentClass = "text-left";
+                else if (header.key === "docDate") alignmentClass = "text-center";
+                else if (header.key === "stockCount") alignmentClass = "text-center";
+                else if (header.key === "docQty") alignmentClass = "text-right";
+                else if (header.key === "variance") alignmentClass = "text-right";
+                else if (header.key === "docStatus") alignmentClass = "text-center";
+                else if (header.key === "print") alignmentClass = "text-center";
+              }
+              
+              return (
+                <TableHead
+                  key={header.key}
+                  className={`${header.key === "docNo" ? "w-[100px]" : ""} ${
+                    header.key !== "print" ? "cursor-pointer hover:bg-gray-200" : ""
+                  } ${alignmentClass}`}
+                  onClick={() => header.key !== "print" && handleSort(header.key)}
+                >
+                  <div className={`flex items-center ${
+                    alignmentClass === "text-center" ? "justify-center" : 
+                    alignmentClass === "text-right" ? "justify-end" : "justify-start"
+                  }`}>
+                    {header.label}
+                    {header.key !== "print" && getSortIcon(header.key)}
+                  </div>
+                </TableHead>
+              );
+            })}
           </TableRow>
         </TableHeader>
         <TableBody className="p-5">
           {isLoading ? (
             <TableSpinner colSpan={headers.length} message="Loading data..." />
           ) : sortedData.length > 0 ? (
-            sortedData.map((item, index) => (
-              <TableRow key={index}>
-                {type === "gtoOwn" ? (
-                  <>
-                    <TableCell>{item.docNo}</TableCell>
-                    <TableCell>{dateConvert(item.docDate)}</TableCell>
-                    <TableCell>{item.docRef1 || "-"}</TableCell>
-                    <TableCell>{item.docRef2 || "-"}</TableCell>
-                    <TableCell>{item.docRemark || "-"}</TableCell>
-                    <TableCell>{item.docQty || 0}</TableCell>
-                    <TableCell>{item.docAmt || 0}</TableCell>
-                  </>
-                ) : (
-                  <>
-                    <TableCell
-                      onClick={() => handleDetails(item)}
-                      className="cursor-pointer text-gray-600 hover:text-black underline"
-                    >
-                      {item.docNo}
-                    </TableCell>
-                    <TableCell>{dateConvert(item.docDate)}</TableCell>
-                    <TableCell>{item.docRef1 || "-"}</TableCell>
-                    <TableCell>
-                      {(type === "grn" || type === "rtn")
-                        ? supplierDetails[item.supplyNo] || item.supplyNo || "-"
-                        : item.docRef2 || "-"}
-                    </TableCell>
-                    <TableCell>{item.docQty}</TableCell>
-                    <TableCell>{item.docAmt}</TableCell>
-                    <TableCell
-                      className={
-                        item.docStatus === 7
-                          ? "text-green-600 font-semibold"
-                          : "text-yellow-600 font-semibold"
-                      }
-                    >
-                      {item.docStatus === 7 ? "Posted" : "Open"}
-                    </TableCell>
-                    <TableCell className="text-left flex pr-4">
-                      <PrinterIcon
-                        onClick={() => printNote(item)}
-                        className="icon-print cursor-pointer"
-                        aria-label="Print"
-                      />
-                    </TableCell>
-                  </>
-                )}
-              </TableRow>
-            ))
+            sortedData.map((item, index) => {
+              const stockDetails = stockTakeDetails[item.docNo] || {};
+              
+              return (
+                <TableRow key={index}>
+                  {type === "gtoOwn" ? (
+                    <>
+                      <TableCell>{item.docNo}</TableCell>
+                      <TableCell>{dateConvert(item.docDate)}</TableCell>
+                      <TableCell>{item.docRef1 || "-"}</TableCell>
+                      <TableCell>{item.docRef2 || "-"}</TableCell>
+                      <TableCell>{item.docRemark || "-"}</TableCell>
+                      <TableCell>{item.docQty || 0}</TableCell>
+                      {showTotalAmount && <TableCell>{item.docAmt || 0}</TableCell>}
+                    </>
+                  ) : type === "tke" ? (
+                    <>
+                      <TableCell
+                        onClick={() => handleDetails(item)}
+                        className="cursor-pointer text-gray-600 hover:text-black underline text-left"
+                      >
+                        {item.docNo}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {dateConvert(item.docDate)}
+                      </TableCell>
+                      <TableCell className="text-center font-medium">
+                        {stockDetails.stockCount || 0}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {stockDetails.totalCountedQty || item.docQty || 0}
+                      </TableCell>
+                      <TableCell className={`text-right font-medium ${
+                        (stockDetails.variance || 0) > 0 
+                          ? 'text-green-600' 
+                          : (stockDetails.variance || 0) < 0 
+                          ? 'text-red-600' 
+                          : 'text-gray-600'
+                      }`}>
+                        {(stockDetails.variance || 0) > 0 ? '+' : ''}{(stockDetails.variance || 0)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-center font-semibold ${
+                          item.docStatus === 2
+                            ? "text-green-600"
+                            : item.docStatus === 1
+                            ? "text-blue-600"
+                            : item.docStatus === 3
+                            ? "text-red-600"
+                            : "text-yellow-600"
+                        }`}
+                      >
+                        {item.docStatus === 2 ? "Approved" 
+                         : item.docStatus === 1 ? "Submitted" 
+                         : item.docStatus === 3 ? "Rejected" 
+                         : "Saved"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <PrinterIcon
+                          onClick={() => printNote(item)}
+                          className="icon-print cursor-pointer mx-auto"
+                          aria-label="Print"
+                        />
+                      </TableCell>
+                    </>
+                  ) : (
+                    <>
+                      <TableCell
+                        onClick={() => handleDetails(item)}
+                        className="cursor-pointer text-gray-600 hover:text-black underline"
+                      >
+                        {item.docNo}
+                      </TableCell>
+                      <TableCell>{dateConvert(item.docDate)}</TableCell>
+                      <TableCell>{item.docRef1 || "-"}</TableCell>
+                      <TableCell>
+                        {(type === "grn" || type === "rtn")
+                          ? supplierDetails[item.supplyNo] || item.supplyNo || "-"
+                          : item.docRef2 || "-"}
+                      </TableCell>
+                      <TableCell>{item.docQty}</TableCell>
+                      {showTotalAmount && <TableCell>{item.docAmt}</TableCell>}
+                      <TableCell
+                        className={
+                          item.docStatus === 7
+                            ? "text-green-600 font-semibold"
+                            : "text-yellow-600 font-semibold"
+                        }
+                      >
+                        {item.docStatus === 7 ? "Posted" : "Open"}
+                      </TableCell>
+                      <TableCell className="text-left flex pr-4">
+                        <PrinterIcon
+                          onClick={() => printNote(item)}
+                          className="icon-print cursor-pointer"
+                          aria-label="Print"
+                        />
+                      </TableCell>
+                    </>
+                  )}
+                </TableRow>
+              );
+            })
           ) : (
             <TableRow>
               <TableCell
