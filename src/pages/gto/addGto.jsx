@@ -2318,17 +2318,14 @@ function AddGto({ docData }) {
                                           <TableHead>Item Description</TableHead>
                       <TableHead>UOM</TableHead>
                       <TableHead>Quantity</TableHead>
-                      {userDetails?.isSettingViewPrice === "True" && (
-                        <TableHead>Price</TableHead>
-                      )}
-                      {userDetails?.isSettingViewCost === "True" && (
-                        <TableHead>Cost</TableHead>
-                      )}
-                      {userDetails?.isSettingViewPrice === "True" && (
-                        <TableHead className="font-semibold text-slate-700">
-                          Amount
-                        </TableHead>
-                      )}
+                                          {userDetails?.isSettingViewPrice === "True" && (
+                      <TableHead>Price</TableHead>
+                    )}
+                    {userDetails?.isSettingViewPrice === "True" && (
+                      <TableHead className="font-semibold text-slate-700">
+                        Amount
+                      </TableHead>
+                    )}
                     {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                       <>
                         <TableHead>Expiry Date</TableHead>
@@ -2390,9 +2387,7 @@ function AddGto({ docData }) {
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell>{item.docPrice}</TableCell>
                           )}
-                          {userDetails?.isSettingViewCost === "True" && (
-                            <TableCell>{item.itemprice || "-"}</TableCell>
-                          )}
+
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
                               {item.docAmt}
@@ -2433,7 +2428,7 @@ function AddGto({ docData }) {
                       ))}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={3}
+                          colSpan={5}
                           className="text-right text-slate-700"
                         >
                           Totals:
@@ -2442,16 +2437,16 @@ function AddGto({ docData }) {
                           {calculateTotals(cartData).totalQty}
                         </TableCell>
                         {userDetails?.isSettingViewPrice === "True" && <TableCell />}
-                        {userDetails?.isSettingViewCost === "True" && <TableCell />}
+
                         {userDetails?.isSettingViewPrice === "True" && (
                           <TableCell className="font-semibold text-slate-700">
                             {calculateTotals(cartData).totalAmt.toFixed(2)}
                           </TableCell>
                         )}
                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
-                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
+                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />
                         ) : (
-                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
+                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />
                         )}
                       </TableRow>
                     </>

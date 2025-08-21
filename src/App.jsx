@@ -31,27 +31,27 @@ import UserAuthorization from "./pages/userAuthorization";
 function App() {
   return (
     <AuthProvider>
-      <GrnProvider>
-        <GtoProvider>
-          <SidebarProvider>
-            <Toaster richColors />
-            <Router>
-              <Routes>
+        <GrnProvider>
+          <GtoProvider>
+            <SidebarProvider>
+              <Toaster richColors />
+              <Router>
+                <Routes>
                 {/* Public Route */}
-                <Route
-                  path="/login"
-                  element={
-                    <PublicRoute>
-                      <Login />
-                    </PublicRoute>
-                  }
-                />
+                  <Route
+                    path="/login"
+                    element={
+                      <PublicRoute>
+                        <Login />
+                      </PublicRoute>
+                    }
+                  />
                 
                 {/* Protected Routes - Nested structure */}
-                <Route
+                  <Route
                   path="/"
-                  element={
-                    <PrivateRoute>
+                    element={
+                      <PrivateRoute>
                       <Layout />
                     </PrivateRoute>
                   }
@@ -114,11 +114,11 @@ function App() {
                   <Route path="stock-transfer" element={<h1>Stock Transfer</h1>} />
                   <Route path="settings" element={<UserAuthorization />} />
                 </Route>
-              </Routes>
-            </Router>
-          </SidebarProvider>
-        </GtoProvider>
-      </GrnProvider>
+                </Routes>
+              </Router>
+            </SidebarProvider>
+          </GtoProvider>
+        </GrnProvider>
     </AuthProvider>
   );
 }
