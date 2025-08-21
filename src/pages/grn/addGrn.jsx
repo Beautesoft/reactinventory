@@ -93,6 +93,8 @@ const EditDialog = memo(
     onEditCart,
     onSubmit,
     isBatchEdit,
+    urlStatus,
+    userDetails,
   }) => {
     const [batchOptions, setBatchOptions] = useState([]);
     const [selectedBatch, setSelectedBatch] = useState(null);
@@ -265,7 +267,9 @@ const EditDialog = memo(
               id="edit-item-description"
               className="text-sm text-muted-foreground"
             >
-              Modify item details
+              {urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True" 
+                ? "Only price can be modified for posted documents" 
+                : "Modify item details"}
             </div>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -290,6 +294,7 @@ const EditDialog = memo(
                     value={editData?.docQty || ""}
                     onChange={(e) => onEditCart(e, "docQty")}
                     className="w-full"
+                    disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                   />
                 </div>
                 <div className="space-y-2">
@@ -325,6 +330,7 @@ const EditDialog = memo(
                             onEditCart({ target: { value: "" } }, "docBatchNo");
                           }
                         }}
+                        disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                       />
                       <label htmlFor="useExisting" className="text-sm">
                         Use Existing Batch
@@ -335,7 +341,7 @@ const EditDialog = memo(
                         <Select
                           value={selectedBatch?.value || ""}
                           onValueChange={handleExistingBatchChange}
-                          disabled={isLoadingBatches}
+                          disabled={isLoadingBatches || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")}
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue
@@ -372,6 +378,7 @@ const EditDialog = memo(
                         placeholder="Enter new batch number"
                         className="w-full"
                         maxLength={20}
+                        disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                       />
                     )}
                   </div>
@@ -384,7 +391,7 @@ const EditDialog = memo(
                     value={editData?.docExpdate || ""}
                     onChange={(e) => onEditCart(e, "docExpdate")}
                     className="w-full"
-                    readOnly={isExpiryReadOnly}
+                    readOnly={isExpiryReadOnly || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")}
                   />
                 </div>
               </>
@@ -397,6 +404,7 @@ const EditDialog = memo(
                 onChange={(e) => onEditCart(e, "itemRemark")}
                 placeholder="Enter remarks"
                 className="w-full"
+                disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
               />
             </div>
           </div>
@@ -1384,26 +1392,34 @@ function AddGrn({ docData }) {
     setIsBatchEdit(false);
     console.log(item,"item")
     
-    // Handle expiry date - check multiple possible field names and format properly
+    // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
-      expiryDate = item.docExpdate;
-    } else if (item.batchexpirydate) {
-      expiryDate = item.batchexpirydate;
-    }
-    
-    // Format date if it's in DD/MM/YYYY format
-    if (expiryDate && expiryDate.includes('/')) {
-      const parts = expiryDate.split(' ')[0].split('/');
-      if (parts.length === 3) {
-        const day = parts[0].padStart(2, '0');
-        const month = parts[1].padStart(2, '0');
-        const year = parts[2];
-        expiryDate = `${year}-${month}-${day}`;
+      // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+      if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+        // Convert ISO date to YYYY-MM-DD format for HTML date input
+        const date = new Date(item.docExpdate);
+        if (!isNaN(date.getTime())) {
+          expiryDate = date.toISOString().split('T')[0];
+        }
+      } 
+      // Handle DD/MM/YYYY format
+      else if (item.docExpdate.includes('/')) {
+        const parts = item.docExpdate.split(' ')[0].split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2];
+          expiryDate = `${year}-${month}-${day}`;
+        }
+      }
+      // If it's already in YYYY-MM-DD format, use as is
+      else if (item.docExpdate.includes('-')) {
+        expiryDate = item.docExpdate;
       }
     }
     
-    console.log("Original expiry:", item.docExpdate || item.batchexpirydate);
+    console.log("Original expiry:", item.docExpdate);
     console.log("Formatted expiry:", expiryDate);
     
     const newEditData = {
@@ -2673,6 +2689,8 @@ function AddGrn({ docData }) {
         onEditCart={handleEditCart}
         onSubmit={isBatchEdit ? handleBatchEditSubmit : handleEditSubmit}
         isBatchEdit={isBatchEdit}
+        urlStatus={urlStatus}
+        userDetails={userDetails}
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

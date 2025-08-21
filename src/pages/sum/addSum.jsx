@@ -81,7 +81,7 @@ const calculateTotals = (cartData) => {
 };
 
 const EditDialog = memo(
-  ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit }) => (
+  ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit, urlStatus, userDetails }) => (
     <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
       <DialogContent
         className="sm:max-w-[425px]"
@@ -93,7 +93,9 @@ const EditDialog = memo(
             id="edit-item-description"
             className="text-sm text-muted-foreground"
           >
-            Modify item details
+            {urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True" 
+              ? "Only price can be modified for posted documents" 
+              : "Modify item details"}
           </div>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -106,6 +108,7 @@ const EditDialog = memo(
               value={editData?.docQty || ""}
               onChange={(e) => onEditCart(e, "docQty")}
               className="w-full"
+              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
             />
           </div>
           <div className="space-y-2">
@@ -127,6 +130,7 @@ const EditDialog = memo(
               value={editData?.docExpdate || ""}
               onChange={(e) => onEditCart(e, "docExpdate")}
               className="w-full"
+              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
             />
           </div>
           <div className="space-y-2">
@@ -137,6 +141,7 @@ const EditDialog = memo(
               onChange={(e) => onEditCart(e, "itemRemark")}
               placeholder="Enter remarks"
               className="w-full"
+              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
             />
           </div>
         </div>
@@ -1239,7 +1244,7 @@ function AddSum({ docData }) {
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || !stockHdrs.docNo}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
@@ -1250,7 +1255,7 @@ function AddSum({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || !stockHdrs.docNo}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || !stockHdrs.docNo}
               >
                 Post
               </Button>
@@ -1291,7 +1296,7 @@ function AddSum({ docData }) {
                     <Label>Ref1</Label>
                     <Input
                       placeholder="Enter Ref 1"
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1325,7 +1330,7 @@ function AddSum({ docData }) {
                   <div className="space-y-2">
                     <Label>Ref2</Label>
                     <Input
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
                       placeholder="Enter Ref 2"
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
@@ -1364,7 +1369,7 @@ function AddSum({ docData }) {
                     <Label>Remark</Label>
                     <Input
                       placeholder="Enter remark"
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "Y"}
+                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
                       value={stockHdrs.docRemk1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -1516,7 +1521,7 @@ function AddSum({ docData }) {
                       )}
                     <TableHead>Expiry Date</TableHead>
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>Action</TableHead>
                     ) : null}
                   </TableRow>
@@ -1561,7 +1566,7 @@ function AddSum({ docData }) {
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
                           <TableCell>{item.itemRemark}</TableCell>
 
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -1572,7 +1577,8 @@ function AddSum({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+                                {/* Delete button only for non-posted documents */}
+                                {urlStatus != 7 && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -1621,6 +1627,8 @@ function AddSum({ docData }) {
         editData={editData}
         onEditCart={handleEditCart}
         onSubmit={handleEditSubmit}
+        urlStatus={urlStatus}
+        userDetails={userDetails}
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

@@ -89,6 +89,8 @@ const EditDialog = memo(
     onEditCart,
     onSubmit,
     isBatchEdit,
+    urlStatus,
+    userDetails,
   }) => {
     const [validationErrors, setValidationErrors] = useState([]);
     const [newBatchNo, setNewBatchNo] = useState("");
@@ -158,7 +160,9 @@ const EditDialog = memo(
               id="edit-item-description"
               className="text-sm text-muted-foreground"
             >
-              Modify item details
+              {urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True" 
+                ? "Only price can be modified for posted documents" 
+                : "Modify item details"}
             </div>
           </DialogHeader>
           {validationErrors.length > 0 && (
@@ -182,6 +186,7 @@ const EditDialog = memo(
                   value={editData?.docQty || ""}
                   onChange={(e) => onEditCart(e, "docQty")}
                   className="w-full"
+                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                 />
               </div>
               <div className="space-y-2">
@@ -208,6 +213,7 @@ const EditDialog = memo(
                   value={editData?.docExpdate || ""}
                   onChange={(e) => onEditCart(e, "docExpdate")}
                   className="w-full"
+                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                 />
               </div>
               <div className="space-y-2">
@@ -219,6 +225,7 @@ const EditDialog = memo(
                   placeholder="Enter batchNo"
                   className="w-full"
                   maxLength={20}
+                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                 />
               </div>
             </>
@@ -231,6 +238,7 @@ const EditDialog = memo(
               onChange={(e) => onEditCart(e, "itemRemark")}
               placeholder="Enter remarks"
               className="w-full"
+              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
             />
           </div>
           <DialogFooter>
@@ -1067,22 +1075,30 @@ function AddGto({ docData }) {
     setIsBatchEdit(false);
     console.log(item,"item")
 
-    // Handle expiry date - check multiple possible field names and format properly
+    // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
-      expiryDate = item.docExpdate;
-    } else if (item.batchexpirydate) {
-      expiryDate = item.batchexpirydate;
-    }
-    
-    // Format date if it's in DD/MM/YYYY format
-    if (expiryDate && expiryDate.includes('/')) {
-      const parts = expiryDate.split(' ')[0].split('/');
-      if (parts.length === 3) {
-        const day = parts[0].padStart(2, '0');
-        const month = parts[1].padStart(2, '0');
-        const year = parts[2];
-        expiryDate = `${year}-${month}-${day}`;
+      // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+      if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+        // Convert ISO date to YYYY-MM-DD format for HTML date input
+        const date = new Date(item.docExpdate);
+        if (!isNaN(date.getTime())) {
+          expiryDate = date.toISOString().split('T')[0];
+        }
+      } 
+      // Handle DD/MM/YYYY format
+      else if (item.docExpdate.includes('/')) {
+        const parts = item.docExpdate.split(' ')[0].split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2];
+          expiryDate = `${year}-${month}-${day}`;
+        }
+      }
+      // If it's already in YYYY-MM-DD format, use as is
+      else if (item.docExpdate.includes('-')) {
+        expiryDate = item.docExpdate;
       }
     }
 
@@ -1113,13 +1129,32 @@ function AddGto({ docData }) {
       )
     );
   };
-  // Parse "30/09/2025 12:00:00 AM" to "2025-09-30"
+  // Parse various date formats to "YYYY-MM-DD"
   const parseBatchExpiry = (dateStr) => {
     if (!dateStr) return "";
-    const [day, month, yearAndTime] = dateStr.split("/");
-    const [year] = yearAndTime.split(" ");
-    // Return in YYYY-MM-DD format
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    
+    // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+    if (dateStr.includes('T') || dateStr.includes('Z')) {
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+      }
+    }
+    
+    // Handle "30/09/2025 12:00:00 AM" format
+    if (dateStr.includes('/')) {
+      const [day, month, yearAndTime] = dateStr.split("/");
+      const [year] = yearAndTime.split(" ");
+      // Return in YYYY-MM-DD format
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+    
+    // If it's already in YYYY-MM-DD format, return as is
+    if (dateStr.includes('-')) {
+      return dateStr;
+    }
+    
+    return "";
   };
 
   const addToCart = (index, item) => {
@@ -1972,7 +2007,7 @@ function AddGto({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || saveLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -1993,7 +2028,7 @@ function AddGto({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || postLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || postLoading}
               >
                 {postLoading ? (
                   <>
@@ -2290,7 +2325,7 @@ function AddGto({ docData }) {
               <Table>
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -2333,7 +2368,7 @@ function AddGto({ docData }) {
                       </>
                     )}
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>Action</TableHead>
                     ) : null}
                   </TableRow>
@@ -2357,7 +2392,7 @@ function AddGto({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -2400,7 +2435,7 @@ function AddGto({ docData }) {
                             </>
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -2411,7 +2446,8 @@ function AddGto({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+                                {/* Delete button only for non-posted documents */}
+                                {urlStatus != 7 && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -2464,6 +2500,8 @@ function AddGto({ docData }) {
         onEditCart={handleEditCart}
         onSubmit={isBatchEdit ? handleBatchEditSubmit : handleEditSubmit}
         isBatchEdit={isBatchEdit}
+        urlStatus={urlStatus}
+        userDetails={userDetails}
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

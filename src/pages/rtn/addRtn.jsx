@@ -91,6 +91,8 @@ const EditDialog = memo(
     onEditCart,
     onSubmit,
     isBatchEdit,
+    urlStatus,
+    userDetails,
   }) => {
     const [validationErrors, setValidationErrors] = useState([]);
     const [newBatchNo, setNewBatchNo] = useState("");
@@ -159,7 +161,9 @@ const EditDialog = memo(
               id="edit-item-description"
               className="text-sm text-muted-foreground"
             >
-              Modify item details
+              {urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True" 
+                ? "Only price can be modified for posted documents" 
+                : "Modify item details"}
             </div>
           </DialogHeader>
           {validationErrors.length > 0 && (
@@ -1187,22 +1191,30 @@ function AddRtn({ docData }) {
   const editPopup = (item, index) => {
     setIsBatchEdit(false);
     
-    // Handle expiry date - check multiple possible field names and format properly
+    // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
-      expiryDate = item.docExpdate;
-    } else if (item.batchexpirydate) {
-      expiryDate = item.batchexpirydate;
-    }
-    
-    // Format date if it's in DD/MM/YYYY format
-    if (expiryDate && expiryDate.includes('/')) {
-      const parts = expiryDate.split(' ')[0].split('/');
-      if (parts.length === 3) {
-        const day = parts[0].padStart(2, '0');
-        const month = parts[1].padStart(2, '0');
-        const year = parts[2];
-        expiryDate = `${year}-${month}-${day}`;
+      // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+      if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+        // Convert ISO date to YYYY-MM-DD format for HTML date input
+        const date = new Date(item.docExpdate);
+        if (!isNaN(date.getTime())) {
+          expiryDate = date.toISOString().split('T')[0];
+        }
+      } 
+      // Handle DD/MM/YYYY format
+      else if (item.docExpdate.includes('/')) {
+        const parts = item.docExpdate.split(' ')[0].split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2];
+          expiryDate = `${year}-${month}-${day}`;
+        }
+      }
+      // If it's already in YYYY-MM-DD format, use as is
+      else if (item.docExpdate.includes('-')) {
+        expiryDate = item.docExpdate;
       }
     }
     
@@ -1876,7 +1888,7 @@ function AddRtn({ docData }) {
               <Button
                 disabled={
                   (stockHdrs.docStatus === 7 &&
-                    userDetails?.isSettingPostedChangePrice !== "Y") ||
+                    userDetails?.isSettingPostedChangePrice !== "True") ||
                   saveLoading
                 }
                 onClick={(e) => {
@@ -1901,7 +1913,7 @@ function AddRtn({ docData }) {
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
                 disabled={
                   (stockHdrs.docStatus === 7 &&
-                    userDetails?.isSettingPostedChangePrice !== "Y") ||
+                    userDetails?.isSettingPostedChangePrice !== "True") ||
                   postLoading
                 }
               >
@@ -2301,7 +2313,7 @@ function AddRtn({ docData }) {
                   <TableRow className="border-b border-slate-200">
                     {urlStatus != 7 ||
                     (urlStatus == 7 &&
-                      userDetails?.isSettingPostedChangePrice === "Y") ? (
+                      userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -2346,7 +2358,7 @@ function AddRtn({ docData }) {
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 ||
                     (urlStatus == 7 &&
-                      userDetails?.isSettingPostedChangePrice === "Y") ? (
+                      userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>Action</TableHead>
                     ) : null}{" "}
                   </TableRow>
@@ -2372,7 +2384,7 @@ function AddRtn({ docData }) {
                         >
                           {urlStatus != 7 ||
                           (urlStatus == 7 &&
-                            userDetails?.isSettingPostedChangePrice === "Y") ? (
+                            userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -2420,7 +2432,7 @@ function AddRtn({ docData }) {
 
                           {urlStatus != 7 ||
                           (urlStatus == 7 &&
-                            userDetails?.isSettingPostedChangePrice === "Y") ? (
+                            userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -2431,10 +2443,8 @@ function AddRtn({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                {(urlStatus != 7 ||
-                                  (urlStatus == 7 &&
-                                    userDetails?.isSettingPostedChangePrice ===
-                                      "Y")) && (
+                                {/* Delete button only for non-posted documents */}
+                                {urlStatus != 7 && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -2488,6 +2498,8 @@ function AddRtn({ docData }) {
         onEditCart={handleEditCart}
         onSubmit={isBatchEdit ? handleBatchEditSubmit : handleEditSubmit}
         isBatchEdit={isBatchEdit}
+        urlStatus={urlStatus}
+        userDetails={userDetails}
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
