@@ -28,29 +28,56 @@ export const AuthProvider = ({ children }) => {
 
   // Check authentication status on mount
   useEffect(() => {
-    console.log("useEffect called");
     const initializeAuth = () => {
-      const token = getCookie("token");
-      // const savedSalon = localStorage.getItem("selectedSalon");
+      try {
+        const token = getCookie("token");
+        const userDetails = localStorage.getItem("userDetails");
 
-      if (token) {
+        console.log("🔐 Auth Init - Token:", !!token, "UserDetails:", !!userDetails);
+
+        if (token && userDetails) {
+          // Both token and user details exist - user is authenticated
+          console.log("✅ User authenticated");
+          setState((prev) => ({
+            ...prev,
+            isAuthenticated: true,
+            token,
+            isLoading: false,
+          }));
+        } else if (token && !userDetails) {
+          // Token exists but no user details - clear token and redirect to login
+          console.log("⚠️ Token exists but no user details - clearing token");
+          deleteCookie("token");
+          setState((prev) => ({
+            ...prev,
+            isAuthenticated: false,
+            token: null,
+            isLoading: false,
+          }));
+        } else {
+          // No token - user is not authenticated
+          console.log("❌ No authentication found");
+          setState((prev) => ({
+            ...prev,
+            isAuthenticated: false,
+            token: null,
+            isLoading: false,
+          }));
+        }
+      } catch (error) {
+        console.error("🚨 Auth initialization error:", error);
         setState((prev) => ({
           ...prev,
-          // user: { token },
-          isAuthenticated: true,
-          salon: "",
-          token,
-          isLoading: false,
-        }));
-      } else {
-        setState((prev) => ({
-          ...prev,
+          isAuthenticated: false,
+          token: null,
           isLoading: false,
         }));
       }
     };
 
-    initializeAuth();
+    // Small delay to ensure localStorage is available
+    const timer = setTimeout(initializeAuth, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // const login = async (credentials) => {

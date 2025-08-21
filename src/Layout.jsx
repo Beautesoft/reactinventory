@@ -1,17 +1,13 @@
 import React from "react";
-import MySidebar from "./components/sidebarCus";
-import { Route, Routes } from "react-router-dom";
-import GoodsReceiveNote from "./pages/grn/goodsReceiveNote";
-import DashBoard from "./pages/dashBoard";
+import { Outlet } from "react-router-dom";
 import { AppSidebar } from "./components/app-sidebar";
-import { SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
+import { SidebarTrigger } from "./components/ui/sidebar";
 import { BreadcrumbNav } from "./components/breadCrumbs";
+import { User, MapPin } from "lucide-react";
 import { Toaster } from "sonner";
-import { User,MapPin } from "lucide-react";
 
-const Layout = ({ children }) => {
+const Layout = () => {
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-  console.log("userDetails", userDetails);
   const userName = userDetails?.username || "User";
   const siteName = userDetails?.siteName || "Site Name";
 
@@ -42,7 +38,7 @@ const Layout = ({ children }) => {
             </div>
           </div>
           <main className="flex-1 px-2 overflow-auto bg-gradient-to-br from-white via-sky-50/30 to-indigo-50/20 dark:from-gray-900 dark:to-gray-800">
-            {children}
+            <Outlet />
           </main>
         </div>
       </div>

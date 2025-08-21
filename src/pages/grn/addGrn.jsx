@@ -447,6 +447,14 @@ function AddGrn({ docData }) {
   const [editingIndex, setEditingIndex] = useState(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
 
+  // Debug: Monitor editData changes
+  useEffect(() => {
+    if (editData) {
+      console.log("editData changed:", editData);
+      console.log("editData.docExpdate:", editData.docExpdate);
+    }
+  }, [editData]);
+
   const [filter, setFilter] = useState({
     movCode: "GRN",
     splyCode: "",
@@ -1374,14 +1382,41 @@ function AddGrn({ docData }) {
 
   const editPopup = (item, index) => {
     setIsBatchEdit(false);
-    setEditData({
+    console.log(item,"item")
+    
+    // Handle expiry date - check multiple possible field names and format properly
+    let expiryDate = "";
+    if (item.docExpdate) {
+      expiryDate = item.docExpdate;
+    } else if (item.batchexpirydate) {
+      expiryDate = item.batchexpirydate;
+    }
+    
+    // Format date if it's in DD/MM/YYYY format
+    if (expiryDate && expiryDate.includes('/')) {
+      const parts = expiryDate.split(' ')[0].split('/');
+      if (parts.length === 3) {
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        const year = parts[2];
+        expiryDate = `${year}-${month}-${day}`;
+      }
+    }
+    
+    console.log("Original expiry:", item.docExpdate || item.batchexpirydate);
+    console.log("Formatted expiry:", expiryDate);
+    
+    const newEditData = {
       ...item,
       docQty: Number(item.docQty) || 0,
       docPrice: Number(item.docPrice) || 0,
-      docExpdate: item.docExpdate || "",
+      docExpdate: expiryDate,
       itemRemark: item.itemRemark || "",
       docBatchNo: item.docBatchNo || "",
-    });
+    };
+    
+    console.log("New editData:", newEditData);
+    setEditData(newEditData);
     setEditingIndex(index);
     setShowEditDialog(true);
   };
@@ -1433,7 +1468,9 @@ function AddGrn({ docData }) {
       createUser: userDetails?.username || "SYSTEM",
       createDate: stockHdrs.docDate,
       docUom: item.uom || "",
-      docExpdate: item.expiryDate || "",
+      // docExpdate: item.expiryDate || "",
+            docExpdate: item.batchexpirydate || "",
+
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
@@ -1441,8 +1478,12 @@ function AddGrn({ docData }) {
       DOCUOMDesc: item.uomDescription,
       itemRemark: item?.itemRemark || null,
       // itemprice: 0,
-      itemprice: Number(item.Cost) || 0,
-      docBatchNo: null,
+      // itemprice: Number(item.Cost) || 0,
+      itemprice: Number(item.batchcost) || 0,
+
+      // docBatchNo: null,
+      docBatchNo: item.batchno,
+
       docMdisc: 0,
       recTtl: 0,
     };
@@ -2042,7 +2083,7 @@ function AddGrn({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || saveLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -2063,7 +2104,7 @@ function AddGrn({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "Y") || postLoading}
+                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || postLoading}
               >
                 {postLoading ? (
                   <>
@@ -2440,7 +2481,7 @@ function AddGrn({ docData }) {
           {/* Move the Add Item Details button to the top right above the table */}
           {cartData.length > 0 && (
             <div className="flex justify-end my-5">
-              {selectedRows.length > 0 && (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+              {selectedRows.length > 0 && (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) && (
                 <Button
                   onClick={handleBatchEditClick}
                   className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
@@ -2458,7 +2499,7 @@ function AddGrn({ docData }) {
               <Table>
                   <TableHeader className="bg-slate-100">
                     <TableRow className="border-b border-slate-200">
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -2486,10 +2527,17 @@ function AddGrn({ docData }) {
                       <TableHead>Item Description</TableHead>
                       <TableHead>UOM</TableHead>
                       <TableHead>Quantity</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead className="font-semibold text-slate-700">
-                        Amount
-                      </TableHead>
+                      {userDetails?.isSettingViewPrice === "True" && (
+                        <TableHead>Price</TableHead>
+                      )}
+                      {userDetails?.isSettingViewCost === "True" && (
+                        <TableHead>Cost</TableHead>
+                      )}
+                      {userDetails?.isSettingViewPrice === "True" && (
+                        <TableHead className="font-semibold text-slate-700">
+                          Amount
+                        </TableHead>
+                      )}
                       {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                         <>
                           <TableHead>Expiry Date</TableHead>
@@ -2497,7 +2545,7 @@ function AddGrn({ docData }) {
                         </>
                       )}
                       <TableHead>Remarks</TableHead>
-                      {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                      {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                         <TableHead>Action</TableHead>
                       ) : null}
                     </TableRow>
@@ -2521,7 +2569,7 @@ function AddGrn({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -2548,10 +2596,17 @@ function AddGrn({ docData }) {
                           <TableCell className="font-medium">
                             {item.docQty}
                           </TableCell>
-                          <TableCell>{item.docPrice}</TableCell>
-                          <TableCell className="font-semibold text-slate-700">
-                            {item.docAmt}
-                          </TableCell>
+                          {userDetails?.isSettingViewPrice === "True" && (
+                            <TableCell>{item.docPrice}</TableCell>
+                          )}
+                          {userDetails?.isSettingViewCost === "True" && (
+                            <TableCell>{item.itemprice || "-"}</TableCell>
+                          )}
+                          {userDetails?.isSettingViewPrice === "True" && (
+                            <TableCell className="font-semibold text-slate-700">
+                              {item.docAmt}
+                            </TableCell>
+                          )}
                           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                             <>
                               <TableCell>{format_Date(item.docExpdate)}</TableCell>
@@ -2560,7 +2615,7 @@ function AddGrn({ docData }) {
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
+                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
@@ -2571,7 +2626,7 @@ function AddGrn({ docData }) {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y")) && (
+                                {(urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -2589,7 +2644,7 @@ function AddGrn({ docData }) {
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={5}
+                          colSpan={3}
                           className="text-right text-slate-700"
                         >
                           Totals:
@@ -2597,14 +2652,17 @@ function AddGrn({ docData }) {
                         <TableCell className="text-slate-700">
                           {calculateTotals(cartData).totalQty}
                         </TableCell>
-                        <TableCell />
-                        <TableCell className="font-semibold text-slate-700">
-                          {calculateTotals(cartData).totalAmt.toFixed(2)}
-                        </TableCell>
+                        {userDetails?.isSettingViewPrice === "True" && <TableCell />}
+                        {userDetails?.isSettingViewCost === "True" && <TableCell />}
+                        {userDetails?.isSettingViewPrice === "True" && (
+                          <TableCell className="font-semibold text-slate-700">
+                            {calculateTotals(cartData).totalAmt.toFixed(2)}
+                          </TableCell>
+                        )}
                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
-                          <TableCell colSpan={4} />
+                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
                         ) : (
-                          <TableCell colSpan={2} />
+                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
                         )}
                       </TableRow>
                     </>

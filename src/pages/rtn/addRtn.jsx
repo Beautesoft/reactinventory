@@ -1186,11 +1186,31 @@ function AddRtn({ docData }) {
 
   const editPopup = (item, index) => {
     setIsBatchEdit(false);
+    
+    // Handle expiry date - check multiple possible field names and format properly
+    let expiryDate = "";
+    if (item.docExpdate) {
+      expiryDate = item.docExpdate;
+    } else if (item.batchexpirydate) {
+      expiryDate = item.batchexpirydate;
+    }
+    
+    // Format date if it's in DD/MM/YYYY format
+    if (expiryDate && expiryDate.includes('/')) {
+      const parts = expiryDate.split(' ')[0].split('/');
+      if (parts.length === 3) {
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        const year = parts[2];
+        expiryDate = `${year}-${month}-${day}`;
+      }
+    }
+    
     setEditData({
       ...item,
       docQty: Number(item.docQty) || 0,
       docPrice: Number(item.docPrice) || 0,
-      docExpdate: item.docExpdate || "",
+      docExpdate: expiryDate,
       itemRemark: item.itemRemark || "",
       docBatchNo: item.docBatchNo || "",
     });
@@ -2309,10 +2329,17 @@ function AddRtn({ docData }) {
                     {/* <TableHead>Item Description</TableHead> */}
                     <TableHead>UOM</TableHead>
                     <TableHead>Quantity</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Amount
-                    </TableHead>
+                    {userDetails?.isSettingViewPrice === "True" && (
+                      <TableHead>Price</TableHead>
+                    )}
+                    {userDetails?.isSettingViewCost === "True" && (
+                      <TableHead>Cost</TableHead>
+                    )}
+                    {userDetails?.isSettingViewPrice === "True" && (
+                      <TableHead className="font-semibold text-slate-700">
+                        Amount
+                      </TableHead>
+                    )}
                     {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                       <>
                         <TableHead>Expiry Date</TableHead>
@@ -2375,10 +2402,17 @@ function AddRtn({ docData }) {
                           <TableCell className="font-medium">
                             {item.docQty}
                           </TableCell>
-                          <TableCell>{item.docPrice}</TableCell>
-                          <TableCell className="font-semibold text-slate-700">
-                            {item.docAmt}
-                          </TableCell>
+                          {userDetails?.isSettingViewPrice === "True" && (
+                            <TableCell>{item.docPrice}</TableCell>
+                          )}
+                          {userDetails?.isSettingViewCost === "True" && (
+                            <TableCell>{item.itemprice || "-"}</TableCell>
+                          )}
+                          {userDetails?.isSettingViewPrice === "True" && (
+                            <TableCell className="font-semibold text-slate-700">
+                              {item.docAmt}
+                            </TableCell>
+                          )}
                           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                             <>
                               <TableCell>
@@ -2423,7 +2457,7 @@ function AddRtn({ docData }) {
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={5}
+                          colSpan={3}
                           className="text-right text-slate-700"
                         >
                           Totals:
@@ -2431,14 +2465,17 @@ function AddRtn({ docData }) {
                         <TableCell className="text-slate-700">
                           {calculateTotals(cartData).totalQty}
                         </TableCell>
-                        <TableCell />
-                        <TableCell className="font-semibold text-slate-700">
-                          {calculateTotals(cartData).totalAmt.toFixed(2)}
-                        </TableCell>
+                        {userDetails?.isSettingViewPrice === "True" && <TableCell />}
+                        {userDetails?.isSettingViewCost === "True" && <TableCell />}
+                        {userDetails?.isSettingViewPrice === "True" && (
+                          <TableCell className="font-semibold text-slate-700">
+                            {calculateTotals(cartData).totalAmt.toFixed(2)}
+                          </TableCell>
+                        )}
                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
-                          <TableCell colSpan={4} />
+                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
                         ) : (
-                          <TableCell colSpan={2} />
+                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
                         )}
                       </TableRow>
                     </>

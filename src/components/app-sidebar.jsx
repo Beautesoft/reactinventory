@@ -52,6 +52,7 @@ const menu_items = [
 
 export function AppSidebar() {
   const { logout } = useAuth();
+  const userDetails = JSON.parse(localStorage.getItem("userDetails"));
 
   // Check if user has authorization for a specific menu item
   const hasAuthorization = (menuTitle) => {
@@ -98,10 +99,6 @@ export function AppSidebar() {
               url: "/goods-return-note",
               icon: FiRotateCw,
             },
-            { title: "Stock Take", 
-              url: "/stock-take", 
-              icon: FiEdit },
-              
             { title: "Stock Adjustment", 
               url: "/stock-adjustment", 
               icon: FiEdit },
@@ -110,13 +107,17 @@ export function AppSidebar() {
               url: "/stock-usage-memo",
               icon: FiFileText,
             },
+            // Stock Take is always available for all users
+            { title: "Stock Take", 
+              url: "/stock-take", 
+              icon: FiEdit },
           ],
         },
-        {
+        ...(userDetails?.isSettingEnabled === "Y" ? [{
           title: "Settings",
           url: "/settings",
           icon: Settings2,
-        },
+        }] : []),
         {
           title: "Logout",
           url: "#",
@@ -151,19 +152,22 @@ export function AppSidebar() {
         url: "/goods-return-note",
         icon: FiRotateCw,
       },
-      { title: "Stock Take", 
-        url: "/stock-take", 
-        icon: FiEdit },
-        
       { title: "Stock Adjustment", 
         url: "/stock-adjustment", 
         icon: FiEdit },
-      {
-        title: "Stock Usage Memo",
-        url: "/stock-usage-memo",
-        icon: FiFileText,
-      },
+      // {
+      //   title: "Stock Usage Memo",
+      //   url: "/stock-usage-memo",
+      //   icon: FiFileText,
+      // },
     ].filter(item => hasAuthorization(item.title));
+
+    // Stock Take is always available for all users
+    const alwaysAvailableItems = [
+      // { title: "Stock Take", 
+      //   url: "/stock-take", 
+      //   icon: FiEdit }
+    ];
 
     return [
       {
@@ -172,18 +176,19 @@ export function AppSidebar() {
         icon: SquareTerminal,
         isActive: true,
       },
-      // Only show Stock Control if user has at least one authorization
-      ...(stockControlItems.length > 0 ? [{
+      // Show Stock Control if user has at least one authorization OR if Stock Take should be available
+      ...((stockControlItems.length > 0 || alwaysAvailableItems.length > 0) ? [{
         title: "Stock Control ",
         url: "#",
         icon: Bot,
-        items: stockControlItems,
+        items: [...stockControlItems, ...alwaysAvailableItems],
       }] : []),
-      {
+      // Only show Settings if user has isSettingEnabled = "Y"
+      ...(userDetails?.isSettingEnabled === "Y" ? [{
         title: "Settings",
         url: "/settings",
         icon: Settings2,
-      },
+      }] : []),
       {
         title: "Logout",
         url: "#",

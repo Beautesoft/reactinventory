@@ -378,7 +378,28 @@ export const format_Date = (dateString) => {
   if (!dateString) return "-";
 
   try {
-    const date = new Date(dateString);
+    let date;
+    
+    // Handle different date formats
+    if (typeof dateString === 'string') {
+      // Handle "21/11/2025 12:00:00 AM" format
+      if (dateString.includes('/')) {
+        const parts = dateString.split(' ')[0].split('/');
+        if (parts.length === 3) {
+          // Format: DD/MM/YYYY
+          const day = parseInt(parts[0]);
+          const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+          const year = parseInt(parts[2]);
+          date = new Date(year, month, day);
+        }
+      } else {
+        // Handle ISO format or other standard formats
+        date = new Date(dateString);
+      }
+    } else {
+      date = new Date(dateString);
+    }
+
     if (isNaN(date.getTime())) return "-";
 
     const day = date.getDate().toString().padStart(2, "0");

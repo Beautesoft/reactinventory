@@ -1049,8 +1049,9 @@ function AddSum({ docData }) {
       ...item,
       docQty: Number(item.docQty) || 0,
       docPrice: Number(item.docPrice) || 0,
-      docExpdate: item.docExpdate || "",
+      docExpdate: item.batchexpirydate || "",
       itemRemark: item.itemRemark || "",
+      docBatchNo: item.docBatchNo || "",
     });
     setEditingIndex(index);
     setShowEditDialog(true);
@@ -1502,13 +1503,20 @@ function AddSum({ docData }) {
                     <TableHead className="font-semibold text-slate-700">
                       Item Code
                     </TableHead>
-                    <TableHead>Item Description</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Amount
-                    </TableHead>
+                                          <TableHead>Item Description</TableHead>
+                      <TableHead>UOM</TableHead>
+                      <TableHead>Quantity</TableHead>
+                      {userDetails?.isSettingViewPrice === "True" && (
+                        <TableHead>Price</TableHead>
+                      )}
+                      {userDetails?.isSettingViewCost === "True" && (
+                        <TableHead>Cost</TableHead>
+                      )}
+                      {userDetails?.isSettingViewPrice === "True" && (
+                        <TableHead className="font-semibold text-slate-700">
+                          Amount
+                        </TableHead>
+                      )}
                     <TableHead>Expiry Date</TableHead>
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "Y") ? (
@@ -1544,10 +1552,17 @@ function AddSum({ docData }) {
                           <TableCell className="font-medium">
                             {item.docQty}
                           </TableCell>
-                          <TableCell>{item.docPrice}</TableCell>
-                          <TableCell className="font-semibold text-slate-700">
-                            {item.docAmt}
-                          </TableCell>
+                          {userDetails?.isSettingViewPrice === "True" && (
+                            <TableCell>{item.docPrice}</TableCell>
+                          )}
+                          {userDetails?.isSettingViewCost === "True" && (
+                            <TableCell>{item.itemprice || "-"}</TableCell>
+                          )}
+                          {userDetails?.isSettingViewPrice === "True" && (
+                            <TableCell className="font-semibold text-slate-700">
+                              {item.docAmt}
+                            </TableCell>
+                          )}
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
                           <TableCell>{item.itemRemark}</TableCell>
 
@@ -1580,7 +1595,7 @@ function AddSum({ docData }) {
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={4}
+                          colSpan={3}
                           className="text-right text-slate-700"
                         >
                           Totals:
@@ -1588,11 +1603,14 @@ function AddSum({ docData }) {
                         <TableCell className="text-slate-700">
                           {calculateTotals(cartData).totalQty}
                         </TableCell>
-                        <TableCell />
-                        <TableCell className="font-semibold text-slate-700">
-                          {calculateTotals(cartData).totalAmt.toFixed(2)}
-                        </TableCell>
-                        <TableCell colSpan={2} />
+                        {userDetails?.isSettingViewPrice === "True" && <TableCell />}
+                        {userDetails?.isSettingViewCost === "True" && <TableCell />}
+                        {userDetails?.isSettingViewPrice === "True" && (
+                          <TableCell className="font-semibold text-slate-700">
+                            {calculateTotals(cartData).totalAmt.toFixed(2)}
+                          </TableCell>
+                        )}
+                        <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0) + (userDetails?.isSettingViewCost === "True" ? 1 : 0)} />
                       </TableRow>
                     </>
                   )}

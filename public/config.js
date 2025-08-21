@@ -34,8 +34,8 @@ window.APP_CONFIG = {
   AUTO_POST: "Yes",
   // BATCH_SNO: "Yes",
     BATCH_SNO: "No",
-    // BATCH_NO:"Yes",
-    BATCH_NO:"No",
+    BATCH_NO:"Yes",
+    // BATCH_NO:"No",
 
   EXPIRY_DATE: "No",
   NOTIFICATION_MAIL_SEND:'NO',

@@ -91,7 +91,7 @@ const ZOOM_OPTIONS = [
 // Document type configurations
 const DOCUMENT_CONFIGS = {
   'grn': {
-    title: 'Goods Receive Note',
+    title: 'Goods Receive Note Print',
     docType: 'GRN',
     fields: {
       docNo: 'GRN No.',
@@ -103,7 +103,7 @@ const DOCUMENT_CONFIGS = {
     }
   },
   'gto': {
-    title: 'Goods Transfer Out',
+    title: 'Goods Transfer Out Print',
     docType: 'GTO',
     fields: {
       docNo: 'TFR No.',
@@ -114,7 +114,7 @@ const DOCUMENT_CONFIGS = {
     }
   },
   'gti': {
-    title: 'Goods Transfer In', 
+    title: 'Goods Transfer In Print', 
     docType: 'GTI',
     fields: {
       docNo: 'TFR No.',
@@ -125,7 +125,7 @@ const DOCUMENT_CONFIGS = {
     }
   },
   'rtn': {
-    title: 'Goods Return Note',
+    title: 'Goods Return Note Print',
     docType: 'RTN',
     fields: {
       docNo: 'RTN No.',
@@ -137,7 +137,7 @@ const DOCUMENT_CONFIGS = {
     }
   },
   'adj': {
-    title: 'Stock Adjustment',
+    title: 'Stock Adjustment Print',
     docType: 'ADJ',
     fields: {
       docNo: 'Adjustment Stock No.',
@@ -146,7 +146,7 @@ const DOCUMENT_CONFIGS = {
     }
   },
   'sum': {
-    title: 'Stock Usage Memo',
+    title: 'Stock Usage Memo Print',
     docType: 'SUM',
     fields: {
       docNo: 'Adjustment Stock No.',
@@ -178,7 +178,7 @@ function PrintPreview({
   const finalFields = { ...config.fields, ...customFields };
 
   // Mode detection based on userDetails flags
-  const isAdminMode = userDetails?.isSettingViewCost === "Y" || userDetails?.isSettingViewPrice === "Y";
+  const isAdminMode = userDetails?.isSettingViewCost === "True" || userDetails?.isSettingViewPrice === "True";
   // const isAdminMode = true;
 
   const currentMode = isAdminMode ? 'admin' : 'user';
@@ -186,18 +186,18 @@ function PrintPreview({
   // Column configurations for different modes
   const columnConfigs = {
     user: {
-      headers: ['No', 'Item Code', 'Item Description', 'UOM', 'Qty'],
-      keys: ['no', 'itemcode', 'itemdesc', 'uom', 'docQty'],
-      widths: [8, 18, 45, 12, 15],
-      alignments: ['left', 'left', 'left', 'center', 'right'],
-      colSpan: 4
+      headers: ['No', 'Item Code', 'Item Description', 'Qty'],
+      keys: ['no', 'itemcode', 'itemdesc', 'docQty'],
+      widths: [8, 18, 55, 15],
+      alignments: ['left', 'left', 'left', 'right'],
+      colSpan: 3
     },
     admin: {
-      headers: ['No', 'Item Code', 'Item Description', 'UOM', 'Qty', 'Unit Price', 'Amount', 'Item Cost', 'Total Cost'],
-      keys: ['no', 'itemcode', 'itemdesc', 'uom', 'docQty', 'docPrice', 'docAmt', 'itemprice', 'totalCost'],
-      widths: [8, 15, 30, 10, 10, 15, 15, 15, 15],
-      alignments: ['left', 'left', 'left', 'center', 'right', 'right', 'right', 'right', 'right'],
-      colSpan: 4
+      headers: ['No', 'Item Code', 'Item Description', 'Qty', 'Unit Price', 'Amount', ' Cost', 'Total Cost'],
+      keys: ['no', 'itemcode', 'itemdesc', 'docQty', 'docPrice', 'docAmt', 'itemprice', 'totalCost'],
+      widths: [8, 15, 35, 10, 15, 15, 15, 15],
+      alignments: ['left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
+      colSpan: 3
     }
   };
 
@@ -208,6 +208,7 @@ function PrintPreview({
   const [filteredItems, setFilteredItems] = useState([]);
   const [exportFormat, setExportFormat] = useState("");
   const [selectedMode, setSelectedMode] = useState('user'); // Add mode selection state
+  const [storeOptions, setStoreOptions] = useState([]); // Store store options
 
   // Update current mode based on selection and permissions
   const effectiveMode = isAdminMode ? selectedMode : 'user';
@@ -222,6 +223,10 @@ function PrintPreview({
 
     getDocumentDetails(filter);
   }, [documentData.docNo]);
+
+  useEffect(() => {
+    getStoreList();
+  }, []);
 
   // Debug mode detection
   useEffect(() => {
@@ -263,6 +268,28 @@ function PrintPreview({
     }
   };
 
+  const getStoreList = async () => {
+    try {
+      const res = await apiService.get("/ItemSitelists");
+      const options = res
+        .filter((store) => store.itemsiteCode)
+        .map((store) => ({
+          label: store.itemsiteDesc,
+          value: store.itemsiteCode,
+        }));
+      setStoreOptions(options);
+    } catch (err) {
+      console.error("Error fetching stores:", err);
+      toast.error("Failed to fetch store list");
+    }
+  };
+
+  const getStoreName = (storeCode) => {
+    if (!storeCode) return "-";
+    const store = storeOptions.find(option => option.value === storeCode);
+    return store ? store.label : storeCode;
+  };
+
   const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
   const currentItems = filteredItems.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -289,7 +316,7 @@ function PrintPreview({
     return (
       <div className="grid grid-cols-2 text-sm mb-4">
         <div>
-          <p><span className="w-32 inline-block">{fields.docNo}</span>: {data?.docNo}</p>
+          <p><span className="w-32 inline-block ">{fields.docNo}</span>: {data?.docNo}</p>
           <p><span className="w-32 inline-block">{fields.docDate}</span>: {new Date(data?.docDate).toLocaleDateString()}</p>
           
           {/* Conditional fields based on document type */}
@@ -303,10 +330,10 @@ function PrintPreview({
             <p><span className="w-32 inline-block">{fields.supplier}</span>: {data?.supplyNo || "-"}</p>
           )}
           {fields.fromStore && showStoreInfo && (
-            <p><span className="w-32 inline-block">{fields.fromStore}</span>: {data?.fstoreNo || "-"}</p>
+            <p><span className="w-32 inline-block">{fields.fromStore}</span>: {getStoreName(data?.fstoreNo)}</p>
           )}
           {fields.toStore && showStoreInfo && (
-            <p><span className="w-32 inline-block">{fields.toStore}</span>: {data?.tstoreNo || "-"}</p>
+            <p><span className="w-32 inline-block">{fields.toStore}</span>: {getStoreName(data?.tstoreNo)}</p>
           )}
           
           {/* Remarks */}
@@ -347,12 +374,12 @@ function PrintPreview({
     if (config.fields.supplier && showSupplier) {
       baseHeaders.push([config.fields.supplier, documentData?.supplyNo || "-"]);
     }
-    if (config.fields.fromStore && showStoreInfo) {
-      baseHeaders.push([config.fields.fromStore, documentData?.fstoreNo || "-"]);
-    }
-    if (config.fields.toStore && showStoreInfo) {
-      baseHeaders.push([config.fields.toStore, documentData?.tstoreNo || "-"]);
-    }
+         if (config.fields.fromStore && showStoreInfo) {
+       baseHeaders.push([config.fields.fromStore, getStoreName(documentData?.fstoreNo)]);
+     }
+     if (config.fields.toStore && showStoreInfo) {
+       baseHeaders.push([config.fields.toStore, getStoreName(documentData?.tstoreNo)]);
+     }
     
     baseHeaders.push(
       ["Staff Name:", documentData?.docAttn || documentData?.createUser || "Support"],
@@ -381,26 +408,25 @@ function PrintPreview({
           currentColumnConfig.headers
         ];
 
-        const itemsData = filteredItems.map((item, index) => {
-          const row = [
-            index + 1,
-            item.itemcode,
-            item.itemdesc,
-            item.DOCUOMDesc || item.docUom || "-",
-            item.docQty,
-          ];
-          
-          if (effectiveMode === 'admin') {
-            row.push(
-              item.docPrice,
-              item.docAmt,
-                             (item.itemprice || 0).toFixed(1),
-                             ((item.docQty * item.itemprice) || 0).toFixed(1)
-            );
-          }
-          
-          return row;
-        });
+                 const itemsData = filteredItems.map((item, index) => {
+           const row = [
+             index + 1,
+             item.itemcode,
+             item.itemdesc,
+             item.docQty,
+           ];
+           
+           if (effectiveMode === 'admin') {
+             row.push(
+               item.docPrice,
+               item.docAmt,
+                              (item.itemprice || 0).toFixed(1),
+                              ((item.docQty * item.itemprice) || 0).toFixed(1)
+             );
+           }
+           
+           return row;
+         });
 
         // Add totals
         const totalQty = filteredItems.reduce(
@@ -412,10 +438,10 @@ function PrintPreview({
           0
         );
 
-        const totalsRow = ["", "", "", "Grand Total", totalQty];
-        if (effectiveMode === 'admin') {
-          totalsRow.push("", totalAmt, "", "");
-        }
+                 const totalsRow = ["", "", "Grand Total", totalQty];
+         if (effectiveMode === 'admin') {
+           totalsRow.push("", totalAmt, "", "");
+         }
         const totalsData = [totalsRow];
 
         // Combine all data
@@ -654,25 +680,24 @@ function PrintPreview({
             </tr>
           </thead>
           <tbody>
-            {currentItems.map((item, index) => (
-              <tr key={index} className="border-b hover:bg-gray-50">
-                <td className="py-3 px-4">
-                  {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
-                </td>
-                <td className="py-3 px-4 font-medium">{item.itemcode}</td>
-                <td className="py-3 px-4">{item.itemdesc}</td>
-                <td className="py-3 px-4 text-center">{item.DOCUOMDesc || item.docUom || "-"}</td>
-                <td className="py-3 px-4 text-right font-medium">{item.docQty}</td>
-                {effectiveMode === 'admin' && (
-                  <>
-                    <td className="py-3 px-4 text-right">{item.docPrice || "-"}</td>
-                    <td className="py-3 px-4 text-right font-medium">{item.docAmt || "-"}</td>
-                                         <td className="py-3 px-4 text-right">{(item.itemprice || 0).toFixed(2)}</td>
-                    <td className="py-3 px-4 text-right font-medium">{((item.docQty * item.itemprice) || 0).toFixed(1)}</td>
-                  </>
-                )}
-              </tr>
-            ))}
+                         {currentItems.map((item, index) => (
+               <tr key={index} className="border-b hover:bg-gray-50">
+                 <td className="py-3 px-4">
+                   {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
+                 </td>
+                 <td className="py-3 px-4 font-medium">{item.itemcode}</td>
+                 <td className="py-3 px-4">{item.itemdesc}</td>
+                 <td className="py-3 px-4 text-right font-medium">{item.docQty}</td>
+                 {effectiveMode === 'admin' && (
+                   <>
+                     <td className="py-3 px-4 text-right">{item.docPrice || "-"}</td>
+                     <td className="py-3 px-4 text-right font-medium">{item.docAmt || "-"}</td>
+                                          <td className="py-3 px-4 text-right">{(item.itemprice || 0).toFixed(2)}</td>
+                     <td className="py-3 px-4 text-right font-medium">{((item.docQty * item.price) || 0).toFixed(1)}</td>
+                   </>
+                 )}
+               </tr>
+             ))}
 
             {/* Page Total Row */}
             <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold">

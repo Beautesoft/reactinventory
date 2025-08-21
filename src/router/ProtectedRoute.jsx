@@ -5,6 +5,7 @@ import useAuth from '@/hooks/useAuth';
 const PrivateRoute = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
 
+  // Wait for authentication to initialize before making routing decisions
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">

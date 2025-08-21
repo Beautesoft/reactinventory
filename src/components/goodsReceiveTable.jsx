@@ -22,7 +22,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
 
   // Get user details from localStorage
   const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
-  const showTotalAmount = userDetails?.isSettingViewPrice === "Y";
+  const showTotalAmount = userDetails?.isSettingViewPrice === "True";
 
   // Use ref for caching supplier details
   const supplierCache = useRef(new Map());
