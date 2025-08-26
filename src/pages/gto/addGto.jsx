@@ -39,6 +39,7 @@ import {
   Plus,
   Loader,
   Loader2,
+  Info,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import moment from "moment";
@@ -96,14 +97,13 @@ const EditDialog = memo(
     const [newBatchNo, setNewBatchNo] = useState("");
     console.log(editData,"editData")
 
+    // Check if the item has a batch number
+    const hasBatchNumber = editData?.docBatchNo && editData.docBatchNo.trim() !== "";
+    const showBatchFields = window?.APP_CONFIG?.BATCH_NO === "Yes" && hasBatchNumber;
+
     // Reset states when dialog closes
     useEffect(() => {
       if (!showEditDialog) {
-        // setSelectedBatch(null);
-        // setNewBatchNo("");
-        // setUseExistingBatch(true);
-        // setIsExpiryReadOnly(false);
-        // setBatchOptions([]);
         setValidationErrors([]);
       }
     }, [showEditDialog]);
@@ -116,7 +116,8 @@ const EditDialog = memo(
         if (!editData?.docQty || editData.docQty <= 0) {
           errors.push("Quantity must be greater than 0");
         }
-        if (!editData?.docPrice || editData.docPrice <= 0) {
+        // Only validate price if price viewing is enabled
+        if (userDetails?.isSettingViewPrice === "True" && (!editData?.docPrice || editData.docPrice <= 0)) {
           errors.push("Price must be greater than 0");
         }
       }
@@ -127,8 +128,8 @@ const EditDialog = memo(
       // } else if (!useExistingBatch && !newBatchNo.trim()) {
       //   errors.push("Please enter a new batch number");
       // }
-      // Validate expiry date only if batch functionality is enabled
-      if (window?.APP_CONFIG?.BATCH_NO === "Yes" && !editData?.docExpdate) {
+      // Validate expiry date only if expiry date functionality is enabled
+      if (window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && !editData?.docExpdate) {
         errors.push("Expiry date is required");
       }
 
@@ -165,6 +166,11 @@ const EditDialog = memo(
                 : "Modify item details"}
             </div>
           </DialogHeader>
+          
+
+          
+
+
           {validationErrors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-md p-3">
               <ul className="list-disc pl-5 text-sm text-red-600">
@@ -189,46 +195,53 @@ const EditDialog = memo(
                   disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="price">Price</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  min="0"
-                  value={editData?.docPrice || ""}
-                  isBatchEdit
-                  onChange={(e) => onEditCart(e, "docPrice")}
-                  className="w-full"
-                />
-              </div>
+              {userDetails?.isSettingViewPrice === "True" && (
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    value={editData?.docPrice || ""}
+                    onChange={(e) => onEditCart(e, "docPrice")}
+                    className="w-full"
+                  />
+                </div>
+              )}
             </>
           )}
+          {/* Show expiry date field when EXPIRY_DATE is enabled */}
+          {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
+            <div className="space-y-2">
+              <Label htmlFor="expiry">Expiry Date</Label>
+              <Input
+                id="expiry"
+                type="date"
+                value={editData?.docExpdate || ""}
+                onChange={(e) => onEditCart(e, "docExpdate")}
+                className="w-full"
+                disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
+              />
+            </div>
+          )}
+          {/* Show batch fields when BATCH_NO is enabled */}
           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="expiry">Expiry Date</Label>
-                <Input
-                  id="expiry"
-                  type="date"
-                  value={editData?.docExpdate || ""}
-                  onChange={(e) => onEditCart(e, "docExpdate")}
-                  className="w-full"
-                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="batchNo">Batch No</Label>
-                <Input
-                  id="batchNo"
-                  value={editData?.docBatchNo || ""}
-                  onChange={(e) => onEditCart(e, "docBatchNo")}
-                  placeholder="Enter batchNo"
-                  className="w-full"
-                  maxLength={20}
-                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
-                />
-              </div>
-            </>
+            <div className="space-y-2">
+              <Label htmlFor="batchNo">Batch No</Label>
+              <Input
+                id="batchNo"
+                value={editData?.docBatchNo || ""}
+                className="w-full bg-gray-50"
+                disabled={true}
+                placeholder={editData?.docBatchNo ? "Batch number (read-only)" : "No batch number assigned"}
+              />
+              <p className="text-xs text-gray-500">
+                {editData?.docBatchNo 
+                  ? "Batch numbers cannot be modified during transfers" 
+                  : "Batch numbers can only be assigned during Goods Receive (GRN)"
+                }
+              </p>
+            </div>
           )}
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
@@ -1049,16 +1062,22 @@ function AddGto({ docData }) {
   }, []);
 
   const handleEditSubmit = useCallback(() => {
-    if (!editData.docQty || !editData.docPrice) {
-      toast.error("Quantity and Price are required");
+    if (!editData.docQty) {
+      toast.error("Quantity is required");
+      return;
+    }
+    
+    // Only validate price if price viewing is enabled
+    if (userDetails?.isSettingViewPrice === "True" && !editData.docPrice) {
+      toast.error("Price is required");
       return;
     }
 
     const updatedItem = {
       ...editData,
       docQty: Number(editData.docQty),
-      docPrice: Number(editData.docPrice),
-      docAmt: Number(editData.docQty) * Number(editData.docPrice),
+      docPrice: userDetails?.isSettingViewPrice === "True" ? Number(editData.docPrice) : editData.docPrice,
+      docAmt: userDetails?.isSettingViewPrice === "True" ? Number(editData.docQty) * Number(editData.docPrice) : editData.docAmt,
     };
 
     setCartData((prev) =>
@@ -1069,7 +1088,7 @@ function AddGto({ docData }) {
     setEditData(null);
     setEditingIndex(null);
     toast.success("Item updated successfully");
-  }, [editData, editingIndex]);
+  }, [editData, editingIndex, userDetails?.isSettingViewPrice]);
 
   const editPopup = (item, index) => {
     setIsBatchEdit(false);
@@ -1078,30 +1097,46 @@ function AddGto({ docData }) {
     // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
-      // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
-      if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
-        // Convert ISO date to YYYY-MM-DD format for HTML date input
-        const date = new Date(item.docExpdate);
-        if (!isNaN(date.getTime())) {
-          expiryDate = date.toISOString().split('T')[0];
+      try {
+        // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+        if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+          // Convert ISO date to YYYY-MM-DD format for HTML date input
+          const date = new Date(item.docExpdate);
+          if (!isNaN(date.getTime())) {
+            expiryDate = date.toISOString().split('T')[0];
+          }
+        } 
+        // Handle DD/MM/YYYY format (e.g., "25/08/2025 7:43:32 PM")
+        else if (item.docExpdate.includes('/')) {
+          const parts = item.docExpdate.split(' ')[0].split('/');
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2];
+            expiryDate = `${year}-${month}-${day}`;
+          }
         }
-      } 
-      // Handle DD/MM/YYYY format
-      else if (item.docExpdate.includes('/')) {
-        const parts = item.docExpdate.split(' ')[0].split('/');
-        if (parts.length === 3) {
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2];
-          expiryDate = `${year}-${month}-${day}`;
+        // If it's already in YYYY-MM-DD format, extract just the date part
+        else if (item.docExpdate.includes('-')) {
+          // Extract just the date part (YYYY-MM-DD) from YYYY-MM-DD HH:MM:SS
+          expiryDate = item.docExpdate.split(' ')[0];
         }
+        // Handle other date formats by trying to parse them
+        else {
+          const date = new Date(item.docExpdate);
+          if (!isNaN(date.getTime())) {
+            expiryDate = date.toISOString().split('T')[0];
+          }
+        }
+      } catch (error) {
+        console.error("Error parsing expiry date:", error);
+        expiryDate = "";
       }
-      // If it's already in YYYY-MM-DD format, use as is
-      else if (item.docExpdate.includes('-')) {
-        expiryDate = item.docExpdate;
-      }
-    }
-
+        }
+    
+    console.log("Original docExpdate:", item.docExpdate);
+    console.log("Processed expiryDate:", expiryDate);
+    
     setEditData({
       ...item,
       docQty: Number(item.docQty) || 0,
@@ -1170,6 +1205,50 @@ function AddGto({ docData }) {
     }
     console.log(item, "item in add to cart");
 
+    // Only set docExpdate if batch functionality is enabled
+    let docExpdate = null;
+    if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      // Convert batchexpirydate to ISO 8601 format for storage
+      if (item.batchexpirydate) {
+        try {
+          // Handle different date formats and convert to ISO 8601
+          let date;
+          if (typeof item.batchexpirydate === 'string') {
+            // Handle "DD/MM/YYYY HH:MM:SS AM/PM" format
+            if (item.batchexpirydate.includes('/')) {
+              const parts = item.batchexpirydate.split(' ')[0].split('/');
+              if (parts.length === 3) {
+                const day = parseInt(parts[0]);
+                const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+                const year = parseInt(parts[2]);
+                date = new Date(year, month, day);
+              }
+            } else {
+              // Handle ISO format or other standard formats
+              date = new Date(item.batchexpirydate);
+            }
+          } else {
+            date = new Date(item.batchexpirydate);
+          }
+          
+          if (!isNaN(date.getTime())) {
+            // Format as ISO 8601: YYYY-MM-DD HH:MM:SS
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            
+            docExpdate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          }
+        } catch (error) {
+          console.error("Error converting expiry date:", error);
+          docExpdate = null;
+        }
+      }
+    }
+
     const amount = Number(item.Qty) * Number(item.Price);
 
     const newCartItem = {
@@ -1192,17 +1271,16 @@ function AddGto({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.uom,
-      // docExpdate: item.expiryDate || "",
-      docExpdate: parseBatchExpiry(item.batchexpirydate),
-
+      // Only set docExpdate if batch functionality is enabled and we have a valid date
+      docExpdate: docExpdate,
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
       itemRemark: "",
-      // docBatchNo: item.docBatchNo || null
-      docBatchNo: item.batchno || null,
+      // Only set docBatchNo if batch functionality is enabled
+      docBatchNo: window?.APP_CONFIG?.BATCH_NO === "Yes" ? (item.batchno || null) : null,
       docMdisc: 0,
       recTtl: 0,
       itemprice: Number(item.batchcost) || Number(item.Price) || 0,
@@ -1264,12 +1342,14 @@ function AddGto({ docData }) {
       hqUpdate: false,
       lineNo: item.docLineno,
       itemUom: item.docUom,
-      itemBatch: item.docBatchNo || "",
+      // Only set itemBatch if batch functionality is enabled
+      itemBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
       movType: "TFR",
       itemBatchCost: item.batchCost,
       stockIn: null,
       transPackageLineNo: null,
-      docExpdate: item.docExpdate || null,
+      // Only set docExpdate if batch functionality is enabled and we have a valid date
+              docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
     };
   };
 
@@ -2819,11 +2899,11 @@ function AddGto({ docData }) {
                         Amount
                       </TableHead>
                     )}
+                    {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
+                      <TableHead>Expiry Date</TableHead>
+                    )}
                     {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-                      <>
-                        <TableHead>Expiry Date</TableHead>
-                        <TableHead>Batch No</TableHead>
-                      </>
+                      <TableHead>Batch No</TableHead>
                     )}
                     <TableHead>Remarks</TableHead>
                     {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
@@ -2886,11 +2966,11 @@ function AddGto({ docData }) {
                               {item.docAmt}
                             </TableCell>
                           )}
+                          {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
+                            <TableCell>{format_Date(item.docExpdate)}</TableCell>
+                          )}
                           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-                            <>
-                              <TableCell>{format_Date(item.docExpdate)}</TableCell>
-                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
-                            </>
+                            <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
                           {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (

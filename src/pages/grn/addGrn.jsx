@@ -161,8 +161,8 @@ const EditDialog = memo(
               if (existingBatch) {
                 setSelectedBatch(existingBatch);
                 setUseExistingBatch(true);
-                // Only make expiry readonly if there's a valid expiry date
-                setIsExpiryReadOnly(!!existingBatch.expDate);
+                // In GRN, expiry date should always be editable, even for existing batches
+                setIsExpiryReadOnly(false);
               } else {
                 setNewBatchNo(editData.docBatchNo);
                 setUseExistingBatch(false);
@@ -187,11 +187,12 @@ const EditDialog = memo(
       setUseExistingBatch(true);
 
       if (selected && selected.expDate) {
-        // If batch exists in options and has expiry date, set it and make readonly
+        // If batch exists in options and has expiry date, set it as default but keep editable
         const formattedDate = selected.expDate.split("T")[0]; // Convert to yyyy-MM-dd format
         onEditCart({ target: { value: formattedDate } }, "docExpdate");
         editData.docExpdate = formattedDate;
-        setIsExpiryReadOnly(true);
+        // In GRN, expiry date should always be editable
+        setIsExpiryReadOnly(false);
       } else {
         // If batch doesn't exist or has no expiry date, allow manual entry
         setIsExpiryReadOnly(false);
@@ -297,6 +298,8 @@ const EditDialog = memo(
                     disabled={urlStatus == 7}
                   />
                 </div>
+                {userDetails?.isSettingViewPrice === "True" && (
+
                 <div className="space-y-2">
                   <Label htmlFor="price">Price</Label>
                   <Input
@@ -309,6 +312,7 @@ const EditDialog = memo(
                     className="w-full"
                   />
                 </div>
+                )}
               </>
             )}
             {/* Always show Batch No, Expiry Date, and Remarks */}
@@ -391,8 +395,13 @@ const EditDialog = memo(
                     value={editData?.docExpdate || ""}
                     onChange={(e) => onEditCart(e, "docExpdate")}
                     className="w-full"
-                    readOnly={isExpiryReadOnly || urlStatus == 7}
+                    disabled={urlStatus == 7}
                   />
+                  {isExpiryReadOnly && (
+                    <p className="text-xs text-blue-500">
+                      Expiry date is auto-filled from existing batch
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -1002,7 +1011,7 @@ function AddGrn({ docData }) {
     // const countQuery = `?where=${encodeURIComponent(
     //   JSON.stringify(countFilter.where)
     // )}`;
-    // const filt={
+    // const fil={
     //   site:'MC01'
     // }
     //     const query = `?site=${encodeURIComponent(JSON.stringify(filt))}`;
@@ -1414,32 +1423,45 @@ function AddGrn({ docData }) {
     // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
-      // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
-      if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
-        // Convert ISO date to YYYY-MM-DD format for HTML date input
-        const date = new Date(item.docExpdate);
-        if (!isNaN(date.getTime())) {
-          expiryDate = date.toISOString().split('T')[0];
+      try {
+        // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+        if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+          // Convert ISO date to YYYY-MM-DD format for HTML date input
+          const date = new Date(item.docExpdate);
+          if (!isNaN(date.getTime())) {
+            expiryDate = date.toISOString().split('T')[0];
+          }
+        } 
+        // Handle DD/MM/YYYY format (e.g., "25/08/2025 7:43:32 PM")
+        else if (item.docExpdate.includes('/')) {
+          const parts = item.docExpdate.split(' ')[0].split('/');
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2];
+            expiryDate = `${year}-${month}-${day}`;
+          }
         }
-      } 
-      // Handle DD/MM/YYYY format
-      else if (item.docExpdate.includes('/')) {
-        const parts = item.docExpdate.split(' ')[0].split('/');
-        if (parts.length === 3) {
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2];
-          expiryDate = `${year}-${month}-${day}`;
+        // If it's already in YYYY-MM-DD format, extract just the date part
+        else if (item.docExpdate.includes('-')) {
+          // Extract just the date part (YYYY-MM-DD) from YYYY-MM-DD HH:MM:SS
+          expiryDate = item.docExpdate.split(' ')[0];
         }
-      }
-      // If it's already in YYYY-MM-DD format, use as is
-      else if (item.docExpdate.includes('-')) {
-        expiryDate = item.docExpdate;
+        // Handle other date formats by trying to parse them
+        else {
+          const date = new Date(item.docExpdate);
+          if (!isNaN(date.getTime())) {
+            expiryDate = date.toISOString().split('T')[0];
+          }
+        }
+      } catch (error) {
+        console.error("Error parsing expiry date:", error);
+        expiryDate = "";
       }
     }
     
-    console.log("Original expiry:", item.docExpdate);
-    console.log("Formatted expiry:", expiryDate);
+    console.log("Original docExpdate:", item.docExpdate);
+    console.log("Processed expiryDate:", expiryDate);
     
     const newEditData = {
       ...item,
@@ -1491,6 +1513,50 @@ function AddGrn({ docData }) {
       amount
     });
 
+    // Only set docExpdate if batch functionality is enabled
+    let docExpdate = null;
+    if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      // Convert batchexpirydate to ISO 8601 format for storage
+      if (item.batchexpirydate) {
+        try {
+          // Handle different date formats and convert to ISO 8601
+          let date;
+          if (typeof item.batchexpirydate === 'string') {
+            // Handle "DD/MM/YYYY HH:MM:SS AM/PM" format
+            if (item.batchexpirydate.includes('/')) {
+              const parts = item.batchexpirydate.split(' ')[0].split('/');
+              if (parts.length === 3) {
+                const day = parseInt(parts[0]);
+                const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+                const year = parseInt(parts[2]);
+                date = new Date(year, month, day);
+              }
+            } else {
+              // Handle ISO format or other standard formats
+              date = new Date(item.batchexpirydate);
+            }
+          } else {
+            date = new Date(item.batchexpirydate);
+          }
+          
+          if (!isNaN(date.getTime())) {
+            // Format as ISO 8601: YYYY-MM-DD HH:MM:SS
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            
+            docExpdate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          }
+        } catch (error) {
+          console.error("Error converting expiry date:", error);
+          docExpdate = null;
+        }
+      }
+    }
+
     const newCartItem = {
       id: cartData.length + 1,
       // docId: cartData.length + 1,
@@ -1514,8 +1580,8 @@ function AddGrn({ docData }) {
       createUser: userDetails?.username || "SYSTEM",
       createDate: stockHdrs.docDate,
       docUom: item.uom || "",
-      // docExpdate: item.expiryDate || "",
-            docExpdate: item.batchexpirydate || "",
+      // Only set docExpdate if batch functionality is enabled and we have a valid date
+      docExpdate: docExpdate,
 
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
@@ -1525,8 +1591,11 @@ function AddGrn({ docData }) {
       itemRemark: item?.itemRemark || null,
       itemprice: Number(item.batchcost) || Number(item.Price) || 0,
 
-      // docBatchNo: null,
-      docBatchNo: item.batchno,
+      // Only set docBatchNo if batch functionality is enabled
+      docBatchNo: window?.APP_CONFIG?.BATCH_NO === "Yes" ? (item.batchno || null) : null,
+      
+      // Set useExistingBatch to true if item already has a batch number
+      useExistingBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? !!item.batchno : false,
 
       docMdisc: 0,
       recTtl: 0,
@@ -1579,17 +1648,14 @@ function AddGrn({ docData }) {
       lineNo: item.docLineno,
       itemUom: item.docUom,
       movType: "GRN",
-      itemBatch: item?.docBatchNo,
+      // Only set itemBatch if batch functionality is enabled
+      itemBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
       itemBatchCost: item.batchCost,
       stockIn: null,
       transPackageLineNo: null,
-      docExpdate: item.docExpdate,
+      // Only set docExpdate if batch functionality is enabled and we have a valid date
+              docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
       useExistingBatch: item.useExistingBatch,
-      // docExpdate: process.env.REACT_APP_EXPIRY_DATE === "Yes"
-      //   ? item.docExpdate
-      //     ? new Date(item.docExpdate).toISOString().split('T')[0] + " 00:00:00"
-      //     : null
-      //   : null
     };
   };
 
@@ -2176,9 +2242,12 @@ function AddGrn({ docData }) {
         // await apiService.post("Inventorylogs", inventoryLog);
 
         let batchId;
+        console.log(details,'details')
+
         const stktrns = details.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
+        console.log(stktrns,'stktrns')
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         const itemRequests = stktrns.map((d) => {
           const filter = {
@@ -2395,17 +2464,21 @@ function AddGrn({ docData }) {
                 //     // await apiService.post("Inventorylogs", errorLog);
                 //   });
 
-                                  batchUpdate = {
-                    itemcode: trimmedItemCode,
-                    sitecode: userDetails.siteCode,
-                    uom: d.itemUom,
-                    qty: Number(d.trnQty),
-                    batchcost: Number(d.itemBatchCost),
-                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
-                      batchno: d.itemBatch,
-                    }),
-                    // expDate: d?.docExpdate ? d?.docExpdate : null
-                  };
+                batchUpdate = {
+                  itemcode: trimmedItemCode,
+                  sitecode: userDetails.siteCode,
+                  uom: d.itemUom,
+                  qty: Number(d.trnQty),
+                  batchcost: Number(d.itemBatchCost),
+                  // Only include batch number if batch functionality is enabled
+                  ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                    batchno: d.itemBatch,
+                  }),
+                  // Only include expiry date if expiry date functionality is enabled
+                  ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && d?.docExpdate && {
+                    expDate: d.docExpdate,
+                  }),
+                };
 
                 await apiService
                   .post("ItemBatches/updateqty", batchUpdate)
@@ -2430,8 +2503,14 @@ function AddGrn({ docData }) {
                   uom: d.itemUom,
                   qty: Number(d.trnQty),
                   batchCost: Number(d.itemBatchCost),
-                  batchNo: d.itemBatch,
-                  expDate: d?.docExpdate ? d?.docExpdate : null,
+                  // Only include batch number if batch functionality is enabled
+                  ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                    batchNo: d.itemBatch,
+                  }),
+                  // Only include expiry date if expiry date functionality is enabled
+                  ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && d?.docExpdate && {
+                    expDate: d.docExpdate,
+                  }),
                 };
 
                 await apiService
@@ -2447,33 +2526,32 @@ function AddGrn({ docData }) {
                     };
                   });
               }
-            }
-            else{
+            } else {
+              // Without batch functionality, don't include batch-related fields
               batchUpdate = {
                 itemcode: trimmedItemCode,
                 sitecode: userDetails.siteCode,
                 uom: d.itemUom,
                 qty: Number(d.trnQty),
                 batchcost: Number(d.itemBatchCost),
-
-                // expDate: d?.docExpdate ? d?.docExpdate : null
+                // No batch number or expiry date
               };
 
-            await apiService
-              .post("ItemBatches/updateqty", batchUpdate)
-              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+              await apiService
+                .post("ItemBatches/updateqty", batchUpdate)
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
             }
           }
         } else {

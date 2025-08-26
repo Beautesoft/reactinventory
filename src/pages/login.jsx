@@ -20,6 +20,7 @@ import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import axios from "axios";
+import VersionStamp from "@/components/VersionStamp";
 
 
 const Login = () => {
@@ -272,6 +273,9 @@ const Login = () => {
               {isLoading ? "Logging in..." : "Login"}
             </Button>
           </form>
+          
+          {/* Version Stamp */}
+          <VersionStamp />
         </div>
       </div>
     </div>

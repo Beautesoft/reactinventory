@@ -1106,7 +1106,7 @@ function AddSum({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.itemUom,
-      docExpdate: item.expiryDate || "",
+      docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.expiryDate || "") : "",
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,

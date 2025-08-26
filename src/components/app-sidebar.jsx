@@ -38,6 +38,8 @@ import {
   FiRotateCw,
   FiEdit,
   FiFileText,
+  FiBarChart2,
+  FiTrendingUp,
 } from "react-icons/fi";
 
 import { NavMain } from "./nav-main";
@@ -160,6 +162,16 @@ export function AppSidebar() {
       //   url: "/stock-usage-memo",
       //   icon: FiFileText,
       // },
+      {
+        title: "Stock Balance",
+        url: "/stock-balance",
+        icon: FiBarChart2,
+      },
+      {
+        title: "Stock Movement",
+        url: "/stock-movement",
+        icon: FiTrendingUp,
+      },
     ].filter(item => hasAuthorization(item.title));
 
     // Stock Take is always available for all users

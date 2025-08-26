@@ -5,6 +5,7 @@ import { SidebarTrigger } from "./components/ui/sidebar";
 import { BreadcrumbNav } from "./components/breadCrumbs";
 import { User, MapPin } from "lucide-react";
 import { Toaster } from "sonner";
+import VersionStamp from "./components/VersionStamp";
 
 const Layout = () => {
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
@@ -40,6 +41,11 @@ const Layout = () => {
           <main className="flex-1 px-2 overflow-auto bg-gradient-to-br from-white via-sky-50/30 to-indigo-50/20 dark:from-gray-900 dark:to-gray-800">
             <Outlet />
           </main>
+          
+          {/* Version Stamp Footer */}
+          <div className="flex justify-center py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200">
+            <VersionStamp />
+          </div>
         </div>
       </div>
     </>

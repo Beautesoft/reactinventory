@@ -903,9 +903,9 @@ function AddTake({ docData }) {
         postedQty: 0,
         cancelQty: 0,
         createUser: userDetails?.username || "SYSTEM",
-        docUom: item.docUom || "",
-        docExpdate: item.docExpdate || "",
-        itmBrand: item.itmBrand || "",
+              docUom: item.docUom || "",
+      docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || "") : "",
+      itmBrand: item.itmBrand || "",
         itmRange: item.itmRange || "",
         itmBrandDesc: item.itmBrandDesc || "",
         itmRangeDesc: item.itmRangeDesc || "",
@@ -990,7 +990,7 @@ function AddTake({ docData }) {
           loginUser: userDetails?.username || "SYSTEM",
           siteCode: userDetails?.siteCode,
           itemBatch: item.docBatchNo || null,
-          docExpdate: item.docExpdate || null,
+          docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || null) : null,
         };
       });
 
@@ -1249,7 +1249,7 @@ function AddTake({ docData }) {
      setEditData({
        ...item,
        docQty: Number(item.docQty) || 0,
-       docExpdate: item.docExpdate || "",
+       docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || "") : "",
        itemRemark: item.itemRemark || "",
        ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
          docBatchNo: item.docBatchNo || "",
@@ -1305,7 +1305,7 @@ function AddTake({ docData }) {
        cancelQty: 0,
        createUser: userDetails?.username || "SYSTEM",
        docUom: item.uom || "",
-       docExpdate: item.expiryDate || "",
+       docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.expiryDate || "") : "",
        itmBrand: item.brandCode,
        itmRange: item.rangeCode,
        itmBrandDesc: item.brand,

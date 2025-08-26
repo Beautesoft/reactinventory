@@ -117,7 +117,15 @@ const EditDialog = memo(
         if (!editData?.docQty || editData.docQty <= 0) {
           errors.push("Quantity must be greater than 0");
         }
-        if (!editData?.docPrice || editData.docPrice <= 0) {
+        
+        // Check if quantity exceeds on-hand quantity (for returns, this might be different logic)
+        // Note: For returns, we might want to allow quantities up to the original cart quantity
+        if (editData?.docQty && editData?.originalQty && Number(editData.docQty) > Number(editData.originalQty)) {
+          errors.push("Return quantity cannot exceed original quantity");
+        }
+        
+        // Only validate price if price viewing is enabled
+        if (userDetails?.isSettingViewPrice === "True" && (!editData?.docPrice || editData.docPrice <= 0)) {
           errors.push("Price must be greater than 0");
         }
       }
@@ -128,8 +136,8 @@ const EditDialog = memo(
       // } else if (!useExistingBatch && !newBatchNo.trim()) {
       //   errors.push("Please enter a new batch number");
       // }
-      // Validate expiry date only if batch functionality is enabled
-      if (window?.APP_CONFIG?.BATCH_NO === "Yes" && !editData?.docExpdate) {
+      // Validate expiry date only if expiry date functionality is enabled
+      if (window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && !editData?.docExpdate) {
         errors.push("Expiry date is required");
       }
 
@@ -184,25 +192,31 @@ const EditDialog = memo(
                   id="qty"
                   type="number"
                   min="0"
+                  max={editData?.originalQty || 999999}
                   value={editData?.docQty || ""}
                   onChange={(e) => onEditCart(e, "docQty")}
                   className="w-full"
                   disabled={urlStatus == 7}
-
                 />
+                {editData?.originalQty && (
+                  <p className="text-xs text-gray-500">
+                    Maximum return quantity: {editData.originalQty}
+                  </p>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="price">Price</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  min="0"
-                  value={editData?.docPrice || ""}
-                  isBatchEdit
-                  onChange={(e) => onEditCart(e, "docPrice")}
-                  className="w-full"
-                />
-              </div>
+              {userDetails?.isSettingViewPrice === "True" && (
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    value={editData?.docPrice || ""}
+                    onChange={(e) => onEditCart(e, "docPrice")}
+                    className="w-full"
+                  />
+                </div>
+              )}
             </>
           )}
           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
@@ -228,7 +242,9 @@ const EditDialog = memo(
                   placeholder="Enter batchNo"
                   className="w-full"
                   maxLength={20}
-                  disabled={urlStatus == 7}
+                  // disabled={urlStatus == 7}
+                  disabled={true}
+
 
                 />
               </div>
@@ -1100,12 +1116,14 @@ function AddRtn({ docData }) {
     // Batch and Expiry Date Validation - Only for post
     if (type === "post" && window?.APP_CONFIG?.BATCH_NO === "Yes") {
       cart.forEach((item, index) => {
-        if (!item.docBatchNo) {
+        // Only validate batch number if the item actually has a batch number in inventory
+        if (item.docBatchNo && !item.docBatchNo.trim()) {
           errors.push(
             `Batch number is required for item ${index + 1} (${item.itemcode})`
           );
         }
-        if (!item.docExpdate) {
+        // Only validate expiry date if EXPIRY_DATE setting is enabled
+        if (window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && !item.docExpdate) {
           errors.push(
             `Expiry date is required for item ${index + 1} (${item.itemcode})`
           );
@@ -1167,8 +1185,20 @@ function AddRtn({ docData }) {
 
   const handleEditSubmit = useCallback(
     (updatedEditData) => {
-      if (!updatedEditData.docQty || !updatedEditData.docPrice) {
-        toast.error("Quantity and Price are required");
+      if (!updatedEditData.docQty) {
+        toast.error("Quantity is required");
+        return;
+      }
+      
+      // Check if quantity exceeds original quantity (for returns)
+      if (updatedEditData.docQty && updatedEditData.originalQty && Number(updatedEditData.docQty) > Number(updatedEditData.originalQty)) {
+        toast.error("Return quantity cannot exceed original quantity");
+        return;
+      }
+      
+      // Only validate price if price viewing is enabled
+      if (userDetails?.isSettingViewPrice === "True" && !updatedEditData.docPrice) {
+        toast.error("Price is required");
         return;
       }
 
@@ -1177,9 +1207,10 @@ function AddRtn({ docData }) {
       const updatedItem = {
         ...updatedEditData,
         docQty: Number(updatedEditData.docQty),
-        docPrice: Number(updatedEditData.docPrice),
-        docAmt:
-          Number(updatedEditData.docQty) * Number(updatedEditData.docPrice),
+        docPrice: userDetails?.isSettingViewPrice === "True" ? Number(updatedEditData.docPrice) : updatedEditData.docPrice,
+        docAmt: userDetails?.isSettingViewPrice === "True" 
+          ? Number(updatedEditData.docQty) * Number(updatedEditData.docPrice)
+          : updatedEditData.docAmt,
       };
 
       setCartData((prev) =>
@@ -1191,7 +1222,7 @@ function AddRtn({ docData }) {
       setEditingIndex(null);
       toast.success("Item updated successfully");
     },
-    [editingIndex]
+    [editingIndex, userDetails?.isSettingViewPrice]
   );
 
   const editPopup = (item, index) => {
@@ -1200,33 +1231,50 @@ function AddRtn({ docData }) {
     // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
-      // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
-      if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
-        // Convert ISO date to YYYY-MM-DD format for HTML date input
-        const date = new Date(item.docExpdate);
-        if (!isNaN(date.getTime())) {
-          expiryDate = date.toISOString().split('T')[0];
+      try {
+        // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
+        if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+          // Convert ISO date to YYYY-MM-DD format for HTML date input
+          const date = new Date(item.docExpdate);
+          if (!isNaN(date.getTime())) {
+            expiryDate = date.toISOString().split('T')[0];
+          }
+        } 
+        // Handle DD/MM/YYYY format (e.g., "25/08/2025 7:43:32 PM")
+        else if (item.docExpdate.includes('/')) {
+          const parts = item.docExpdate.split(' ')[0].split('/');
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2];
+            expiryDate = `${year}-${month}-${day}`;
+          }
         }
-      } 
-      // Handle DD/MM/YYYY format
-      else if (item.docExpdate.includes('/')) {
-        const parts = item.docExpdate.split(' ')[0].split('/');
-        if (parts.length === 3) {
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2];
-          expiryDate = `${year}-${month}-${day}`;
+        // If it's already in YYYY-MM-DD format, extract just the date part
+        else if (item.docExpdate.includes('-')) {
+          // Extract just the date part (YYYY-MM-DD) from YYYY-MM-DD HH:MM:SS
+          expiryDate = item.docExpdate.split(' ')[0];
         }
-      }
-      // If it's already in YYYY-MM-DD format, use as is
-      else if (item.docExpdate.includes('-')) {
-        expiryDate = item.docExpdate;
+        // Handle other date formats by trying to parse them
+        else {
+          const date = new Date(item.docExpdate);
+          if (!isNaN(date.getTime())) {
+            expiryDate = date.toISOString().split('T')[0];
+          }
+        }
+      } catch (error) {
+        console.error("Error parsing expiry date:", error);
+        expiryDate = "";
       }
     }
+    
+    console.log("Original docExpdate:", item.docExpdate);
+    console.log("Processed expiryDate:", expiryDate);
     
     setEditData({
       ...item,
       docQty: Number(item.docQty) || 0,
+      originalQty: Number(item.docQty) || 0, // Store original quantity for validation
       docPrice: Number(item.docPrice) || 0,
       docExpdate: expiryDate,
       itemRemark: item.itemRemark || "",
@@ -1257,6 +1305,56 @@ function AddRtn({ docData }) {
       return;
     }
 
+    // Check if quantity exceeds on-hand quantity
+    if (Number(item.Qty) > Number(item.quantity)) {
+      toast.error("Not enough stock available");
+      return;
+    }
+
+    // Only set docExpdate if batch functionality is enabled
+    let docExpdate = null;
+    if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      // Convert batchexpirydate to ISO 8601 format for storage
+      if (item.batchexpirydate) {
+        try {
+          // Handle different date formats and convert to ISO 8601
+          let date;
+          if (typeof item.batchexpirydate === 'string') {
+            // Handle "DD/MM/YYYY HH:MM:SS AM/PM" format
+            if (item.batchexpirydate.includes('/')) {
+              const parts = item.batchexpirydate.split(' ')[0].split('/');
+              if (parts.length === 3) {
+                const day = parseInt(parts[0]);
+                const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+                const year = parseInt(parts[2]);
+                date = new Date(year, month, day);
+              }
+            } else {
+              // Handle ISO format or other standard formats
+              date = new Date(item.batchexpirydate);
+            }
+          } else {
+            date = new Date(item.batchexpirydate);
+          }
+          
+          if (!isNaN(date.getTime())) {
+            // Format as ISO 8601: YYYY-MM-DD HH:MM:SS
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            
+            docExpdate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          }
+        } catch (error) {
+          console.error("Error converting expiry date:", error);
+          docExpdate = null;
+        }
+      }
+    }
+
     const amount = Number(item.Qty) * Number(item.Price);
 
     const newCartItem = {
@@ -1282,7 +1380,8 @@ function AddRtn({ docData }) {
       createUser: userDetails?.username || "SYSTEM",
       createDate: stockHdrs.docDate,
       docUom: item.uom || "",
-      docExpdate: item.expiryDate || "",
+      // Only set docExpdate if batch functionality is enabled and we have a valid date
+      docExpdate: docExpdate,
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
@@ -1292,7 +1391,8 @@ function AddRtn({ docData }) {
       // itemprice: 0,
       itemprice: Number(item.batchcost) || Number(item.Price) || 0,
 
-      docBatchNo: null,
+      // Only set docBatchNo if batch functionality is enabled
+      docBatchNo: window?.APP_CONFIG?.BATCH_NO === "Yes" ? (item.batchno || null) : null,
       docMdisc: 0,
       recTtl: 0,
     };
@@ -1343,17 +1443,16 @@ function AddRtn({ docData }) {
       lineNo: item.docLineno,
       itemUom: item.docUom,
       movType: "VGRN",
-      itemBatch: item.docBatchNo,
+      // Only set itemBatch if batch functionality is enabled
+      itemBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
       itemBatchCost: item.batchCost,
       stockIn: null,
       transPackageLineNo: null,
-      docExpdate: item.docExpdate,
+      // Only set docExpdate if batch functionality is enabled and we have a valid date
+              docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
       useExistingBatch: item.useExistingBatch,
       // docExpdate: process.env.REACT_APP_EXPIRY_DATE === "Yes"
       //   ? item.docExpdate
-      //     ? new Date(item.docExpdate).toISOString().split('T')[0] + " 00:00:00"
-      //     : null
-      //   : null
     };
   };
 

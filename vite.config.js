@@ -15,6 +15,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  
+  // Define build-time environment variables
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.0.0'),
+  },
+  
   server: {
     host: '0.0.0.0',    // Expose to all network interfaces
     port: 3000,         // Specify port number

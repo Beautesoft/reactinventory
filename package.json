@@ -1,11 +1,12 @@
 {
   "name": "inventorynew",
   "private": true,
-  "version": "0.0.0",
+  "version": "2025.08.27.0137",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:stamp": "node scripts/update-version.js && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

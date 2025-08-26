@@ -218,7 +218,7 @@ function ItemTable({
                 )}
               </TableHead>
               {showBatchColumns && <TableHead>Batch No</TableHead>}
-              {showBatchColumns && <TableHead>Batch Expiry</TableHead>}
+              {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && <TableHead>Batch Expiry</TableHead>}
               <TableHead className="font-semibold">{qtyLabel}</TableHead>
               {showVariance && (
                 <TableHead 
@@ -281,7 +281,7 @@ function ItemTable({
                           {item.batchno || "-"}
                         </TableCell>
                       )}
-                      {showBatchColumns && (
+                      {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
                         <TableCell>
                           {format_Date(item.batchexpirydate) || "-"}
                         </TableCell>

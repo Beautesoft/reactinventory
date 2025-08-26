@@ -27,6 +27,8 @@ import AddSum from "./pages/sum/addSum";
 import AddTake from "./pages/take/addTake";
 import StockTake from "./pages/take/stockTake";
 import UserAuthorization from "./pages/userAuthorization";
+import StockBalance from "./pages/reports/stockBalance";
+import StockMovement from "./pages/reports/stockMovement";
 
 function App() {
   return (
@@ -107,6 +109,10 @@ function App() {
                   <Route path="stock-usage-memo/details/:docNo" element={<AddSum />} />
                   <Route path="stock-usage-memo/edit/:docNo" element={<AddSum />} />
                   <Route path="stock-usage-memo/print/:docNo" element={<PrintPreview documentType="sum" />} />
+                  
+                  {/* Report Routes */}
+                  <Route path="stock-balance" element={<StockBalance />} />
+                  <Route path="stock-movement" element={<StockMovement />} />
                   
                   {/* Other Routes */}
                   <Route path="purchase-order" element={<h1>Purchase Order</h1>} />
