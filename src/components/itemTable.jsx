@@ -146,7 +146,7 @@ function ItemTable({
       const month = (date.getMonth() + 1).toString().padStart(2, "0");
       const year = date.getFullYear();
   
-      return `${day}-${month}-${year}`;
+      return `${day}/${month}/${year}`;
     } catch (error) {
       console.error("Date formatting error:", error);
       return "-";

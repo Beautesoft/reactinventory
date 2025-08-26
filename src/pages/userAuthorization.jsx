@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { Users, Shield, RefreshCw, UserPlus, Save } from "lucide-react";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
+import { formatCurrentDate } from "@/utils/utils";
 
 const UserAuthorization = () => {
   const [userList, setUserList] = useState([]);
@@ -340,7 +341,7 @@ const UserAuthorization = () => {
                       Last Updated
                     </p>
                     <p className="text-sm text-blue-700">
-                      {new Date().toLocaleDateString()}
+                      {formatCurrentDate()}
                     </p>
                   </div>
                 </div>

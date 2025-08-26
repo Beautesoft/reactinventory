@@ -1573,6 +1573,107 @@ function AddAdj({ docData }) {
     console.log(stockHdrs, "stockHdrs");
     console.log(cartData, "cartData");
 
+    // Debug: Log the values to understand what's happening
+    console.log("🔍 onSubmit debug:", {
+      docStatus: stockHdrs.docStatus,
+      docStatusType: typeof stockHdrs.docStatus,
+      isSettingPostedChangePrice: userDetails?.isSettingPostedChangePrice,
+      isSettingPostedChangePriceType: typeof userDetails?.isSettingPostedChangePrice,
+      userDetails: userDetails,
+      type: type,
+      urlStatus: urlStatus,
+      urlStatusType: typeof urlStatus
+    });
+
+    // NEW: Handle posted document editing - Check at the very beginning
+    // Use both urlStatus and stockHdrs.docStatus for better detection
+    const isPostedDocument = (stockHdrs.docStatus === "7" || stockHdrs.docStatus === 7) || urlStatus === "7";
+    
+    if (isPostedDocument && userDetails?.isSettingPostedChangePrice === "True") {
+      console.log("✅ Taking EDIT POSTED DOCUMENT path");
+      
+      // Set loading state
+      if (type === "save") {
+        setSaveLoading(true);
+      } else if (type === "post") {
+        setPostLoading(true);
+      }
+
+      try {
+        // Validate
+        if (!validateForm(stockHdrs, cartData)) {
+          setSaveLoading(false);
+          setPostLoading(false);
+          return;
+        }
+
+        const docNo = urlDocNo || stockHdrs.docNo;
+        const details = cartData;
+        
+        // Create header data - for posted docs, only allow editing ref and remarks
+        const headerData = {
+          docNo: stockHdrs.docNo,
+          movCode: stockHdrs.movCode, // Keep original
+          movType: stockHdrs.movType, // Keep original
+          storeNo: stockHdrs.storeNo, // Keep original
+          docRef1: stockHdrs.docRef1, // ALLOW EDITING
+          docRef2: stockHdrs.docRef2, // ALLOW EDITING
+          docLines: stockHdrs.docLines, // Keep original
+          docDate: stockHdrs.docDate, // Keep original
+          postDate: stockHdrs.postDate, // Keep original post date
+          docStatus: "7", // Keep as posted
+          docQty: stockHdrs.docQty, // Keep original - don't recalculate for posted docs
+          docAmt: stockHdrs.docAmt, // Keep original - don't recalculate for posted docs
+          docRemk1: stockHdrs.docRemk1, // ALLOW EDITING
+          staffNo: stockHdrs.staffNo, // Keep original
+          createUser: stockHdrs.createUser, // Keep original
+          createDate: stockHdrs.createDate // Keep original
+        };
+
+        console.log('x1')
+        // Update header
+        await editPostedStockHdrs(headerData);
+        
+        // Update details
+        await editPostedStockDetails(details);
+        
+        // Update Stktrns
+        await editPostedStktrns(details, docNo);
+        
+        // Only update ItemBatches if quantities have changed
+        const hasQuantityChanges = details.some(item => {
+          // Check if this item has a docId (existing item) and if quantities differ
+          if (item.docId) {
+            const originalItem = cartData.find(original => original.docId === item.docId);
+            return originalItem && Number(originalItem.docQty) !== Number(item.docQty);
+          }
+          return false; // New items don't need batch updates
+        });
+        
+        if (hasQuantityChanges) {
+          console.log("🔄 Quantities changed, updating ItemBatches...");
+          await editPostedItemBatches(details);
+        } else {
+          console.log("✅ No quantity changes detected, skipping ItemBatches update");
+        }
+
+        toast.success("Posted document updated successfully");
+        navigate("/stock-adjustment?tab=all");
+        return; // Exit early, don't continue with normal flow
+
+      } catch (error) {
+        console.error("Error updating posted document:", error);
+        toast.error("Failed to update posted document");
+        return;
+      } finally {
+        setSaveLoading(false);
+        setPostLoading(false);
+      }
+    }
+
+    // EXISTING CODE CONTINUES UNCHANGED FROM HERE...
+    console.log("🔄 Taking REGULAR DOCUMENT path");
+    
     // Set loading state based on action type
     if (type === "save") {
       setSaveLoading(true);
@@ -1977,6 +2078,349 @@ function AddAdj({ docData }) {
     navigate(path);
   };
 
+  // Edit Posted Document Functions - START
+  const editPostedStockHdrs = async (data) => {
+    try {
+      console.log("Editing posted stock header:", data);
+      
+      const res = await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${data.docNo}`, data);
+      console.log("Posted stock header updated successfully");
+      return res;
+    } catch (error) {
+      console.error("Error updating posted stock header:", error);
+      throw error;
+    }
+  };
+
+  const editPostedStockDetails = async (details) => {
+    try {
+      console.log("Editing posted stock details:", details);
+
+      // Filter items that have docId (existing items)
+      const itemsToUpdate = details.filter((item) => item.docId && item.docId !== "" && item.docId !== null);
+      
+      if (itemsToUpdate.length === 0) {
+        console.log("No existing items to update");
+        return true;
+      }
+
+      // Process each item for update
+      await Promise.all(
+        itemsToUpdate.map(async (item) => {
+          try {
+            // Update StkMovdocDtls - For posted docs, only allow editing price-related fields and remarks
+            await apiService.post(`StkMovdocDtls/update?[where][docId]=${item.docId}`, {
+              docPrice: item.docPrice, // ALLOW EDITING - This is the main field that can be changed
+              docAmt: item.docAmt, // This will be recalculated based on new price
+              itemRemark: item.itemRemark, // ALLOW EDITING - Remarks can be changed for posted docs
+              // Keep all other fields as original values - they should not be changed for posted docs
+            });
+            
+            console.log(`Updated StkMovdocDtls for docId: ${item.docId}`);
+          } catch (error) {
+            console.error(`Failed to update Stktrns for docId ${item.docId}:`, error);
+            throw error;
+          }
+        })
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Error during posted stock details editing:", error);
+      toast.error("Failed to update some posted document details");
+      throw error;
+    }
+  };
+
+  const editPostedStktrns = async (details, docNo) => {
+    try {
+      console.log("Editing posted Stktrns data:", details);
+
+      await Promise.all(
+        details.map(async (item) => {
+          try {
+            // 1. Get the ORIGINAL Stktrns record (what was posted before)
+            const originalStktrnFilter = {
+              where: {
+                and: [
+                  { trnDocno: docNo },
+                  { storeNo: userDetails.siteCode },
+                  { itemcode: item.itemcode + "0000" }
+                ]
+              }
+            };
+
+            const originalStktrn = await apiService.get(
+              `Stktrns?filter=${encodeURIComponent(JSON.stringify(originalStktrnFilter))}`
+            );
+
+            // 2. Get CURRENT balance from ItemOnQties
+            const currentBalanceFilter = {
+              where: {
+                and: [
+                  { itemcode: item.itemcode + "0000" },
+                  { uom: item.docUom },
+                  { sitecode: userDetails.siteCode }
+                ]
+              }
+            };
+            
+            console.log(`🔍 ItemOnQties filter:`, currentBalanceFilter);
+
+            let newBalQty, newBalCost, itemBatchCost;
+
+            try {
+              const url = `Itemonqties?filter=${encodeURIComponent(JSON.stringify(currentBalanceFilter))}`;
+              console.log(`🔍 ItemOnQties URL:`, url);
+              
+              const resp = await apiService.get(url);
+              console.log(`🔍 ItemOnQties response:`, resp);
+              
+              if (resp && resp.length > 0) {
+                const currentBalance = resp[0];
+                console.log(`🔍 Current balance found:`, currentBalance);
+                
+                if (originalStktrn && originalStktrn.length > 0) {
+                  const original = originalStktrn[0];
+                  console.log(`🔍 Original Stktrns found:`, original);
+                  
+                  // 3. Calculate NEW balance: Current - Original + New
+                  // This is the key difference from regular posting!
+                  newBalQty = Number(currentBalance.trnBalqty) - Number(original.trnQty) + Number(item.docQty);
+                  newBalCost = Number(currentBalance.trnBalcst) - Number(original.trnAmt) + Number(item.docAmt);
+                  
+                  console.log(`🔍 Balance calculation:`, {
+                    currentQty: currentBalance.trnBalqty,
+                    currentCost: currentBalance.trnBalcst,
+                    originalQty: original.trnQty,
+                    originalCost: original.trnAmt,
+                    newQty: item.docQty,
+                    newCost: item.docAmt,
+                    newBalQty: newBalQty,
+                    newBalCost: newBalCost
+                  });
+                } else {
+                  console.log(`🔍 No original Stktrns found, using current balance + new values`);
+                  newBalQty = Number(currentBalance.trnBalqty) + Number(item.docQty);
+                  newBalCost = Number(currentBalance.trnBalcst) + Number(item.docAmt);
+                }
+                
+                itemBatchCost = (item.batchCost || item.docPrice).toString();
+              } else {
+                console.log(`🔍 No ItemOnQties records found for item ${item.itemcode}`);
+                // Fallback: use new values directly
+                newBalQty = Number(item.docQty);
+                newBalCost = Number(item.docAmt);
+                itemBatchCost = item.batchCost;
+              }
+            } catch (error) {
+              console.error(`Error fetching Itemonqties for ${item.itemcode}:`, error);
+              // Fallback: use new values directly
+              newBalQty = Number(item.docQty);
+              newBalCost = Number(item.docAmt);
+              itemBatchCost = item.batchCost;
+            }
+
+            if (originalStktrn && originalStktrn.length > 0) {
+              console.log(`🔄 Found existing Stktrns for item ${item.itemcode}, updating...`);
+              
+              // Update existing Stktrns record with corrected balance calculations
+              const stktrnsUpdate = {
+                trnQty: item.docQty,           // New quantity
+                trnAmt: item.docAmt,           // New amount
+                trnCost: item.docAmt,          // New cost
+                trnBalqty: newBalQty,         // ✅ Corrected balance quantity
+                trnBalcst: newBalCost          // ✅ Corrected balance cost
+              };
+
+              const whereClause = {
+                "trnDocno": docNo,
+                "storeNo": userDetails.siteCode,
+                "itemcode": item.itemcode + "0000"
+              };
+
+              await apiService.post(
+                `Stktrns/update?where=${encodeURIComponent(JSON.stringify(whereClause))}`,
+                stktrnsUpdate
+              );
+
+              console.log(`Updated Stktrns for item: ${item.itemcode} with corrected balances`);
+            } else {
+              console.log(`🆕 No existing Stktrns found for item ${item.itemcode}, creating new...`);
+              
+              // Insert new Stktrns record if doesn't exist
+              const today = new Date();
+              const timeStr = ("0" + today.getHours()).slice(-2) +
+                             ("0" + today.getMinutes()).slice(-2) +
+                             ("0" + today.getSeconds()).slice(-2);
+
+              const newStktrns = {
+                id: null,
+                trnPost: today.toISOString().split("T")[0],
+                trnNo: null,
+                trnDate: stockHdrs.docDate,
+                postTime: timeStr,
+                aperiod: null,
+                itemcode: item.itemcode + "0000",
+                storeNo: userDetails.siteCode,
+                tstoreNo: null,
+                fstoreNo: null,
+                trnDocno: docNo,
+                trnType: "ADJ",
+                trnDbQty: null,
+                trnCrQty: null,
+                trnQty: item.docQty,
+                trnBalqty: newBalQty,         // ✅ Corrected balance quantity
+                trnBalcst: newBalCost,        // ✅ Corrected balance cost
+                trnAmt: item.docAmt,
+                trnCost: item.docAmt,
+                trnRef: null,
+                hqUpdate: false,
+                lineNo: item.docLineno,
+                itemUom: item.docUom,
+                movType: "ADJ",
+                itemBatch: item.docBatchNo,
+                itemBatchCost: itemBatchCost,
+                stockIn: null,
+                transPackageLineNo: null,
+                docExpdate: item.docExpdate
+              };
+
+              await apiService.post("Stktrns", newStktrns);
+              console.log(`Inserted new Stktrns for item: ${item.itemcode} with corrected balances`);
+            }
+
+            // ItemBatches update will be handled separately in editPostedItemBatches function
+
+          } catch (error) {
+            console.error(`Failed to process Stktrns for item ${item.itemcode}:`, error);
+            throw error;
+          }
+        })
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Error during posted Stktrns editing:", error);
+      toast.error("Failed to update stock transaction records");
+      throw error;
+    }
+  };
+
+  const editPostedItemBatches = async (details) => {
+    try {
+      console.log("Editing posted ItemBatches data:", details);
+
+      await Promise.all(
+        details.map(async (item) => {
+          try {
+            // Update ItemBatches - batchCost is static, no weighted average needed
+            const trimmedItemCode = item.itemcode.replace(/0000$/, "");
+            
+            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              // WITH BATCH NUMBERS: Find and update specific batch record
+              console.log(`Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`);
+              
+              const specificBatchFilter = {
+                where: {
+                  and: [
+                    { itemCode: trimmedItemCode },
+                    { siteCode: userDetails.siteCode },
+                    { uom: item.docUom },
+                    { batchNo: item.docBatchNo || "" }
+                  ]
+                }
+              };
+              
+              try {
+                const existingBatch = await apiService.get(
+                  `ItemBatches?filter=${encodeURIComponent(JSON.stringify(specificBatchFilter))}`
+                );
+                
+                if (existingBatch && existingBatch.length > 0) {
+                  const batchRecord = existingBatch[0];
+                  
+                  // Update the existing batch record - batchCost remains static
+                  const batchUpdate = {
+                    itemCode: batchRecord.itemCode,
+                    siteCode: batchRecord.siteCode,
+                    batchNo: batchRecord.batchNo,
+                    uom: batchRecord.uom,
+                    qty: batchRecord.qty, // Keep original total quantity
+                    expDate: batchRecord.expDate, // Keep original expiry date
+                    batchCost: batchRecord.batchCost // Keep original batch cost (static)
+                  };
+                  
+                  await apiService.patch(`ItemBatches/${batchRecord.id}`, batchUpdate);
+                  console.log(`Updated ItemBatches for ${item.itemcode}, batch ${item.docBatchNo}: batchCost remains static at ${batchRecord.batchCost}`);
+                } else {
+                  console.log(`No existing batch found for item ${item.itemcode} with batch number ${item.docBatchNo}`);
+                }
+              } catch (error) {
+                console.error(`Error updating ItemBatches for item ${item.itemcode}:`, error);
+                // Don't throw error here - batch cost update is not critical for the main operation
+              }
+              
+            } else {
+              // WITHOUT BATCH NUMBERS: Update single batch record
+              console.log(`Processing ItemBatch update with BATCH_NO=No for ${item.itemcode}`);
+              
+              const singleBatchFilter = {
+                where: {
+                  and: [
+                    { itemCode: trimmedItemCode },
+                    { siteCode: userDetails.siteCode },
+                    { uom: item.docUom }
+                  ]
+                }
+              };
+              
+              try {
+                const existingBatch = await apiService.get(
+                  `ItemBatches?filter=${encodeURIComponent(JSON.stringify(singleBatchFilter))}`
+                );
+                
+                if (existingBatch && existingBatch.length > 0) {
+                  const batchRecord = existingBatch[0];
+                  
+                  // Update the batch record - batchCost remains static
+                  const batchUpdate = {
+                    itemCode: batchRecord.itemCode,
+                    siteCode: batchRecord.siteCode,
+                    batchNo: batchRecord.batchNo,
+                    uom: batchRecord.uom,
+                    qty: batchRecord.qty, // Keep original total quantity
+                    expDate: batchRecord.expDate, // Keep original expiry date
+                    batchCost: batchRecord.batchCost // Keep original batch cost (static)
+                  };
+                  
+                  await apiService.patch(`ItemBatches/${batchRecord.id}`, batchUpdate);
+                  console.log(`Updated ItemBatches for ${item.itemcode}: batchCost remains static at ${batchRecord.batchCost}`);
+                } else {
+                  console.log(`No existing batch found for item: ${item.itemcode}, skipping batch cost update`);
+                }
+              } catch (error) {
+                console.error(`Error updating ItemBatches for item ${item.itemcode}:`, error);
+                // Don't throw error here - batch cost update is not critical for the main operation
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to process ItemBatches for item ${item.itemcode}:`, error);
+            // Don't throw error here - batch cost update is not critical for the main operation
+          }
+        })
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Error during posted ItemBatches editing:", error);
+      toast.error("Failed to update some ItemBatches records");
+      throw error;
+    }
+  };
+
+  // Edit Posted Document Functions - END
+
   return (
     <>
       <Toaster richColors />
@@ -2005,7 +2449,7 @@ function AddAdj({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || saveLoading}
+                disabled={(stockHdrs.docStatus === 7) || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -2334,12 +2778,12 @@ function AddAdj({ docData }) {
                     <TableHead>UOM</TableHead>
                     <TableHead>Quantity</TableHead>
                     {userDetails?.isSettingViewPrice === "True" && (
-                      <TableHead>Price</TableHead>
+                    <TableHead>Price</TableHead>
                     )}
                     {userDetails?.isSettingViewPrice === "True" && (
-                      <TableHead className="font-semibold text-slate-700">
-                        Amount
-                      </TableHead>
+                    <TableHead className="font-semibold text-slate-700">
+                      Amount
+                    </TableHead>
                     )}
                       {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                         <>
@@ -2398,13 +2842,13 @@ function AddAdj({ docData }) {
                             {item.docQty}
                           </TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell>{item.docPrice}</TableCell>
+                          <TableCell>{item.docPrice}</TableCell>
                           )}
                           
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell className="font-semibold text-slate-700">
-                              {item.docAmt}
-                            </TableCell>
+                          <TableCell className="font-semibold text-slate-700">
+                            {item.docAmt}
+                          </TableCell>
                           )}
                           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                             <>
@@ -2426,14 +2870,14 @@ function AddAdj({ docData }) {
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                                 {urlStatus != 7 && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => onDeleteCart(item, index)}
-                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => onDeleteCart(item, index)}
+                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                                 )}
                               </div>
                             </TableCell>
@@ -2454,9 +2898,9 @@ function AddAdj({ docData }) {
                         {userDetails?.isSettingViewPrice === "True" && <TableCell />}
 
                         {userDetails?.isSettingViewPrice === "True" && (
-                          <TableCell className="font-semibold text-slate-700">
-                            {calculateTotals(cartData).totalAmt.toFixed(2)}
-                          </TableCell>
+                        <TableCell className="font-semibold text-slate-700">
+                          {calculateTotals(cartData).totalAmt.toFixed(2)}
+                        </TableCell>
                         )}
                                                 {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
                           <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />

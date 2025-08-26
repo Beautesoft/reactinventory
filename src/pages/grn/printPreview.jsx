@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import apiService from "@/services/apiService";
-import { buildFilterQuery } from "@/utils/utils";
+import { buildFilterQuery, format_Date, formatCurrentDate } from "@/utils/utils";
 import * as XLSX from "xlsx";
 import html2canvas from "html2canvas-pro";
 import jsPDF from "jspdf";
@@ -207,8 +207,9 @@ function PrintPreview({
   const [zoom, setZoom] = useState("100");
   const [filteredItems, setFilteredItems] = useState([]);
   const [exportFormat, setExportFormat] = useState("");
-  const [selectedMode, setSelectedMode] = useState('user'); // Add mode selection state
+  const [selectedMode, setSelectedMode] = useState(isAdminMode ? 'admin' : 'user'); // Default to admin if user has admin permissions
   const [storeOptions, setStoreOptions] = useState([]); // Store store options
+  const [titles, setTitles] = useState([]); // Store titles data
 
   // Update current mode based on selection and permissions
   const effectiveMode = isAdminMode ? selectedMode : 'user';
@@ -226,7 +227,15 @@ function PrintPreview({
 
   useEffect(() => {
     getStoreList();
+    getTitles();
   }, []);
+
+  // Update selected mode when admin permissions change
+  useEffect(() => {
+    if (isAdminMode && selectedMode === 'user') {
+      setSelectedMode('admin');
+    }
+  }, [isAdminMode, selectedMode]);
 
   // Debug mode detection
   useEffect(() => {
@@ -290,6 +299,28 @@ function PrintPreview({
     return store ? store.label : storeCode;
   };
 
+  const getTitles = async () => {
+    try {
+      // Create filter object with where clause
+      const filter = {
+        where: {
+          productLicense: documentData?.storeNo || userDetails?.siteCode
+          
+        }
+      };
+      
+      // Build query string using the existing utility function
+      const query = buildFilterQuery(filter);
+      
+      const response = await apiService.get(`/Titles${query}`);
+      setTitles(response[0]);
+      console.log("Titles data:", response);
+    } catch (err) {
+      console.error("Error fetching titles:", err);
+      toast.error("Failed to fetch titles");
+    }
+  };
+
   const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
   const currentItems = filteredItems.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -317,7 +348,7 @@ function PrintPreview({
       <div className="grid grid-cols-2 text-sm mb-4">
         <div>
           <p><span className="w-32 inline-block ">{fields.docNo}</span>: {data?.docNo}</p>
-          <p><span className="w-32 inline-block">{fields.docDate}</span>: {new Date(data?.docDate).toLocaleDateString()}</p>
+          <p><span className="w-32 inline-block">{fields.docDate}</span>: {format_Date(data?.docDate)}</p>
           
           {/* Conditional fields based on document type */}
           {fields.docRef1 && (
@@ -344,10 +375,10 @@ function PrintPreview({
           ))}
         </div>
         <div>
-          <p><span className="w-32 inline-block">Print Date</span>: {new Date().toLocaleDateString()}</p>
+          <p><span className="w-32 inline-block">Print Date</span>: {formatCurrentDate()}</p>
           <p><span className="w-32 inline-block">Print Time</span>: {new Date().toLocaleTimeString()}</p>
           <p><span className="w-32 inline-block">Staff Name</span>: {data?.createUser || data?.docAttn || "Support"}</p>
-          <p><span className="w-32 inline-block">StoreNo</span>: {data?.storeNo || "-"}</p>
+          <p><span className="w-32 inline-block">Store</span>: {getStoreName(data?.storeNo) || "-"}</p>
         </div>
       </div>
     );
@@ -356,10 +387,10 @@ function PrintPreview({
   // Dynamic export headers based on document type
   const getExportHeaders = (config) => {
     const baseHeaders = [
-      ["Company:", userDetails?.siteName],
-      ["Address:", userDetails?.siteAddress],
-      ["City:", `${userDetails?.siteCity} ${userDetails?.sitePostCode}`],
-      ["Phone:", userDetails?.sitePhone],
+      titles ? [titles.companyHeader1] : ["Company:", userDetails?.siteName],
+      titles ? [titles.companyHeader2] : ["Address:", userDetails?.siteAddress],
+      titles ? [titles.companyHeader3] : ["City:", `${userDetails?.siteCity} ${userDetails?.sitePostCode}`],
+      titles ? [titles.companyHeader4] : ["Phone:", userDetails?.sitePhone],
       [""],
       [`${config.docType} No:`, documentData?.docNo],
     ];
@@ -383,8 +414,8 @@ function PrintPreview({
     
     baseHeaders.push(
       ["Staff Name:", documentData?.docAttn || documentData?.createUser || "Support"],
-      [`${config.docType} Date:`, new Date(documentData?.docDate).toLocaleDateString()],
-      ["Store:", documentData?.storeNo || "-"],
+      [`${config.docType} Date:`, format_Date(documentData?.docDate)],
+      ["Store:", getStoreName(documentData?.storeNo) || "-"],
       [""]
     );
     
@@ -402,6 +433,8 @@ function PrintPreview({
 
         // Add header information
         const headerData = getExportHeaders(config);
+
+
 
         // Convert items to Excel format
         const tableHeaders = [
@@ -444,6 +477,19 @@ function PrintPreview({
          }
         const totalsData = [totalsRow];
 
+        // Add signature section for GRN and GTO
+        const signatureData = [];
+        if (documentType === 'grn' || documentType === 'gto') {
+          signatureData.push(
+            [""],
+            ["Authorised Signature:"],
+            ["Sender:"],
+            ["Delivery Man:"],
+            ["Receiver:"],
+            ["Remarks:"]
+          );
+        }
+
         // Combine all data
         const excelData = [
           ...headerData,
@@ -451,6 +497,7 @@ function PrintPreview({
           ...itemsData,
           [""],
           ...totalsData,
+          ...signatureData,
         ];
 
         const worksheet = XLSX.utils.aoa_to_sheet(excelData);
@@ -649,13 +696,26 @@ function PrintPreview({
         className="print-content max-w-6xl mx-auto p-6 border rounded-lg"
       >
         <div className="text-center mb-6">
-          <h2 className="font-bold">{userDetails?.siteName}</h2>
-          <p className="text-sm">{userDetails?.siteAddress}</p>
-          <p className="text-sm">
-            {userDetails?.siteCity} {userDetails?.sitePostCode}
-          </p>
-          <p className="text-sm">Tel: {userDetails?.sitePhone}</p>
+          {titles ? (
+            <>
+              <h2 className="font-bold">{titles.companyHeader1}</h2>
+              <p className="text-sm">{titles.companyHeader2}</p>
+              <p className="text-sm">{titles.companyHeader3}</p>
+              <p className="text-sm">{titles.companyHeader4}</p>
+            </>
+          ) : (
+            <>
+              <h2 className="font-bold">{userDetails?.siteName}</h2>
+              <p className="text-sm">{userDetails?.siteAddress}</p>
+              <p className="text-sm">
+                {userDetails?.siteCity} {userDetails?.sitePostCode}
+              </p>
+              <p className="text-sm">Tel: {userDetails?.sitePhone}</p>
+            </>
+          )}
         </div>
+
+
 
         <div className="bg-gray-100 py-2 px-4 mb-6">
           <div className="flex justify-between items-center">
@@ -693,7 +753,7 @@ function PrintPreview({
                      <td className="py-3 px-4 text-right">{item.docPrice || "-"}</td>
                      <td className="py-3 px-4 text-right font-medium">{item.docAmt || "-"}</td>
                                           <td className="py-3 px-4 text-right">{(item.itemprice || 0).toFixed(2)}</td>
-                     <td className="py-3 px-4 text-right font-medium">{((item.docQty * item.price) || 0).toFixed(1)}</td>
+                     <td className="py-3 px-4 text-right font-medium">{((item.docQty * item.itemprice) || 0).toFixed(2)}</td>
                    </>
                  )}
                </tr>
@@ -717,10 +777,15 @@ function PrintPreview({
                     {currentItems.reduce(
                       (sum, item) => sum + (item.docAmt || 0),
                       0
-                    )}
+                    ).toFixed(2)}
                   </td>
                   <td className="py-3 px-4 text-right">-</td>
-                  <td className="py-3 px-4 text-right">-</td>
+                  <td className="py-3 px-4 text-right font-bold text-blue-600">
+                    {currentItems.reduce(
+                      (sum, item) => sum + ((item.docQty * item.itemprice) || 0),
+                      0
+                    ).toFixed(2)}
+                  </td>
                 </>
               )}
             </tr>
@@ -744,10 +809,15 @@ function PrintPreview({
                       {filteredItems.reduce(
                         (sum, item) => sum + (item.docAmt || 0),
                         0
-                      )}
+                      ).toFixed(2)}
                     </td>
                     <td className="py-4 px-4 text-right">-</td>
-                    <td className="py-4 px-4 text-right">-</td>
+                    <td className="py-4 px-4 text-right text-blue-800">
+                      {filteredItems.reduce(
+                        (sum, item) => sum + ((item.docQty * item.itemprice) || 0),
+                        0
+                      ).toFixed(2)}
+                    </td>
                   </>
                 )}
               </tr>
@@ -759,6 +829,19 @@ function PrintPreview({
         {customFooter && (
           <div className="mt-4">
             {customFooter}
+          </div>
+        )}
+
+        {/* Signature Section for GRN and GTO */}
+        {(documentType === 'grn' || documentType === 'gto') && (
+          <div className="mt-4 pt-4 border-t border-gray-300">
+            <div className="space-y-2">
+              <p className="font-semibold text-sm">Authorised Signature:</p>
+              <p className="font-semibold text-sm">Sender:</p>
+              <p className="font-semibold text-sm">Delivery Man:</p>
+              <p className="font-semibold text-sm">Receiver:</p>
+              <p className="font-semibold text-sm">Remarks:</p>
+            </div>
           </div>
         )}
       </div>

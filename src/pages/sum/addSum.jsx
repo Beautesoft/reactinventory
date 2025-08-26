@@ -1244,7 +1244,7 @@ function AddSum({ docData }) {
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || !stockHdrs.docNo}
+                disabled={(stockHdrs.docStatus === 7 ) || !stockHdrs.docNo}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
