@@ -111,7 +111,7 @@ const Login = () => {
 
       if (response.success === "1") {
         // Fetch user authorizations
-        const userAuthorizations = await fetchUserAuthorizations(response.userCode||username);
+        const userAuthorizations = await fetchUserAuthorizations(username||response.userCode);
         
         const successData = {
           // emp_code: data.emp_code ?? "",
