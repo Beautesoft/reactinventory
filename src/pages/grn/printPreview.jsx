@@ -293,7 +293,7 @@ function PrintPreview({
       colSpan: 3
     },
     admin: {
-      headers: ['No', 'Item Code', 'Item Description', 'Qty', 'Unit Price', 'Amount', ' Cost', 'Total Cost'],
+      headers: ['No', 'Item Code', 'Item Description', 'Qty', 'Unit Price', 'Amount', 'Cost', 'Total Cost'],
       keys: ['no', 'itemcode', 'itemdesc', 'docQty', 'docPrice', 'docAmt', 'itemprice', 'totalCost'],
       widths: [8, 15, 35, 10, 15, 15, 15, 15],
       alignments: ['left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
@@ -308,11 +308,12 @@ function PrintPreview({
   const [filteredItems, setFilteredItems] = useState([]);
   const [exportFormat, setExportFormat] = useState("");
   const [selectedMode, setSelectedMode] = useState(isAdminMode ? 'admin' : 'user'); // Default to admin if user has admin permissions
+  const [hasManuallySelectedMode, setHasManuallySelectedMode] = useState(false); // Track if user manually selected mode
   const [storeOptions, setStoreOptions] = useState([]); // Store store options
   const [titles, setTitles] = useState([]); // Store titles data
 
   // Update current mode based on selection and permissions
-  const effectiveMode = isAdminMode ? selectedMode : 'user';
+  const effectiveMode = selectedMode; // Allow mode switching regardless of admin status
   const currentColumnConfig = columnConfigs[effectiveMode];
 
   // Add print styles to document head
@@ -343,10 +344,18 @@ function PrintPreview({
 
   // Update selected mode when admin permissions change
   useEffect(() => {
-    if (isAdminMode && selectedMode === 'user') {
-      setSelectedMode('admin');
+    // Only auto-switch if user hasn't manually selected a mode
+    if (!hasManuallySelectedMode) {
+      // If user gains admin permissions, default to admin mode
+      if (isAdminMode && selectedMode === 'user') {
+        setSelectedMode('admin');
+      }
+      // If user loses admin permissions, force to user mode
+      if (!isAdminMode && selectedMode === 'admin') {
+        setSelectedMode('user');
+      }
     }
-  }, [isAdminMode, selectedMode]);
+  }, [isAdminMode, selectedMode, hasManuallySelectedMode]);
 
   // Debug mode detection
   useEffect(() => {
@@ -361,7 +370,7 @@ function PrintPreview({
       headers: currentColumnConfig.headers,
       colSpan: currentColumnConfig.colSpan,
       headerCount: currentColumnConfig.headers.length,
-      expectedColSpan: effectiveMode === 'admin' ? 4 : 4
+      expectedColSpan: effectiveMode === 'admin' ? 7 : 3
     });
   }, [userDetails, isAdminMode, selectedMode, effectiveMode, currentColumnConfig]);
 
@@ -379,9 +388,14 @@ function PrintPreview({
 
   const getDocumentDetails = async (filter) => {
     try {
+      // const response = await apiService.get(
+      //   `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
+      // );
+
       const response = await apiService.get(
-        `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
+        `Stkprintlists${buildFilterQuery(filter ?? filter)}`
       );
+
       setItems(response);
     } catch (err) {
       console.error("Error fetching document details:", err);
@@ -712,21 +726,23 @@ function PrintPreview({
             Back
           </Button>
 
-          <div className="flex items-center gap-2">
-             {/* Mode Selector - At the very top */}
-        {isAdminMode && (
-          <div className=" flex justify-start">
-            <Select value={selectedMode} onValueChange={setSelectedMode}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Select Mode" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">User Print Preview</SelectItem>
-                <SelectItem value="admin">Admin Print Preview</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+                  <div className="flex items-center gap-2">
+          {/* Mode Selector - Available for all users */}
+        <div className="flex justify-start">
+          <Select value={selectedMode} onValueChange={(value) => {
+            console.log('Mode changed from', selectedMode, 'to', value);
+            setSelectedMode(value);
+            setHasManuallySelectedMode(true); // Mark that user manually selected mode
+          }}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select Mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="user">User Print Preview</SelectItem>
+              {isAdminMode && <SelectItem value="admin">Admin Print Preview</SelectItem>}
+            </SelectContent>
+          </Select>
+        </div>
             <Input
               placeholder="Search in document..."
               value={searchTerm}
@@ -853,7 +869,7 @@ function PrintPreview({
               {currentColumnConfig.headers.map((header, index) => (
                 <th 
                   key={index} 
-                  className={`py-3 px-4 text-${currentColumnConfig.alignments[index]} font-semibold`}
+                  className={`py-3 px-4 text-${currentColumnConfig.alignments[index] || 'left'} font-semibold`}
                 >
                   {header}
                 </th>

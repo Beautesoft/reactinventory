@@ -1,7 +1,7 @@
 {
   "name": "inventorynew",
   "private": true,
-  "version": "2025.08.27.0231",
+  "version": "2025.08.27.1746",
   "type": "module",
   "scripts": {
     "dev": "vite",
