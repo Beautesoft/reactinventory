@@ -120,7 +120,7 @@ const Login = () => {
           usercode: response.userCode,
           isSettingEnabled: response.isSettingEnabled,
           isSettingViewCost: response.isSettingViewCost,
-          isSettingViewPrice: response.isSettingViewPrice,
+          isSettingViewPrice:response.isSettingViewPrice,
           isSettingPostedChangePrice: response.isSettingPostedChangePrice,
           // token: data.token,
           siteCode: selectedSalon.itemsiteCode,

@@ -88,6 +88,106 @@ const ZOOM_OPTIONS = [
   { value: "200", label: "200%" },
 ];
 
+// Print-specific CSS styles
+const printStyles = `
+  @media print {
+    .print-content {
+      max-width: none !important;
+      padding: 5mm !important;
+      margin: 0 !important;
+      border: none !important;
+    }
+    
+    .print-table {
+      font-size: 10px !important;
+      line-height: 1.2 !important;
+    }
+    
+    .print-table th,
+    .print-table td {
+      padding: 4px 6px !important;
+      border: 1px solid #ccc !important;
+    }
+    
+    .print-table th {
+      background-color: #f0f0f0 !important;
+      font-weight: bold !important;
+    }
+    
+    .print-header {
+      margin-bottom: 15px !important;
+    }
+    
+    .print-header h2 {
+      font-size: 16px !important;
+      margin: 4px 0 !important;
+    }
+    
+    .print-header p {
+      font-size: 11px !important;
+      margin: 2px 0 !important;
+    }
+    
+    .print-title {
+      font-size: 14px !important;
+      margin: 8px 0 !important;
+    }
+    
+    .print-fields {
+      font-size: 10px !important;
+      margin: 8px 0 !important;
+    }
+    
+    .print-fields p {
+      margin: 3px 0 !important;
+    }
+    
+    .print-signature {
+      font-size: 10px !important;
+      margin: 5px 0 !important;
+    }
+    
+    .print-signature p {
+      margin: 2px 0 !important;
+    }
+    
+    /* Hide non-essential elements in print */
+    .print:hidden {
+      display: none !important;
+    }
+    
+    /* Page break optimization */
+    .print-table tr {
+      page-break-inside: avoid !important;
+    }
+    
+    /* Optimize table row spacing for print */
+    .print-row {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+    
+    .print-cell {
+      padding: 3px 4px !important;
+      height: auto !important;
+      min-height: 0 !important;
+      line-height: 1.3 !important;
+    }
+    
+    /* Reduce margins and padding for print */
+    .print-table th {
+      padding: 3px 4px !important;
+      height: auto !important;
+      min-height: 0 !important;
+    }
+    
+    /* Ensure consistent spacing */
+    * {
+      box-sizing: border-box !important;
+    }
+  }
+`;
+
 // Document type configurations
 const DOCUMENT_CONFIGS = {
   'grn': {
@@ -214,6 +314,17 @@ function PrintPreview({
   // Update current mode based on selection and permissions
   const effectiveMode = isAdminMode ? selectedMode : 'user';
   const currentColumnConfig = columnConfigs[effectiveMode];
+
+  // Add print styles to document head
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = printStyles;
+    document.head.appendChild(styleElement);
+
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
 
   useEffect(() => {
     const filter = {
@@ -694,8 +805,16 @@ function PrintPreview({
       <div
         id="printable-content"
         className="print-content max-w-6xl mx-auto p-6 border rounded-lg"
+        style={{
+          '@media print': {
+            maxWidth: 'none',
+            padding: '10px',
+            margin: '0',
+            border: 'none'
+          }
+        }}
       >
-        <div className="text-center mb-6">
+        <div className="text-center mb-6 print-header">
           {titles ? (
             <>
               <h2 className="font-bold">{titles.companyHeader1}</h2>
@@ -717,16 +836,18 @@ function PrintPreview({
 
 
 
-        <div className="bg-gray-100 py-2 px-4 mb-6">
+        <div className="bg-gray-100 py-2 px-4 mb-6 print-title">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-lg">{finalTitle}</h3>
           </div>
         </div>
 
         {/* Dynamic document fields */}
-        {renderDocumentFields({ ...config, fields: finalFields }, documentData)}
+        <div className="print-fields">
+          {renderDocumentFields({ ...config, fields: finalFields }, documentData)}
+        </div>
 
-        <table className="w-full text-sm border-collapse mb-6">
+        <table className="w-full text-sm border-collapse mb-6 print-table">
           <thead>
             <tr className="border-y bg-gray-50">
               {currentColumnConfig.headers.map((header, index) => (
@@ -740,26 +861,27 @@ function PrintPreview({
             </tr>
           </thead>
           <tbody>
-                         {currentItems.map((item, index) => (
-               <tr key={index} className="border-b hover:bg-gray-50">
-                 <td className="py-3 px-4">
-                   {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
-                 </td>
-                 <td className="py-3 px-4 font-medium">{item.itemcode}</td>
-                 <td className="py-3 px-4">{item.itemdesc}</td>
-                 <td className="py-3 px-4 text-right font-medium">{item.docQty}</td>
-                 {effectiveMode === 'admin' && (
-                   <>
-                     <td className="py-3 px-4 text-right">{item.docPrice || "-"}</td>
-                     <td className="py-3 px-4 text-right font-medium">{item.docAmt || "-"}</td>
-                                          <td className="py-3 px-4 text-right">{(item.itemprice || 0).toFixed(2)}</td>
-                     <td className="py-3 px-4 text-right font-medium">{((item.docQty * item.itemprice) || 0).toFixed(2)}</td>
-                   </>
-                 )}
-               </tr>
-             ))}
+                                     {currentItems.map((item, index) => (
+              <tr key={index} className="border-b hover:bg-gray-50 print-row">
+                <td className="py-3 px-3 print-cell">
+                  {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
+                </td>
+                <td className="py-3 px-3 print-cell font-medium">{item.itemcode}</td>
+                <td className="py-3 px-3 print-cell">{item.itemdesc}</td>
+                <td className="py-3 px-3 print-cell text-right font-medium">{item.docQty}</td>
+                {effectiveMode === 'admin' && (
+                  <>
+                    <td className="py-3 px-3 print-cell text-right">{item.docPrice || "-"}</td>
+                    <td className="py-3 px-3 print-cell text-right font-medium">{item.docAmt || "-"}</td>
+                    <td className="py-3 px-3 print-cell text-right">{(item.itemprice || 0).toFixed(2)}</td>
+                    <td className="py-3 px-3 print-cell text-right font-medium">{((item.docQty * item.itemprice) || 0).toFixed(2)}</td>
+                  </>
+                )}
+              </tr>
+            ))}
 
-            {/* Page Total Row */}
+            {/* Page Total Row - Commented out for now, can be re-enabled later */}
+            {/* 
             <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold">
               <td colSpan={currentColumnConfig.colSpan} className="py-3 px-4 text-right font-bold">
                 Page Total:
@@ -789,6 +911,7 @@ function PrintPreview({
                 </>
               )}
             </tr>
+            */}
 
             {/* Grand Total Row - Only show on last page */}
             {currentPage === totalPages && (
@@ -822,6 +945,23 @@ function PrintPreview({
                 )}
               </tr>
             )}
+
+            {/* Signature Section - Show on every page */}
+            {(documentType === 'grn' || documentType === 'gto') && (
+              <>
+                <tr className="border-t border-gray-300">
+                  <td colSpan={currentColumnConfig.headers.length} className="py-4 px-4">
+                    <div className="space-y-2 print-signature">
+                      <p className="font-semibold text-sm">Authorised Signature:</p>
+                      <p className="font-semibold text-sm">Sender:</p>
+                      <p className="font-semibold text-sm">Delivery Man:</p>
+                      <p className="font-semibold text-sm">Receiver:</p>
+                      <p className="font-semibold text-sm">Remarks:</p>
+                    </div>
+                  </td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
 
@@ -832,18 +972,7 @@ function PrintPreview({
           </div>
         )}
 
-        {/* Signature Section for GRN and GTO */}
-        {(documentType === 'grn' || documentType === 'gto') && (
-          <div className="mt-4 pt-4 border-t border-gray-300">
-            <div className="space-y-2">
-              <p className="font-semibold text-sm">Authorised Signature:</p>
-              <p className="font-semibold text-sm">Sender:</p>
-              <p className="font-semibold text-sm">Delivery Man:</p>
-              <p className="font-semibold text-sm">Receiver:</p>
-              <p className="font-semibold text-sm">Remarks:</p>
-            </div>
-          </div>
-        )}
+        {/* Signature Section is now displayed in the table on every page */}
       </div>
     </div>
   );
