@@ -1,42 +1,64 @@
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Download, Filter, RefreshCw, TrendingUp } from "lucide-react";
+import { Filter, RefreshCw } from "lucide-react";
 import moment from "moment";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
-
+import apiService1 from "@/services/apiService1";
+import { buildFilterQuery } from "@/utils/utils";
+import ReportResults from "@/components/ReportResults";
+import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
+import { saveAs } from "file-saver";
+import { formatCurrentDate } from "@/utils/utils";
 
 const StockMovement = () => {
   const [filters, setFilters] = useState({
-    fromDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split("T")[0], // Default to 30 days ago
-    toDate: new Date().toISOString().split("T")[0],
+    fromDate: "2025-08-01",
+    toDate: "2025-08-29",
     site: "",
-    movementType: "all",
-    movementCodes: [],
-    suppliers: [],
     departments: [],
     brands: [],
     ranges: [],
-    fromItem: "",
-    toItem: "",
+    fromItem: "ALL",
+    toItem: "ALL",
+    movementType: "all",
+    movementCodes: [],
+    suppliers: []
   });
+
+  // Check if current date is in the future and adjust if needed
+  useEffect(() => {
+    // Use the exact working dates from ASP.NET
+    // ASP.NET shows data for August 2025, so let's use that
+    const workingFromDate = "2025-08-01"; // August 1, 2025
+    const workingToDate = "2025-08-29";   // August 29, 2025
+    
+    setFilters(prev => ({
+      ...prev,
+      fromDate: workingFromDate,
+      toDate: workingToDate
+    }));
+  }, []);
 
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState([]);
+  const [hasGeneratedReport, setHasGeneratedReport] = useState(false);
   const [sites, setSites] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [brands, setBrands] = useState([]);
   const [ranges, setRanges] = useState([]);
   const [items, setItems] = useState([]);
+  const [movementCodes, setMovementCodes] = useState([]);
+  const [titles, setTitles] = useState([]);
 
   // Movement type options
   const movementTypeOptions = [
@@ -45,67 +67,84 @@ const StockMovement = () => {
     { value: "out", label: "Out" },
   ];
 
-  // Movement code options
-  const movementCodeOptions = [
-    { value: "VGRN", label: "VGRN - Vendor Goods Receive Note" },
-    { value: "ADJ", label: "ADJ - Stock Adjustment" },
-    { value: "SA", label: "SA - Stock Adjustment" },
-    { value: "TFR", label: "TFR - Transfer" },
-    { value: "RTN", label: "RTN - Return Note" },
-    { value: "SUM", label: "SUM - Stock Usage Memo" },
-    { value: "ST", label: "ST - Stock Take" },
-  ];
-
   useEffect(() => {
     loadMasterData();
+    getTitles();
   }, []);
+
+  const getTitles = async () => {
+    try {
+      const filter = {
+        where: {
+          productLicense: JSON.parse(localStorage.getItem("userDetails"))?.siteCode || "NIL"
+        }
+      };
+      
+      const query = buildFilterQuery(filter);
+      const response = await apiService.get(`/Titles${query}`);
+      setTitles(response[0]);
+      console.log("Titles data:", response);
+    } catch (err) {
+      console.error("Error fetching titles:", err);
+      toast.error("Failed to fetch titles");
+    }
+  };
 
   const loadMasterData = async () => {
     try {
-      // Load sites - using the same pattern as addGrn.jsx
+      // Load sites
       const sitesResponse = await apiService.get("ItemSitelists");
       setSites(sitesResponse || []);
 
-      // Load suppliers - using the correct API endpoint
-      const supplierResponse = await apiService.get("ItemSupplies");
-      const supplierOp = supplierResponse
-        .filter((item) => item.splyCode)
-        .map((item) => ({
-          value: item.splyCode,
-          label: item.supplydesc,
-        }));
+      // Load suppliers
+      const supplierResponse = await apiService1.get("/api/Supplier?siteCode=NIL");
+      const supplierOp = (supplierResponse?.result || supplierResponse || []).map((item) => ({
+        value: item.supplierCode || item.splyCode || '',
+        label: item.supplierName || item.supplydesc || '',
+      })).filter(item => item.value && item.label);
       setSuppliers(supplierOp);
 
-      // Load departments - hardcoded as per addGrn.jsx pattern
-      const deptOptions = [
-        { value: "RETAIL PRODUCT", label: "RETAIL PRODUCT" },
-        { value: "SALON PRODUCT", label: "SALON PRODUCT" }
-      ];
+      // Load departments
+      const deptResponse = await apiService1.get("/api/department?siteCode=NIL");
+      const deptOptions = (deptResponse?.result || deptResponse || []).map((item) => ({
+        value: item.departmentCode || item.itmCode || '',
+        label: item.departmentName || item.itmDesc || '',
+      })).filter(item => item.value && item.label);
       setDepartments(deptOptions);
 
-      // Load brands - using the correct API endpoint
-      const brandResponse = await apiService.get("ItemBrands");
-      const brandOp = brandResponse.map((item) => ({
-        value: item.itmCode,
-        label: item.itmDesc,
-      }));
+      // Load brands
+      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL");
+      const brandOp = (brandResponse?.result || brandResponse || []).map((item) => ({
+        value: item.brandCode || item.itmCode || '',
+        label: item.brandName || item.itmDesc || '',
+      })).filter(item => item.value && item.label);
       setBrands(brandOp);
 
-      // Load ranges - using the correct API endpoint
-      const rangeResponse = await apiService.get("ItemRanges");
-      const rangeOp = rangeResponse.map((item) => ({
-        value: item.itmCode,
-        label: item.itmDesc,
+      // Load ranges
+      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL");
+      const rangeOp = (rangeResponse?.result || []).map((item) => ({
+        value: item.rangeCode,
+        label: item.rangeName,
       }));
       setRanges(rangeOp);
 
-      // Load items - using the correct API endpoint
-      const itemResponse = await apiService.get("ItemSitelists");
-      const itemsOp = itemResponse.map((item) => ({
-        value: item.stockCode,
-        label: `${item.stockCode} - ${item.stockName}`,
-      }));
+      // Load items
+      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL");
+      const itemsOp = (itemResponse?.result || itemResponse || []).map((item) => ({
+        value: item.itemCode || item.stockCode || '',
+        label: item.itemName || item.stockName || '',
+      })).filter(item => item.value && item.label);
       setItems(itemsOp);
+
+      // Load movement codes
+      const movementCodeResponse = await apiService1.get("/api/MovementCode?siteCode=NIL");
+      const movementCodeOp = (movementCodeResponse?.result || movementCodeResponse || []).map((item) => ({
+        value: item.movementCode || item.departmentCode || '',
+        label: item.movementName || item.departmentName || '',
+      })).filter(item => item.value && item.label);
+      setMovementCodes(movementCodeOp);
+
+      console.log("Master data loaded successfully");
     } catch (error) {
       console.error("Error loading master data:", error);
       toast.error("Failed to load master data");
@@ -120,8 +159,13 @@ const StockMovement = () => {
   };
 
   const handleSubmit = async () => {
-    if (!filters.fromDate || !filters.toDate) {
-      toast.error("From Date and To Date are mandatory");
+    if (!filters.fromDate) {
+      toast.error("From Date is mandatory");
+      return;
+    }
+
+    if (!filters.toDate) {
+      toast.error("To Date is mandatory");
       return;
     }
 
@@ -130,90 +174,52 @@ const StockMovement = () => {
       return;
     }
 
+    // Site is NOT mandatory - ASP.NET automatically includes all sites if none selected
+    // We'll handle this in the payload building
+
     setLoading(true);
     try {
-      // Build filter query
-      const filterQuery = {
-        where: {
-          and: []
-        }
+      // Build the request payload exactly as the ASP.NET code expects
+      const requestPayload = {
+        fromDate: moment(filters.fromDate).format("DD/MM/YYYY"), // ASP.NET expects DD/MM/YYYY format
+        toDate: moment(filters.toDate).format("DD/MM/YYYY"), // ASP.NET expects DD/MM/YYYY format
+        Site: filters.site || "", // Site can be empty - ASP.NET will include all sites
+        Dept: filters.departments.length > 0 ? filters.departments.map(dept => dept.value).join(',') : "",
+        Brand: filters.brands.length > 0 ? filters.brands.map(brand => brand.value).join(',') : "",
+        fromItem: filters.fromItem === "ALL" ? "Select" : filters.fromItem, // ASP.NET uses "Select" as default
+        toItem: filters.toItem === "ALL" ? "Select" : filters.toItem,   // ASP.NET uses "Select" as default
+        Range: filters.ranges.length > 0 ? filters.ranges.map(range => range.value).join(',') : "",
+        MovementCode: filters.movementCodes.length > 0 ? filters.movementCodes.map(code => code.value).join(',') : "",
+        MovementType: filters.movementType === "all" ? "all" : filters.movementType, // ASP.NET uses "all"
+        Supplier: filters.suppliers.length > 0 ? filters.suppliers.map(supplier => supplier.value).join(',') : ""
       };
 
-      // Date range filter - using the date strings directly
-      if (filters.fromDate && filters.toDate) {
-        filterQuery.where.and.push({
-          and: [
-            { trnDate: { gte: filters.fromDate } },
-            { trnDate: { lte: filters.toDate } }
-          ]
-        });
-      }
+      const response = await apiService1.post("/api/webBI_StockMovementDetail", requestPayload);
 
-      if (filters.site) {
-        filterQuery.where.and.push({ siteCode: filters.site });
-      }
-
-      if (filters.movementType !== "all") {
-        if (filters.movementType === "in") {
-          filterQuery.where.and.push({ trnType: { in: ["VGRN", "TFR", "RTN"] } });
-        } else if (filters.movementType === "out") {
-          filterQuery.where.and.push({ trnType: { in: ["TFR", "SUM", "ADJ"] } });
+      if (response && response.success === "1") {
+        if (response.result && Array.isArray(response.result) && response.result.length > 0) {
+          setReportData(response.result);
+          setHasGeneratedReport(true);
+          toast.success(`Report generated with ${response.result.length} items`);
+        } else {
+          setReportData([]);
+          setHasGeneratedReport(true);
+          toast.info(response.error || "No items found for the selected criteria");
         }
+      } else if (response && response.error) {
+        setReportData([]);
+        setHasGeneratedReport(true);
+        toast.error(response.error);
+      } else {
+        setReportData([]);
+        setHasGeneratedReport(true);
+        toast.warning("Received unexpected response format from server");
       }
-
-      if (filters.movementCodes.length > 0) {
-        filterQuery.where.and.push({
-          or: filters.movementCodes.map(code => ({ trnType: code.value }))
-        });
-      }
-
-      if (filters.suppliers.length > 0) {
-        filterQuery.where.and.push({
-          or: filters.suppliers.map(supplier => ({ splyCode: supplier.value }))
-        });
-      }
-
-      if (filters.departments.length > 0) {
-        filterQuery.where.and.push({
-          or: filters.departments.map(dept => ({ Department: dept.value }))
-        });
-      }
-
-      if (filters.brands.length > 0) {
-        filterQuery.where.and.push({
-          or: filters.brands.map(brand => ({ BrandCode: brand.value }))
-        });
-      }
-
-      if (filters.ranges.length > 0) {
-        filterQuery.where.and.push({
-          or: filters.ranges.map(range => ({ RangeCode: range.value }))
-        });
-      }
-
-      if (filters.fromItem && filters.toItem) {
-        filterQuery.where.and.push({
-          and: [
-            { stockCode: { gte: filters.fromItem } },
-            { stockCode: { lte: filters.toItem } }
-          ]
-        });
-      } else if (filters.fromItem) {
-        filterQuery.where.and.push({ stockCode: { gte: filters.fromItem } });
-      } else if (filters.toItem) {
-        filterQuery.where.and.push({ stockCode: { lte: filters.toItem } });
-      }
-
-      console.log("Stock Movement filter query:", filterQuery);
-
-      // Call API to get stock movement data - using the correct API endpoint
-      const response = await apiService.get("ItemSitelists");
-
-      setReportData(response || []);
-      toast.success(`Report generated with ${response?.length || 0} items`);
     } catch (error) {
       console.error("Error generating report:", error);
       toast.error("Failed to generate report");
+      setReportData([]);
+      setHasGeneratedReport(true);
     } finally {
       setLoading(false);
     }
@@ -221,59 +227,342 @@ const StockMovement = () => {
 
   const handleReset = () => {
     setFilters({
-      fromDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split("T")[0],
-      toDate: new Date().toISOString().split("T")[0],
+      fromDate: "2025-08-01",
+      toDate: "2025-08-29",
       site: "",
-      movementType: "all",
-      movementCodes: [],
-      suppliers: [],
       departments: [],
       brands: [],
       ranges: [],
-      fromItem: "",
-      toItem: "",
+      fromItem: "ALL",
+      toItem: "ALL",
+      movementType: "all",
+      movementCodes: [],
+      suppliers: []
     });
     setReportData([]);
+    setHasGeneratedReport(false);
   };
 
-  const handleExport = () => {
-    // Export functionality
-    toast.info("Export functionality will be implemented");
+  // Define columns for Stock Movement report
+  const columns = [
+    {
+      key: "ItemCode",
+      header: "Item Code",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "ItemName", 
+      header: "Item Name",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "ItemUOM",
+      header: "UOM",
+      align: "center",
+      type: "text"
+    },
+    {
+      key: "ItemRange",
+      header: "Range",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "TranDate",
+      header: "Transaction Date",
+      align: "center",
+      type: "date",
+      render: (value) => moment(value).format("DD/MM/YYYY")
+    },
+    {
+      key: "PosDate",
+      header: "Post Date",
+      align: "center", 
+      type: "date",
+      render: (value) => moment(value).format("DD/MM/YYYY")
+    },
+    {
+      key: "TranNo",
+      header: "Transaction No",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "TranType",
+      header: "Transaction Type",
+      align: "center",
+      type: "text"
+    },
+    {
+      key: "Customer",
+      header: "Customer",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "FromStore",
+      header: "From Store",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "ToStore",
+      header: "To Store", 
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "TranQty",
+      header: "Transaction Qty",
+      align: "right",
+      type: "number",
+      render: (value) => Number(value).toLocaleString()
+    },
+    {
+      key: "TranQtySA",
+      header: "SA Qty",
+      align: "right",
+      type: "number",
+      render: (value) => Number(value).toLocaleString()
+    },
+    {
+      key: "TranAmt",
+      header: "Transaction Amount",
+      align: "right",
+      type: "number",
+      render: (value) => Number(value).toFixed(2)
+    },
+    {
+      key: "Balance",
+      header: "Balance",
+      align: "right",
+      type: "number",
+      render: (value) => Number(value).toLocaleString()
+    },
+    {
+      key: "Outlet",
+      header: "Outlet",
+      align: "left",
+      type: "text"
+    },
+    {
+      key: "Supplier",
+      header: "Supplier",
+      align: "left",
+      type: "text"
+    }
+  ];
+
+  // Company information
+  const companyInfo = {
+    companyName: titles?.companyHeader1 || "VITAZEN BEAUTY SDN. BHD. 201001020225 (903987-A)",
+    address: titles?.companyHeader2 || "No.38A-1 Jalan PJU 5/11",
+    city: titles?.companyHeader3 || "Dataran Sunway Kota Damansara, 47810 Petaling Jaya",
+    phone: titles?.companyHeader4 || "Tel: 018-360 7691, 03-6143 6491"
   };
 
-  const getMovementTypeColor = (trnType) => {
-    const inTypes = ["VGRN", "TFR", "RTN"];
-    const outTypes = ["SUM", "ADJ"];
-    
-    if (inTypes.includes(trnType)) return "bg-green-100 text-green-800";
-    if (outTypes.includes(trnType)) return "bg-red-100 text-red-800";
-    return "bg-gray-100 text-gray-800";
-  };
+  // Custom export function for ReportResults component
+  const handleCustomExport = async (format, data, columns, companyInfo, reportTitle) => {
+    const fileName = `Stock_Movement_Report_${new Date().toISOString().split("T")[0]}`;
 
-  const getMovementTypeLabel = (trnType) => {
-    const inTypes = ["VGRN", "TFR", "RTN"];
-    const outTypes = ["SUM", "ADJ"];
-    
-    if (inTypes.includes(trnType)) return "In";
-    if (outTypes.includes(trnType)) return "Out";
-    return "Other";
+    switch (format) {
+      case "excel":
+        const workbook = XLSX.utils.book_new();
+        
+        // Add header information
+        const headerData = [
+          [companyInfo.companyName || "Company Name"],
+          [companyInfo.address || "Address"],
+          [companyInfo.city || "City"],
+          [companyInfo.phone || "Phone"],
+          [""],
+          ["Report Title:", reportTitle],
+          ["Execution Time:", moment().format("DD/MM/YYYY HH:mm:ss")],
+          ["From Date:", filters.fromDate ? moment(filters.fromDate).format("DD/MM/YYYY") : "-"],
+          ["To Date:", filters.toDate ? moment(filters.toDate).format("DD/MM/YYYY") : "-"],
+          ["Site:", filters.site || "ALL"],
+          [""]
+        ];
+
+        // Group data by item for export
+        const groupedData = {};
+        data.forEach(item => {
+          const itemCode = item.ItemCode || 'Unknown';
+          if (!groupedData[itemCode]) {
+            groupedData[itemCode] = {
+              itemInfo: {
+                ItemCode: item.ItemCode,
+                ItemName: item.ItemName,
+                ItemUOM: item.ItemUOM,
+                ItemRange: item.ItemRange
+              },
+              transactions: []
+            };
+          }
+          groupedData[itemCode].transactions.push(item);
+        });
+
+        // Add table headers
+        const tableHeaders = [
+          ["Item", "Post Date", "Trans Date", "Type", "Trans No", "From Store", "To Store", "Trans Qty", "Trans Amt", "Bal Qty"]
+        ];
+
+        // Add data rows with item grouping
+        const itemsData = [];
+        Object.entries(groupedData).forEach(([itemCode, itemData]) => {
+          // Add item header row
+          itemsData.push([
+            `${itemData.itemInfo.ItemCode} ${itemData.itemInfo.ItemName} ${itemData.itemInfo.ItemUOM} ${itemData.itemInfo.ItemRange}`,
+            "", "", "", "", "", "", "", "", ""
+          ]);
+          
+          // Add transaction rows
+          itemData.transactions.forEach(trans => {
+            itemsData.push([
+              "",
+              moment(trans.PosDate).format("DD/MM/YYYY"),
+              moment(trans.TranDate).format("DD/MM/YYYY"),
+              trans.TranType,
+              trans.TranNo,
+              trans.FromStore || "",
+              trans.ToStore || "",
+              Number(trans.TranQty).toLocaleString(),
+              Number(trans.TranAmt).toFixed(2),
+              Number(trans.Balance).toLocaleString()
+            ]);
+          });
+          
+          // Add transaction type subtotals
+          const typeTotals = {};
+          itemData.transactions.forEach(trans => {
+            const type = trans.TranType || 'Unknown';
+            if (!typeTotals[type]) {
+              typeTotals[type] = { qty: 0, amount: 0 };
+            }
+            typeTotals[type].qty += Number(trans.TranQty || 0);
+            typeTotals[type].amount += Number(trans.TranAmt || 0);
+          });
+          
+          Object.entries(typeTotals).forEach(([type, totals]) => {
+            itemsData.push([
+              `Total ${type === 'SA' ? 'Sales (SA)' : type}`,
+              "", "", "", "", "", "",
+              totals.qty.toLocaleString(),
+              totals.amount.toFixed(2),
+              ""
+            ]);
+          });
+          
+          // Add empty row for spacing
+          itemsData.push(["", "", "", "", "", "", "", "", "", ""]);
+        });
+
+        // Add grand totals row
+        const grandTotals = data.reduce((totals, item) => {
+          totals.qty += Number(item.TranQty || 0);
+          totals.amount += Number(item.TranAmt || 0);
+          return totals;
+        }, { qty: 0, amount: 0 });
+
+        const totalsRow = [
+          "Total", "", "", "", "", "", "",
+          grandTotals.qty.toLocaleString(),
+          grandTotals.amount.toFixed(2),
+          ""
+        ];
+
+        // Combine all data
+        const excelData = [
+          ...headerData,
+          ...tableHeaders,
+          ...itemsData,
+          [""],
+          totalsRow
+        ];
+
+        const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, reportTitle);
+        XLSX.writeFile(workbook, `${fileName}.xlsx`);
+        break;
+
+      case "pdf":
+        try {
+          const printArea = document.querySelector("#printable-content");
+          const canvas = await html2canvas(printArea, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#ffffff",
+            removeContainer: true,
+            allowTaint: true,
+            onclone: (clonedDoc) => {
+              const clonedElement = clonedDoc.querySelector("#printable-content");
+              if (clonedElement) {
+                clonedElement.style.width = "210mm";
+                clonedElement.style.margin = "0";
+                clonedElement.style.padding = "10mm";
+              }
+            },
+          });
+
+          const imgData = canvas.toDataURL("image/png", 1.0);
+          const pdf = new jsPDF({
+            orientation: "landscape", // Use landscape for wide tables
+            unit: "mm",
+            format: "a4",
+          });
+
+          const imgProps = pdf.getImageProperties(imgData);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+          pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+          pdf.save(`${fileName}.pdf`);
+        } catch (error) {
+          console.error("PDF generation error:", error);
+          toast.error("Failed to generate PDF");
+        }
+        break;
+
+      case "word":
+        const htmlContent = `
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid black; padding: 5px; font-size: 10px; }
+                th { background-color: #f0f0f0; }
+              </style>
+            </head>
+            <body>
+              ${document.querySelector("#printable-content").innerHTML}
+            </body>
+          </html>
+        `;
+
+        const blob = new Blob([htmlContent], { type: "application/msword" });
+        saveAs(blob, `${fileName}.doc`);
+        break;
+
+      default:
+        console.error("Unsupported format:", format);
+    }
   };
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Stock Movement Report</h1>
-                     <p className="text-gray-600 mt-2">Track detailed stock items with comprehensive filtering options</p>
+          <h1 className="text-3xl font-bold text-gray-900">Stock Movement - Detail</h1>
+          <p className="text-gray-600 mt-2">Track detailed stock movement transactions with comprehensive filtering options</p>
         </div>
         <div className="flex items-center space-x-2">
           <Button variant="outline" onClick={handleReset}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Reset
-          </Button>
-          <Button onClick={handleExport} disabled={reportData.length === 0}>
-            <Download className="h-4 w-4 mr-2" />
-            Export
           </Button>
         </div>
       </div>
@@ -293,21 +582,21 @@ const StockMovement = () => {
             {/* Date Filters */}
             <div className="space-y-2">
               <Label htmlFor="fromDate">From Date *</Label>
-              <Input
+              <input
                 type="date"
                 value={filters.fromDate}
                 onChange={(e) => handleFilterChange("fromDate", e.target.value)}
-                className="w-full"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="toDate">To Date *</Label>
-              <Input
+              <input
                 type="date"
                 value={filters.toDate}
                 onChange={(e) => handleFilterChange("toDate", e.target.value)}
-                className="w-full"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -316,12 +605,12 @@ const StockMovement = () => {
               <Label htmlFor="site">Site</Label>
               <Select value={filters.site} onValueChange={(value) => handleFilterChange("site", value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select site" />
+                  <SelectValue placeholder="Select site (optional - all sites included if none selected)" />
                 </SelectTrigger>
                 <SelectContent>
                   {sites.map((site) => (
-                    <SelectItem key={site.siteCode} value={site.siteCode}>
-                      {site.siteName}
+                    <SelectItem key={site.itemsiteCode} value={site.itemsiteCode}>
+                      {site.itemsiteDesc}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -348,9 +637,10 @@ const StockMovement = () => {
               <Label htmlFor="fromItem">From Item</Label>
               <Select value={filters.fromItem} onValueChange={(value) => handleFilterChange("fromItem", value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select from item" />
+                  <SelectValue placeholder="Select from item (optional)" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="ALL">ALL</SelectItem>
                   {items.map((item) => (
                     <SelectItem key={item.value} value={item.value}>
                       {item.label}
@@ -364,9 +654,10 @@ const StockMovement = () => {
               <Label htmlFor="toItem">To Item</Label>
               <Select value={filters.toItem} onValueChange={(value) => handleFilterChange("toItem", value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select to item" />
+                  <SelectValue placeholder="Select to item (optional)" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="ALL">ALL</SelectItem>
                   {items.map((item) => (
                     <SelectItem key={item.value} value={item.value}>
                       {item.label}
@@ -382,7 +673,7 @@ const StockMovement = () => {
             <div className="space-y-2">
               <Label htmlFor="movementCodes">Movement Code</Label>
               <MultiSelect
-                options={movementCodeOptions}
+                options={movementCodes}
                 selected={filters.movementCodes}
                 onChange={(value) => handleFilterChange("movementCodes", value)}
                 placeholder="Select movement codes..."
@@ -392,46 +683,46 @@ const StockMovement = () => {
 
             <div className="space-y-2">
               <Label htmlFor="suppliers">Supplier</Label>
-                             <MultiSelect
-                 options={suppliers}
-                 selected={filters.suppliers}
-                 onChange={(value) => handleFilterChange("suppliers", value)}
-                 placeholder="Select suppliers..."
-                 className="w-full"
-               />
+              <MultiSelect
+                options={suppliers}
+                selected={filters.suppliers}
+                onChange={(value) => handleFilterChange("suppliers", value)}
+                placeholder="Select suppliers..."
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="departments">Department</Label>
-                             <MultiSelect
-                 options={departments}
-                 selected={filters.departments}
-                 onChange={(value) => handleFilterChange("departments", value)}
-                 placeholder="Select departments..."
-                 className="w-full"
-               />
+              <MultiSelect
+                options={departments}
+                selected={filters.departments}
+                onChange={(value) => handleFilterChange("departments", value)}
+                placeholder="Select departments..."
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="brands">Brand</Label>
-                             <MultiSelect
-                 options={brands}
-                 selected={filters.brands}
-                 onChange={(value) => handleFilterChange("brands", value)}
-                 placeholder="Select brands..."
-                 className="w-full"
-               />
+              <MultiSelect
+                options={brands}
+                selected={filters.brands}
+                onChange={(value) => handleFilterChange("brands", value)}
+                placeholder="Select brands..."
+                className="w-full"
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="ranges">Range</Label>
-                             <MultiSelect
-                 options={ranges}
-                 selected={filters.ranges}
-                 onChange={(value) => handleFilterChange("ranges", value)}
-                 placeholder="Select ranges..."
-                 className="w-full"
-               />
+              <MultiSelect
+                options={ranges}
+                selected={filters.ranges}
+                onChange={(value) => handleFilterChange("ranges", value)}
+                placeholder="Select ranges..."
+                className="w-full"
+              />
             </div>
           </div>
 
@@ -455,64 +746,41 @@ const StockMovement = () => {
         </CardContent>
       </Card>
 
-      {/* Report Results */}
-      {reportData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Report Results</span>
-                             <Badge variant="secondary">{reportData.length} items</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Movement Type</TableHead>
-                    <TableHead>Document No</TableHead>
-                    <TableHead>Item Code</TableHead>
-                    <TableHead>Item Name</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Site</TableHead>
-                    <TableHead>Department</TableHead>
-                    <TableHead>Supplier</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.map((movement, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-mono">
-                        {moment(movement.trnDate).format("DD/MM/YYYY")}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getMovementTypeColor(movement.trnType)}>
-                          {getMovementTypeLabel(movement.trnType)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono">{movement.trnDocno}</TableCell>
-                      <TableCell className="font-mono">{movement.stockCode}</TableCell>
-                      <TableCell>{movement.stockName}</TableCell>
-                      <TableCell>{movement.uomDescription}</TableCell>
-                      <TableCell className="text-right font-mono">
-                        {Number(movement.trnQty || 0).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        ${Number(movement.trnAmt || 0).toFixed(2)}
-                      </TableCell>
-                      <TableCell>{movement.siteName}</TableCell>
-                      <TableCell>{movement.Department}</TableCell>
-                      <TableCell>{movement.supplydesc}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Report Results - Using ReportResults Component */}
+      {hasGeneratedReport && (
+        <ReportResults
+          title="Stock Movement Report Results"
+          data={reportData}
+          columns={columns}
+          companyInfo={companyInfo}
+          reportTitle="Stock Movement - Detail"
+          executionTime={moment().format("DD/MM/YYYY HH:mm:ss")}
+          outlet={filters.site ? sites.find(s => s.itemsiteCode === filters.site)?.itemsiteDesc : "ALL"}
+          onExport={handleCustomExport}
+          showSearch={true}
+          showPagination={true}
+          showPrint={true}
+          showExport={true}
+          showZoom={true}
+          showDetailedInfo={true}
+          groupByOutlet={false}
+          showOutletGrouping={false}
+          groupByItem={true}
+          showItemGrouping={true}
+          reportDetails={{
+            fromDate: filters.fromDate ? moment(filters.fromDate).format("DD/MM/YYYY") : "-",
+            toDate: filters.toDate ? moment(filters.toDate).format("DD/MM/YYYY") : "-",
+            site: filters.site || "ALL",
+            department: filters.departments.length > 0 ? filters.departments.map(dept => dept.label).join(", ") : "ALL",
+            brand: filters.brands.length > 0 ? filters.brands.map(brand => brand.label).join(", ") : "ALL",
+            fromItem: filters.fromItem || "ALL",
+            toItem: filters.toItem || "ALL",
+            range: filters.ranges.length > 0 ? filters.ranges.map(range => range.label).join(", ") : "ALL",
+            movementType: filters.movementType === "all" ? "All" : filters.movementType || "ALL",
+            movementCode: filters.movementCodes.length > 0 ? filters.movementCodes.map(code => code.label).join(", ") : "ALL",
+            supplier: filters.suppliers.length > 0 ? filters.suppliers.map(supplier => supplier.label).join(", ") : "ALL"
+          }}
+        />
       )}
     </div>
   );

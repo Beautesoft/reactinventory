@@ -439,6 +439,14 @@ export const hasUserAuthorization = (authCode) => {
   return auth && auth.Active === "Y";
 };
 
+// Enhanced function to check authorization with "starts with" logic for names
+export const hasUserAuthorizationByName = (authName) => {
+  const userAuths = getUserAuthorizations();
+  // Find authorization where the Name starts with the provided authName
+  const auth = userAuths.find(a => a.Name && a.Name.startsWith(authName));
+  return auth && auth.Active === "Y";
+};
+
 // Menu item to authorization code mapping
 export const MENU_AUTH_MAPPING = {
   "Goods Receive Note": "F10001",
@@ -448,6 +456,8 @@ export const MENU_AUTH_MAPPING = {
   "Stock Adjustment": "F10005",
   "Stock Usage Memo": "F10010",
   "Stock Take": "F10011",
+  "Stock Balance": "F10009",
+  "Stock Movement": "F10011",
 };
 
 export const checkMenuAuthorization = (menuTitle) => {

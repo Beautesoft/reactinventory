@@ -2120,7 +2120,7 @@ function AddGrn({ docData }) {
 
     // EXISTING CODE CONTINUES UNCHANGED FROM HERE...
     console.log("🔄 Taking REGULAR DOCUMENT path");
-    
+
     // Set loading state based on action type
     if (type === "save") {
       setSaveLoading(true);
@@ -2464,21 +2464,21 @@ function AddGrn({ docData }) {
                 //     // await apiService.post("Inventorylogs", errorLog);
                 //   });
 
-                batchUpdate = {
-                  itemcode: trimmedItemCode,
-                  sitecode: userDetails.siteCode,
-                  uom: d.itemUom,
-                  qty: Number(d.trnQty),
+                                  batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
                   batchcost: Number(d.itemBatchCost),
                   // Only include batch number if batch functionality is enabled
-                  ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
-                    batchno: d.itemBatch,
-                  }),
+                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      batchno: d.itemBatch,
+                    }),
                   // Only include expiry date if expiry date functionality is enabled
                   ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && d?.docExpdate && {
                     expDate: d.docExpdate,
                   }),
-                };
+                  };
 
                 await apiService
                   .post("ItemBatches/updateqty", batchUpdate)
@@ -2505,7 +2505,7 @@ function AddGrn({ docData }) {
                   batchCost: Number(d.itemBatchCost),
                   // Only include batch number if batch functionality is enabled
                   ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
-                    batchNo: d.itemBatch,
+                  batchNo: d.itemBatch,
                   }),
                   // Only include expiry date if expiry date functionality is enabled
                   ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && d?.docExpdate && {
@@ -2537,21 +2537,21 @@ function AddGrn({ docData }) {
                 // No batch number or expiry date
               };
 
-              await apiService
-                .post("ItemBatches/updateqty", batchUpdate)
-                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-                .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
+            await apiService
+              .post("ItemBatches/updateqty", batchUpdate)
+              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+              .catch(async (err) => {
+                // Log qty update error
+                const errorLog = {
+                  trnDocNo: docNo,
+                  itemCode: d.itemcode,
+                  loginUser: userDetails.username,
+                  siteCode: userDetails.siteCode,
+                  logMsg: `ItemBatches/updateqty ${err.message}`,
+                  createdDate: new Date().toISOString().split("T")[0],
+                };
+                // await apiService.post("Inventorylogs", errorLog);
+              });
             }
           }
         } else {
@@ -2731,10 +2731,10 @@ function AddGrn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>GR Ref 1</Label>
-                                          <Input
-                        placeholder="Enter GR Ref 1"
+                    <Input
+                      placeholder="Enter GR Ref 1"
                         disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
-                        value={stockHdrs.docRef1}
+                      value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
                           ...prev,
@@ -2861,10 +2861,10 @@ function AddGrn({ docData }) {
                 </div>
                 <div className="space-y-2">
                   <Label>Remarks</Label>
-                                     <Input
-                     placeholder="Enter remarks"
+                  <Input
+                    placeholder="Enter remarks"
                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
-                     value={stockHdrs.docRemk1}
+                    value={stockHdrs.docRemk1}
                     onChange={(e) =>
                       setStockHdrs((prev) => ({
                         ...prev,
@@ -3183,9 +3183,9 @@ function AddGrn({ docData }) {
                             </TableCell>
                           )}
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell className="font-semibold text-slate-700">
+                          <TableCell className="font-semibold text-slate-700">
                               {isNaN(item.docAmt) ? 0 : (item.docAmt || 0)}
-                            </TableCell>
+                          </TableCell>
                           )}
                           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                             <>
@@ -3207,14 +3207,14 @@ function AddGrn({ docData }) {
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                                 {(urlStatus != 7 ) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => onDeleteCart(item, index)}
-                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => onDeleteCart(item, index)}
+                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                                 )}
                               </div>
                             </TableCell>
@@ -3234,9 +3234,9 @@ function AddGrn({ docData }) {
                         </TableCell>
                         {userDetails?.isSettingViewPrice === "True" && <TableCell />}
                         {userDetails?.isSettingViewPrice === "True" && (
-                          <TableCell className="font-semibold text-slate-700">
-                            {calculateTotals(cartData).totalAmt.toFixed(2)}
-                          </TableCell>
+                        <TableCell className="font-semibold text-slate-700">
+                          {calculateTotals(cartData).totalAmt.toFixed(2)}
+                        </TableCell>
                         )}
                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
                           <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />

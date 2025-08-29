@@ -44,7 +44,7 @@ import {
 
 import { NavMain } from "./nav-main";
 import useAuth from "@/hooks/useAuth";
-import { getUserAuthorizations, MENU_AUTH_MAPPING, hasUserAuthorization } from "@/utils/utils";
+import { getUserAuthorizations, MENU_AUTH_MAPPING, hasUserAuthorization, hasUserAuthorizationByName } from "@/utils/utils";
 
 const menu_items = [
   { title: "Dashboard", url: "/dashboard", icon: FiHome },
@@ -60,7 +60,15 @@ export function AppSidebar() {
   const hasAuthorization = (menuTitle) => {
     const authCode = MENU_AUTH_MAPPING[menuTitle];
     if (!authCode) return true; // If no auth code mapped, allow access
-    return hasUserAuthorization(authCode);
+    
+    // First try exact code match
+    if (hasUserAuthorization(authCode)) {
+      return true;
+    }
+    
+    // If no exact match, try "starts with" logic for names
+    // This handles cases like "Stock Movement" matching "Stock Movement - Detail"
+    return hasUserAuthorizationByName(menuTitle);
   };
 
   // Filter menu items based on user authorizations

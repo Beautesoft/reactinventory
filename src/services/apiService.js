@@ -72,7 +72,6 @@ export class ApiService {
   }
 
   async get(url, config) {
-    console.log(config, "config");
     return this.instance.get(url, config);
   }
 
