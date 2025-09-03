@@ -684,7 +684,7 @@ function AddTake({ docData }) {
       const itemsToCreate = cart.filter((item) => !item.docId);
 
       // Execute deletions first (in parallel)
-      if (itemsToDelete > 0) {
+      if (itemsToDelete.length > 0) {
         await Promise.all(
           itemsToDelete.map((item) =>
             apiService

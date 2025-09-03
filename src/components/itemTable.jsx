@@ -9,7 +9,7 @@ import {
 } from "./ui/table";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { Plus, FileText, Loader2 } from "lucide-react";
+import { Plus, FileText, Loader2, Info } from "lucide-react";
 // import { TableSpinner } from "./ui/table-spinner";
 import Pagination from "./pagination";
 import TableSpinner from "./tabelSpinner";
@@ -42,6 +42,12 @@ function ItemTable({
   onBatchNoChange = null,
   onExpiryDateChangeBatch = null,
   allowNegativeQty = false, // New prop to allow negative quantities
+  // NEW: Batch selection prop
+  onBatchSelection = null,
+  // NEW: Batch loading state
+  isBatchLoading = false,
+  // NEW: Per-item batch loading state
+  itemBatchLoading = {},
 }) {
   // Get user details from localStorage
   const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
@@ -217,8 +223,8 @@ function ItemTable({
                     "↕"
                 )}
               </TableHead>
-              {showBatchColumns && <TableHead>Batch No</TableHead>}
-              {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && <TableHead>Batch Expiry</TableHead>}
+              {/* {showBatchColumns && <TableHead>Batch No</TableHead>} */}
+              {/* {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && <TableHead>Batch Expiry</TableHead>} */}
               <TableHead className="font-semibold">{qtyLabel}</TableHead>
               {showVariance && (
                 <TableHead 
@@ -276,16 +282,16 @@ function ItemTable({
                       <TableCell className="text-left  font-medium">
                         {item.quantity || "0"}
                       </TableCell>
-                      {showBatchColumns && (
+                      {/* {showBatchColumns && (
                         <TableCell>
                           {item.batchno || "-"}
                         </TableCell>
-                      )}
-                      {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
+                      )} */}
+                      {/* {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
                         <TableCell>
                           {format_Date(item.batchexpirydate) || "-"}
                         </TableCell>
-                      )}
+                      )} */}
                       <TableCell className="text-start">
                         <Input
                           type="number"
@@ -298,6 +304,17 @@ function ItemTable({
                           disabled={!canEdit()}
                           placeholder="0"
                         />
+                        {/* NEW: Batch Selection Indicator */}
+                        {window?.APP_CONFIG?.BATCH_NO === "Yes" && item.selectedBatches && (
+                          <div className="mt-1 text-xs">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              ✓ {item.selectedBatches.batchDetails && item.selectedBatches.batchDetails.length > 1 
+                                ? `Multiple batches selected (${item.selectedBatches.batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(', ')})`
+                                : `Batch ${item.selectedBatches.batchNo} selected`
+                              }
+                            </span>
+                          </div>
+                        )}
                       </TableCell>
                       {showVariance && (
                         <TableCell
@@ -329,17 +346,36 @@ function ItemTable({
                           />
                         </TableCell>
                       )}
-                      {showCost && <TableCell>{ item.batchcost||item.Cost|| "0"}</TableCell>}
+                      {showCost && <TableCell>{ item.Cost|| "0"}</TableCell>}
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onAddToCart(startIndex + index, item)}
-                          className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
-                          disabled={!canEdit()}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onAddToCart(startIndex + index, item)}
+                            className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150"
+                            disabled={!canEdit()}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                          {/* NEW: Batch Selection Button */}
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && onBatchSelection && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onBatchSelection(startIndex + index, item)}
+                              className="cursor-pointer hover:bg-green-50 hover:text-green-600 transition-colors duration-150"
+                              title="Select Specific Batch"
+                              disabled={itemBatchLoading[item.stockCode] || false}
+                            >
+                              {itemBatchLoading[item.stockCode] ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Info className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

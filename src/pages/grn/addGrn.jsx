@@ -161,12 +161,16 @@ const EditDialog = memo(
               if (existingBatch) {
                 setSelectedBatch(existingBatch);
                 setUseExistingBatch(true);
-                // In GRN, expiry date should always be editable, even for existing batches
-                setIsExpiryReadOnly(false);
+                // If existing batch has expiry date, make it read-only
+                setIsExpiryReadOnly(!!existingBatch.expDate);
+                // Update the useExistingBatch flag in editData
+                onEditCart({ target: { value: true } }, "useExistingBatch");
               } else {
                 setNewBatchNo(editData.docBatchNo);
                 setUseExistingBatch(false);
                 setIsExpiryReadOnly(false);
+                // Update the useExistingBatch flag in editData
+                onEditCart({ target: { value: false } }, "useExistingBatch");
               }
             }
           })
@@ -187,17 +191,19 @@ const EditDialog = memo(
       setUseExistingBatch(true);
 
       if (selected && selected.expDate) {
-        // If batch exists in options and has expiry date, set it as default but keep editable
+        // If batch exists in options and has expiry date, set it as default and make it read-only
         const formattedDate = selected.expDate.split("T")[0]; // Convert to yyyy-MM-dd format
         onEditCart({ target: { value: formattedDate } }, "docExpdate");
         editData.docExpdate = formattedDate;
-        // In GRN, expiry date should always be editable
-        setIsExpiryReadOnly(false);
+        // When existing batch is selected, expiry date should be read-only
+        setIsExpiryReadOnly(true);
       } else {
         // If batch doesn't exist or has no expiry date, allow manual entry
         setIsExpiryReadOnly(false);
       }
 
+      // Update the useExistingBatch flag in editData
+      onEditCart({ target: { value: true } }, "useExistingBatch");
       onEditCart({ target: { value } }, "docBatchNo");
     };
 
@@ -208,7 +214,10 @@ const EditDialog = memo(
         setNewBatchNo(value);
         setSelectedBatch(null);
         setUseExistingBatch(false);
+        // When creating new batch, expiry date should be editable
         setIsExpiryReadOnly(false);
+        // Update the useExistingBatch flag in editData
+        onEditCart({ target: { value: false } }, "useExistingBatch");
         onEditCart({ target: { value } }, "docBatchNo");
       }
     };
@@ -268,8 +277,9 @@ const EditDialog = memo(
               id="edit-item-description"
               className="text-sm text-muted-foreground"
             >
-              {urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True" 
-                ? "Only price can be modified for posted documents" 
+              {urlStatus == 7 &&
+              userDetails?.isSettingPostedChangePrice === "True"
+                ? "Only price can be modified for posted documents"
                 : "Modify item details"}
             </div>
           </DialogHeader>
@@ -299,19 +309,18 @@ const EditDialog = memo(
                   />
                 </div>
                 {userDetails?.isSettingViewPrice === "True" && (
-
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    min="0"
-                    value={editData?.docPrice || ""}
-                    isBatchEdit
-                    onChange={(e) => onEditCart(e, "docPrice")}
-                    className="w-full"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="price">Price</Label>
+                    <Input
+                      id="price"
+                      type="number"
+                      min="0"
+                      value={editData?.docPrice || ""}
+                      isBatchEdit
+                      onChange={(e) => onEditCart(e, "docPrice")}
+                      className="w-full"
+                    />
+                  </div>
                 )}
               </>
             )}
@@ -329,8 +338,12 @@ const EditDialog = memo(
                           setUseExistingBatch(checked);
                           if (checked) {
                             setNewBatchNo("");
+                            // When switching to existing batch, expiry date will be set based on selected batch
+                            onEditCart({ target: { value: true } }, "useExistingBatch");
                           } else {
                             setSelectedBatch(null);
+                            setIsExpiryReadOnly(false);
+                            onEditCart({ target: { value: false } }, "useExistingBatch");
                             onEditCart({ target: { value: "" } }, "docBatchNo");
                           }
                         }}
@@ -367,7 +380,10 @@ const EditDialog = memo(
                               </div>
                             ) : (
                               batchOptions.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
+                                <SelectItem
+                                  key={option.value}
+                                  value={option.value}
+                                >
                                   {option.label}
                                 </SelectItem>
                               ))
@@ -395,7 +411,7 @@ const EditDialog = memo(
                     value={editData?.docExpdate || ""}
                     onChange={(e) => onEditCart(e, "docExpdate")}
                     className="w-full"
-                    disabled={urlStatus == 7}
+                    disabled={urlStatus == 7 || (useExistingBatch && selectedBatch?.expDate)}
                   />
                   {isExpiryReadOnly && (
                     <p className="text-xs text-blue-500">
@@ -413,7 +429,10 @@ const EditDialog = memo(
                 onChange={(e) => onEditCart(e, "itemRemark")}
                 placeholder="Enter remarks"
                 className="w-full"
-                disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                disabled={
+                  urlStatus == 7 &&
+                  userDetails?.isSettingPostedChangePrice !== "True"
+                }
               />
             </div>
           </div>
@@ -529,7 +548,6 @@ function AddGrn({ docData }) {
     deliveryDate: "",
     createUser: userDetails?.username,
     staffNo: userDetails?.usercode,
-
   });
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
@@ -1017,7 +1035,6 @@ function AddGrn({ docData }) {
     //     const query = `?site=${encodeURIComponent(JSON.stringify(filt))}`;
 
     const query = `?Site=${userDetails.siteCode}`;
-    
 
     // apiService.get(`PackageItemDetails${query}`),
     // apiService.get(`PackageItemDetails/count${countQuery}`),
@@ -1035,10 +1052,14 @@ function AddGrn({ docData }) {
           ...item,
           Qty: 0,
           expiryDate: null,
-          Price: Number(item?.item_Price) || Number(item?.Price) || Number(item?.batchcost) || 0,
+          Price:
+            Number(item?.item_Price) ||
+            Number(item?.Price) ||
+            Number(item?.Cost) ||
+            0,
           docAmt: null,
         }));
-        
+
         // Debug logging to see what price fields are available
         console.log("Sample item from API:", stockDetails[0]);
         console.log("Updated items with Price field:", updatedRes[0]);
@@ -1269,8 +1290,8 @@ function AddGrn({ docData }) {
               ...item,
               [field]: field === "expiryDate" ? value : Number(value),
               docAmt:
-                field === "Qty" 
-                  ? Number(value) * (Number(item.Price) || 0) 
+                field === "Qty"
+                  ? Number(value) * (Number(item.Price) || 0)
                   : (Number(item.Qty) || 0) * (Number(item.Price) || 0),
             }
           : item
@@ -1418,40 +1439,40 @@ function AddGrn({ docData }) {
 
   const editPopup = (item, index) => {
     setIsBatchEdit(false);
-    console.log(item,"item")
-    
+    console.log(item, "item");
+
     // Handle expiry date - format properly for HTML date input
     let expiryDate = "";
     if (item.docExpdate) {
       try {
         // Handle ISO date format (e.g., "2025-10-22T00:00:00.000Z")
-        if (item.docExpdate.includes('T') || item.docExpdate.includes('Z')) {
+        if (item.docExpdate.includes("T") || item.docExpdate.includes("Z")) {
           // Convert ISO date to YYYY-MM-DD format for HTML date input
           const date = new Date(item.docExpdate);
           if (!isNaN(date.getTime())) {
-            expiryDate = date.toISOString().split('T')[0];
+            expiryDate = date.toISOString().split("T")[0];
           }
-        } 
+        }
         // Handle DD/MM/YYYY format (e.g., "25/08/2025 7:43:32 PM")
-        else if (item.docExpdate.includes('/')) {
-          const parts = item.docExpdate.split(' ')[0].split('/');
+        else if (item.docExpdate.includes("/")) {
+          const parts = item.docExpdate.split(" ")[0].split("/");
           if (parts.length === 3) {
-            const day = parts[0].padStart(2, '0');
-            const month = parts[1].padStart(2, '0');
+            const day = parts[0].padStart(2, "0");
+            const month = parts[1].padStart(2, "0");
             const year = parts[2];
             expiryDate = `${year}-${month}-${day}`;
           }
         }
         // If it's already in YYYY-MM-DD format, extract just the date part
-        else if (item.docExpdate.includes('-')) {
+        else if (item.docExpdate.includes("-")) {
           // Extract just the date part (YYYY-MM-DD) from YYYY-MM-DD HH:MM:SS
-          expiryDate = item.docExpdate.split(' ')[0];
+          expiryDate = item.docExpdate.split(" ")[0];
         }
         // Handle other date formats by trying to parse them
         else {
           const date = new Date(item.docExpdate);
           if (!isNaN(date.getTime())) {
-            expiryDate = date.toISOString().split('T')[0];
+            expiryDate = date.toISOString().split("T")[0];
           }
         }
       } catch (error) {
@@ -1459,10 +1480,10 @@ function AddGrn({ docData }) {
         expiryDate = "";
       }
     }
-    
+
     console.log("Original docExpdate:", item.docExpdate);
     console.log("Processed expiryDate:", expiryDate);
-    
+
     const newEditData = {
       ...item,
       docQty: Number(item.docQty) || 0,
@@ -1471,7 +1492,7 @@ function AddGrn({ docData }) {
       itemRemark: item.itemRemark || "",
       docBatchNo: item.docBatchNo || "",
     };
-    
+
     console.log("New editData:", newEditData);
     setEditData(newEditData);
     setEditingIndex(index);
@@ -1503,59 +1524,59 @@ function AddGrn({ docData }) {
     // Ensure we have a valid price, fallback to 0 if undefined/null
     const price = Number(item.Price) || 0;
     const amount = Number(item.Qty) * price;
-    
+
     // Debug logging
     console.log("Adding item to cart:", {
       item,
       Qty: item.Qty,
       Price: item.Price,
       calculatedPrice: price,
-      amount
+      amount,
     });
 
     // Only set docExpdate if batch functionality is enabled
-    let docExpdate = null;
-    if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
-      // Convert batchexpirydate to ISO 8601 format for storage
-      if (item.batchexpirydate) {
-        try {
-          // Handle different date formats and convert to ISO 8601
-          let date;
-          if (typeof item.batchexpirydate === 'string') {
-            // Handle "DD/MM/YYYY HH:MM:SS AM/PM" format
-            if (item.batchexpirydate.includes('/')) {
-              const parts = item.batchexpirydate.split(' ')[0].split('/');
-              if (parts.length === 3) {
-                const day = parseInt(parts[0]);
-                const month = parseInt(parts[1]) - 1; // Month is 0-indexed
-                const year = parseInt(parts[2]);
-                date = new Date(year, month, day);
-              }
-            } else {
-              // Handle ISO format or other standard formats
-              date = new Date(item.batchexpirydate);
-            }
-          } else {
-            date = new Date(item.batchexpirydate);
-          }
-          
-          if (!isNaN(date.getTime())) {
-            // Format as ISO 8601: YYYY-MM-DD HH:MM:SS
-            const year = date.getFullYear();
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const day = date.getDate().toString().padStart(2, '0');
-            const hours = date.getHours().toString().padStart(2, '0');
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            const seconds = date.getSeconds().toString().padStart(2, '0');
-            
-            docExpdate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-          }
-        } catch (error) {
-          console.error("Error converting expiry date:", error);
-          docExpdate = null;
-        }
-      }
-    }
+    // let docExpdate = null;
+    // if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+    //   // Convert batchexpirydate to ISO 8601 format for storage
+    //   if (item.batchexpirydate) {
+    //     try {
+    //       // Handle different date formats and convert to ISO 8601
+    //       let date;
+    //       if (typeof item.batchexpirydate === "string") {
+    //         // Handle "DD/MM/YYYY HH:MM:SS AM/PM" format
+    //         if (item.batchexpirydate.includes("/")) {
+    //           const parts = item.batchexpirydate.split(" ")[0].split("/");
+    //           if (parts.length === 3) {
+    //             const day = parseInt(parts[0]);
+    //             const month = parseInt(parts[1]) - 1; // Month is 0-indexed
+    //             const year = parseInt(parts[2]);
+    //             date = new Date(year, month, day);
+    //           }
+    //         } else {
+    //           // Handle ISO format or other standard formats
+    //           date = new Date(item.batchexpirydate);
+    //         }
+    //       } else {
+    //         date = new Date(item.batchexpirydate);
+    //       }
+
+    //       if (!isNaN(date.getTime())) {
+    //         // Format as ISO 8601: YYYY-MM-DD HH:MM:SS
+    //         const year = date.getFullYear();
+    //         const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    //         const day = date.getDate().toString().padStart(2, "0");
+    //         const hours = date.getHours().toString().padStart(2, "0");
+    //         const minutes = date.getMinutes().toString().padStart(2, "0");
+    //         const seconds = date.getSeconds().toString().padStart(2, "0");
+
+    //         docExpdate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    //       }
+    //     } catch (error) {
+    //       console.error("Error converting expiry date:", error);
+    //       docExpdate = null;
+    //     }
+    //   }
+    // }
 
     const newCartItem = {
       id: cartData.length + 1,
@@ -1581,7 +1602,7 @@ function AddGrn({ docData }) {
       createDate: stockHdrs.docDate,
       docUom: item.uom || "",
       // Only set docExpdate if batch functionality is enabled and we have a valid date
-      docExpdate: docExpdate,
+      docExpdate: "",
 
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
@@ -1589,13 +1610,13 @@ function AddGrn({ docData }) {
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
       itemRemark: item?.itemRemark || null,
-      itemprice: Number(item.batchcost) || Number(item.Price) || 0,
-
+      itemprice: Number(item.Cost) || Number(item.Price) || 0,
       // Only set docBatchNo if batch functionality is enabled
-      docBatchNo: window?.APP_CONFIG?.BATCH_NO === "Yes" ? (item.batchno || null) : null,
-      
+      // docBatchNo: window?.APP_CONFIG?.BATCH_NO === "Yes" ? (item.batchno || null) : null,
+      docBatchNo: "",
       // Set useExistingBatch to true if item already has a batch number
-      useExistingBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? !!item.batchno : false,
+      useExistingBatch:
+        window?.APP_CONFIG?.BATCH_NO === "Yes" ? !!item.batchno : false,
 
       docMdisc: 0,
       recTtl: 0,
@@ -1618,6 +1639,8 @@ function AddGrn({ docData }) {
 
   const createTransactionObject = (item, docNo, storeNo) => {
     console.log(item, "trafr object");
+    console.log(item.itemprice, "trafr object itemprice");
+
     const today = new Date();
     const timeStr =
       ("0" + today.getHours()).slice(-2) +
@@ -1649,12 +1672,14 @@ function AddGrn({ docData }) {
       itemUom: item.docUom,
       movType: "GRN",
       // Only set itemBatch if batch functionality is enabled
-      itemBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
-      itemBatchCost: item.batchCost,
+      itemBatch:
+        window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
+      itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
       // Only set docExpdate if batch functionality is enabled and we have a valid date
-              docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
+      docExpdate:
+        window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
       useExistingBatch: item.useExistingBatch,
     };
   };
@@ -1663,8 +1688,11 @@ function AddGrn({ docData }) {
   const editPostedStockHdrs = async (data) => {
     try {
       console.log("Editing posted stock header:", data);
-      
-      const res = await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${data.docNo}`, data);
+
+      const res = await apiService.post(
+        `StkMovdocHdrs/update?[where][docNo]=${data.docNo}`,
+        data
+      );
       console.log("Posted stock header updated successfully");
       return res;
     } catch (error) {
@@ -1678,8 +1706,10 @@ function AddGrn({ docData }) {
       console.log("Editing posted stock details:", details);
 
       // Filter items that have docId (existing items)
-      const itemsToUpdate = details.filter((item) => item.docId && item.docId !== "" && item.docId !== null);
-      
+      const itemsToUpdate = details.filter(
+        (item) => item.docId && item.docId !== "" && item.docId !== null
+      );
+
       if (itemsToUpdate.length === 0) {
         console.log("No existing items to update");
         return true;
@@ -1690,16 +1720,22 @@ function AddGrn({ docData }) {
         itemsToUpdate.map(async (item) => {
           try {
             // Update StkMovdocDtls - For posted docs, only allow editing price-related fields and remarks
-            await apiService.post(`StkMovdocDtls/update?[where][docId]=${item.docId}`, {
-              docPrice: item.docPrice, // ALLOW EDITING - This is the main field that can be changed
-              docAmt: item.docAmt, // This will be recalculated based on new price
-              itemRemark: item.itemRemark, // ALLOW EDITING - Remarks can be changed for posted docs
-              // Keep all other fields as original values - they should not be changed for posted docs
-            });
-            
+            await apiService.post(
+              `StkMovdocDtls/update?[where][docId]=${item.docId}`,
+              {
+                docPrice: item.docPrice, // ALLOW EDITING - This is the main field that can be changed
+                docAmt: item.docAmt, // This will be recalculated based on new price
+                itemRemark: item.itemRemark, // ALLOW EDITING - Remarks can be changed for posted docs
+                // Keep all other fields as original values - they should not be changed for posted docs
+              }
+            );
+
             console.log(`Updated StkMovdocDtls for docId: ${item.docId}`);
           } catch (error) {
-            console.error(`Failed to update StkMovdocDtls for docId ${item.docId}:`, error);
+            console.error(
+              `Failed to update StkMovdocDtls for docId ${item.docId}:`,
+              error
+            );
             throw error;
           }
         })
@@ -1726,13 +1762,15 @@ function AddGrn({ docData }) {
                 and: [
                   { trnDocno: docNo },
                   { storeNo: userDetails.siteCode },
-                  { itemcode: item.itemcode + "0000" }
-                ]
-              }
+                  { itemcode: item.itemcode + "0000" },
+                ],
+              },
             };
 
             const originalStktrn = await apiService.get(
-              `Stktrns?filter=${encodeURIComponent(JSON.stringify(originalStktrnFilter))}`
+              `Stktrns?filter=${encodeURIComponent(
+                JSON.stringify(originalStktrnFilter)
+              )}`
             );
 
             // 2. Get CURRENT balance from ItemOnQties
@@ -1741,35 +1779,43 @@ function AddGrn({ docData }) {
                 and: [
                   { itemcode: item.itemcode + "0000" },
                   { uom: item.docUom },
-                  { sitecode: userDetails.siteCode }
-                ]
-              }
+                  { sitecode: userDetails.siteCode },
+                ],
+              },
             };
-            
+
             console.log(`🔍 ItemOnQties filter:`, currentBalanceFilter);
 
             let newBalQty, newBalCost, itemBatchCost;
 
             try {
-              const url = `Itemonqties?filter=${encodeURIComponent(JSON.stringify(currentBalanceFilter))}`;
+              const url = `Itemonqties?filter=${encodeURIComponent(
+                JSON.stringify(currentBalanceFilter)
+              )}`;
               console.log(`🔍 ItemOnQties URL:`, url);
-              
+
               const resp = await apiService.get(url);
               console.log(`🔍 ItemOnQties response:`, resp);
-              
+
               if (resp && resp.length > 0) {
                 const currentBalance = resp[0];
                 console.log(`🔍 Current balance found:`, currentBalance);
-                
+
                 if (originalStktrn && originalStktrn.length > 0) {
                   const original = originalStktrn[0];
                   console.log(`🔍 Original Stktrns found:`, original);
-                  
+
                   // 3. Calculate NEW balance: Current - Original + New
                   // This is the key difference from regular posting!
-                  newBalQty = Number(currentBalance.trnBalqty) - Number(original.trnQty) + Number(item.docQty);
-                  newBalCost = Number(currentBalance.trnBalcst) - Number(original.trnAmt) + Number(item.docAmt);
-                  
+                  newBalQty =
+                    Number(currentBalance.trnBalqty) -
+                    Number(original.trnQty) +
+                    Number(item.docQty);
+                  newBalCost =
+                    Number(currentBalance.trnBalcst) -
+                    Number(original.trnAmt) +
+                    Number(item.docAmt);
+
                   console.log(`🔍 Balance calculation:`, {
                     currentQty: currentBalance.trnBalqty,
                     currentCost: currentBalance.trnBalcst,
@@ -1778,62 +1824,80 @@ function AddGrn({ docData }) {
                     newQty: item.docQty,
                     newCost: item.docAmt,
                     newBalQty: newBalQty,
-                    newBalCost: newBalCost
+                    newBalCost: newBalCost,
                   });
                 } else {
-                  console.log(`🔍 No original Stktrns found, using current balance + new values`);
-                  newBalQty = Number(currentBalance.trnBalqty) + Number(item.docQty);
-                  newBalCost = Number(currentBalance.trnBalcst) + Number(item.docAmt);
+                  console.log(
+                    `🔍 No original Stktrns found, using current balance + new values`
+                  );
+                  newBalQty =
+                    Number(currentBalance.trnBalqty) + Number(item.docQty);
+                  newBalCost =
+                    Number(currentBalance.trnBalcst) + Number(item.docAmt);
                 }
-                
-                itemBatchCost = (item.batchCost || item.docPrice).toString();
+
+                itemBatchCost = (item.Cost || item.docPrice).toString();
               } else {
-                console.log(`🔍 No ItemOnQties records found for item ${item.itemcode}`);
+                console.log(
+                  `🔍 No ItemOnQties records found for item ${item.itemcode}`
+                );
                 // Fallback: use new values directly
                 newBalQty = Number(item.docQty);
                 newBalCost = Number(item.docAmt);
-                itemBatchCost = item.batchCost;
+                itemBatchCost = item.Cost;
               }
             } catch (error) {
-              console.error(`Error fetching Itemonqties for ${item.itemcode}:`, error);
+              console.error(
+                `Error fetching Itemonqties for ${item.itemcode}:`,
+                error
+              );
               // Fallback: use new values directly
               newBalQty = Number(item.docQty);
               newBalCost = Number(item.docAmt);
-              itemBatchCost = item.batchCost;
+              itemBatchCost = item.Cost;
             }
 
             if (originalStktrn && originalStktrn.length > 0) {
-              console.log(`🔄 Found existing Stktrns for item ${item.itemcode}, updating...`);
-              
+              console.log(
+                `🔄 Found existing Stktrns for item ${item.itemcode}, updating...`
+              );
+
               // Update existing Stktrns record with corrected balance calculations
               const stktrnsUpdate = {
-                trnQty: item.docQty,           // New quantity
-                trnAmt: item.docAmt,           // New amount
-                trnCost: item.docAmt,          // New cost
-                trnBalqty: newBalQty,         // ✅ Corrected balance quantity
-                trnBalcst: newBalCost          // ✅ Corrected balance cost
+                trnQty: item.docQty, // New quantity
+                trnAmt: item.docAmt, // New amount
+                trnCost: item.docAmt, // New cost
+                trnBalqty: newBalQty, // ✅ Corrected balance quantity
+                trnBalcst: newBalCost, // ✅ Corrected balance cost
               };
 
               const whereClause = {
-                "trnDocno": docNo,
-                "storeNo": userDetails.siteCode,
-                "itemcode": item.itemcode + "0000"
+                trnDocno: docNo,
+                storeNo: userDetails.siteCode,
+                itemcode: item.itemcode + "0000",
               };
 
               await apiService.post(
-                `Stktrns/update?where=${encodeURIComponent(JSON.stringify(whereClause))}`,
+                `Stktrns/update?where=${encodeURIComponent(
+                  JSON.stringify(whereClause)
+                )}`,
                 stktrnsUpdate
               );
 
-              console.log(`Updated Stktrns for item: ${item.itemcode} with corrected balances`);
+              console.log(
+                `Updated Stktrns for item: ${item.itemcode} with corrected balances`
+              );
             } else {
-              console.log(`🆕 No existing Stktrns found for item ${item.itemcode}, creating new...`);
-              
+              console.log(
+                `🆕 No existing Stktrns found for item ${item.itemcode}, creating new...`
+              );
+
               // Insert new Stktrns record if doesn't exist
               const today = new Date();
-              const timeStr = ("0" + today.getHours()).slice(-2) +
-                             ("0" + today.getMinutes()).slice(-2) +
-                             ("0" + today.getSeconds()).slice(-2);
+              const timeStr =
+                ("0" + today.getHours()).slice(-2) +
+                ("0" + today.getMinutes()).slice(-2) +
+                ("0" + today.getSeconds()).slice(-2);
 
               const newStktrns = {
                 id: null,
@@ -1851,8 +1915,8 @@ function AddGrn({ docData }) {
                 trnDbQty: null,
                 trnCrQty: null,
                 trnQty: item.docQty,
-                trnBalqty: newBalQty,         // ✅ Corrected balance quantity
-                trnBalcst: newBalCost,        // ✅ Corrected balance cost
+                trnBalqty: newBalQty, // ✅ Corrected balance quantity
+                trnBalcst: newBalCost, // ✅ Corrected balance cost
                 trnAmt: item.docAmt,
                 trnCost: item.docAmt,
                 trnRef: null,
@@ -1864,17 +1928,21 @@ function AddGrn({ docData }) {
                 itemBatchCost: itemBatchCost,
                 stockIn: null,
                 transPackageLineNo: null,
-                docExpdate: item.docExpdate
+                docExpdate: item.docExpdate,
               };
 
               await apiService.post("Stktrns", newStktrns);
-              console.log(`Inserted new Stktrns for item: ${item.itemcode} with corrected balances`);
+              console.log(
+                `Inserted new Stktrns for item: ${item.itemcode} with corrected balances`
+              );
             }
 
             // ItemBatches update will be handled separately in editPostedItemBatches function
-
           } catch (error) {
-            console.error(`Failed to process Stktrns for item ${item.itemcode}:`, error);
+            console.error(
+              `Failed to process Stktrns for item ${item.itemcode}:`,
+              error
+            );
             throw error;
           }
         })
@@ -1897,30 +1965,34 @@ function AddGrn({ docData }) {
           try {
             // Update ItemBatches - batchCost is static, no weighted average needed
             const trimmedItemCode = item.itemcode.replace(/0000$/, "");
-            
+
             if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
               // WITH BATCH NUMBERS: Find and update specific batch record
-              console.log(`Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`);
-              
+              console.log(
+                `Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`
+              );
+
               const specificBatchFilter = {
                 where: {
                   and: [
                     { itemCode: trimmedItemCode },
                     { siteCode: userDetails.siteCode },
                     { uom: item.docUom },
-                    { batchNo: item.docBatchNo || "" }
-                  ]
-                }
+                    { batchNo: item.docBatchNo || "" },
+                  ],
+                },
               };
-              
+
               try {
                 const existingBatch = await apiService.get(
-                  `ItemBatches?filter=${encodeURIComponent(JSON.stringify(specificBatchFilter))}`
+                  `ItemBatches?filter=${encodeURIComponent(
+                    JSON.stringify(specificBatchFilter)
+                  )}`
                 );
-                
+
                 if (existingBatch && existingBatch.length > 0) {
                   const batchRecord = existingBatch[0];
-                  
+
                   // Update the existing batch record - batchCost remains static
                   const batchUpdate = {
                     itemCode: batchRecord.itemCode,
@@ -1929,41 +2001,54 @@ function AddGrn({ docData }) {
                     uom: batchRecord.uom,
                     qty: batchRecord.qty, // Keep original total quantity
                     expDate: batchRecord.expDate, // Keep original expiry date
-                    batchCost: batchRecord.batchCost // Keep original batch cost (static)
+                    batchCost: batchRecord.batchCost, // Keep original batch cost (static)
                   };
-                  
-                  await apiService.patch(`ItemBatches/${batchRecord.id}`, batchUpdate);
-                  console.log(`Updated ItemBatches for ${item.itemcode}, batch ${item.docBatchNo}: batchCost remains static at ${batchRecord.batchCost}`);
+
+                  await apiService.patch(
+                    `ItemBatches/${batchRecord.id}`,
+                    batchUpdate
+                  );
+                  console.log(
+                    `Updated ItemBatches for ${item.itemcode}, batch ${item.docBatchNo}: batchCost remains static at ${batchRecord.batchCost}`
+                  );
                 } else {
-                  console.log(`No existing batch found for item ${item.itemcode} with batch number ${item.docBatchNo}`);
+                  console.log(
+                    `No existing batch found for item ${item.itemcode} with batch number ${item.docBatchNo}`
+                  );
                 }
               } catch (error) {
-                console.error(`Error updating ItemBatches for item ${item.itemcode}:`, error);
+                console.error(
+                  `Error updating ItemBatches for item ${item.itemcode}:`,
+                  error
+                );
                 // Don't throw error here - batch cost update is not critical for the main operation
               }
-              
             } else {
               // WITHOUT BATCH NUMBERS: Update single batch record
-              console.log(`Processing ItemBatch update with BATCH_NO=No for ${item.itemcode}`);
-              
+              console.log(
+                `Processing ItemBatch update with BATCH_NO=No for ${item.itemcode}`
+              );
+
               const singleBatchFilter = {
                 where: {
                   and: [
                     { itemCode: trimmedItemCode },
                     { siteCode: userDetails.siteCode },
-                    { uom: item.docUom }
-                  ]
-                }
+                    { uom: item.docUom },
+                  ],
+                },
               };
-              
+
               try {
                 const existingBatch = await apiService.get(
-                  `ItemBatches?filter=${encodeURIComponent(JSON.stringify(singleBatchFilter))}`
+                  `ItemBatches?filter=${encodeURIComponent(
+                    JSON.stringify(singleBatchFilter)
+                  )}`
                 );
-                
+
                 if (existingBatch && existingBatch.length > 0) {
                   const batchRecord = existingBatch[0];
-                  
+
                   // Update the batch record - batchCost remains static
                   const batchUpdate = {
                     itemCode: batchRecord.itemCode,
@@ -1972,21 +2057,34 @@ function AddGrn({ docData }) {
                     uom: batchRecord.uom,
                     qty: batchRecord.qty, // Keep original total quantity
                     expDate: batchRecord.expDate, // Keep original expiry date
-                    batchCost: batchRecord.batchCost // Keep original batch cost (static)
+                    batchCost: batchRecord.batchCost, // Keep original batch cost (static)
                   };
-                  
-                  await apiService.patch(`ItemBatches/${batchRecord.id}`, batchUpdate);
-                  console.log(`Updated ItemBatches for ${item.itemcode}: batchCost remains static at ${batchRecord.batchCost}`);
+
+                  await apiService.patch(
+                    `ItemBatches/${batchRecord.id}`,
+                    batchUpdate
+                  );
+                  console.log(
+                    `Updated ItemBatches for ${item.itemcode}: batchCost remains static at ${batchRecord.batchCost}`
+                  );
                 } else {
-                  console.log(`No existing batch found for item: ${item.itemcode}, skipping batch cost update`);
+                  console.log(
+                    `No existing batch found for item: ${item.itemcode}, skipping batch cost update`
+                  );
                 }
               } catch (error) {
-                console.error(`Error updating ItemBatches for item ${item.itemcode}:`, error);
+                console.error(
+                  `Error updating ItemBatches for item ${item.itemcode}:`,
+                  error
+                );
                 // Don't throw error here - batch cost update is not critical for the main operation
               }
             }
           } catch (error) {
-            console.error(`Failed to process ItemBatches for item ${item.itemcode}:`, error);
+            console.error(
+              `Failed to process ItemBatches for item ${item.itemcode}:`,
+              error
+            );
             // Don't throw error here - batch cost update is not critical for the main operation
           }
         })
@@ -2002,8 +2100,6 @@ function AddGrn({ docData }) {
 
   // Edit Posted Document Functions - END
 
-  
-
   const onSubmit = async (e, type) => {
     e?.preventDefault();
 
@@ -2012,20 +2108,27 @@ function AddGrn({ docData }) {
       docStatus: stockHdrs.docStatus,
       docStatusType: typeof stockHdrs.docStatus,
       isSettingPostedChangePrice: userDetails?.isSettingPostedChangePrice,
-      isSettingPostedChangePriceType: typeof userDetails?.isSettingPostedChangePrice,
+      isSettingPostedChangePriceType:
+        typeof userDetails?.isSettingPostedChangePrice,
       userDetails: userDetails,
       type: type,
       urlStatus: urlStatus,
-      urlStatusType: typeof urlStatus
+      urlStatusType: typeof urlStatus,
     });
 
     // NEW: Handle posted document editing - Check at the very beginning
     // Use both urlStatus and stockHdrs.docStatus for better detection
-    const isPostedDocument = (stockHdrs.docStatus === "7" || stockHdrs.docStatus === 7) || urlStatus === "7";
-    
-    if (isPostedDocument && userDetails?.isSettingPostedChangePrice === "True") {
+    const isPostedDocument =
+      stockHdrs.docStatus === "7" ||
+      stockHdrs.docStatus === 7 ||
+      urlStatus === "7";
+
+    if (
+      isPostedDocument &&
+      userDetails?.isSettingPostedChangePrice === "True"
+    ) {
       console.log("✅ Taking EDIT POSTED DOCUMENT path");
-      
+
       // Set loading state
       if (type === "save") {
         setSaveLoading(true);
@@ -2043,7 +2146,10 @@ function AddGrn({ docData }) {
 
         const docNo = urlDocNo || stockHdrs.docNo;
         const details = cartData;
-        
+
+        // Calculate new totals based on updated details for posted docs
+        const newTotals = calculateTotals(details);
+
         // Create header data - for posted docs, only allow editing ref, remarks, term, supplier, and delivery date
         const headerData = {
           docNo: stockHdrs.docNo,
@@ -2059,8 +2165,8 @@ function AddGrn({ docData }) {
           postDate: stockHdrs.postDate, // Keep original post date
           docStatus: "7", // Keep as posted
           docTerm: stockHdrs.docTerm, // ALLOW EDITING
-          docQty: stockHdrs.docQty, // Keep original - don't recalculate for posted docs
-          docAmt: stockHdrs.docAmt, // Keep original - don't recalculate for posted docs
+          docQty: newTotals.totalQty, // ✅ RECALCULATE - Update with new total quantity
+          docAmt: newTotals.totalAmt, // ✅ RECALCULATE - Update with new total amount
           docAttn: supplierInfo.Attn, // ALLOW EDITING - Supplier attention can be changed
           docRemk1: stockHdrs.docRemk1, // ALLOW EDITING
           staffNo: stockHdrs.staffNo, // Keep original
@@ -2074,40 +2180,46 @@ function AddGrn({ docData }) {
           daddr3: supplierInfo.sline3, // ALLOW EDITING - Ship to address can be changed
           dpostcode: supplierInfo.spcode, // ALLOW EDITING - Ship to postcode can be changed
           createUser: stockHdrs.createUser, // Keep original
-          createDate: stockHdrs.createDate // Keep original
+          createDate: stockHdrs.createDate, // Keep original
         };
 
-        console.log('x1')
+        console.log("x1");
         // Update header
         await editPostedStockHdrs(headerData);
-        
+
         // Update details
         await editPostedStockDetails(details);
-        
+
         // Update Stktrns
         await editPostedStktrns(details, docNo);
-        
+
         // Only update ItemBatches if quantities have changed
-        const hasQuantityChanges = details.some(item => {
+        const hasQuantityChanges = details.some((item) => {
           // Check if this item has a docId (existing item) and if quantities differ
           if (item.docId) {
-            const originalItem = cartData.find(original => original.docId === item.docId);
-            return originalItem && Number(originalItem.docQty) !== Number(item.docQty);
+            const originalItem = cartData.find(
+              (original) => original.docId === item.docId
+            );
+            return (
+              originalItem &&
+              Number(originalItem.docQty) !== Number(item.docQty)
+            );
           }
           return false; // New items don't need batch updates
         });
-        
+
         if (hasQuantityChanges) {
           console.log("🔄 Quantities changed, updating ItemBatches...");
           await editPostedItemBatches(details);
         } else {
-          console.log("✅ No quantity changes detected, skipping ItemBatches update");
+          console.log(
+            "✅ No quantity changes detected, skipping ItemBatches update"
+          );
         }
 
         toast.success("Posted document updated successfully");
         navigate("/goods-receive-note?tab=all");
         return; // Exit early, don't continue with normal flow
-
       } catch (error) {
         console.error("Error updating posted document:", error);
         toast.error("Failed to update posted document");
@@ -2146,7 +2258,7 @@ function AddGrn({ docData }) {
         details = cartData.map((item, index) => ({
           ...item,
           docNo,
-       
+
           id: index + 1, // Use sequential index + 1 for new items
         }));
         setStockHdrs(hdr);
@@ -2190,7 +2302,7 @@ function AddGrn({ docData }) {
         docAmt: calculateTotals(details).totalAmt,
         docAttn: supplierInfo.Attn,
         docRemk1: hdr.docRemk1,
-        staffNo: userDetails.usercode|| userDetails.username,
+        staffNo: userDetails.usercode || userDetails.username,
         bname: supplierInfo.Attn,
         baddr1: supplierInfo.line1,
         baddr2: supplierInfo.line2,
@@ -2216,7 +2328,7 @@ function AddGrn({ docData }) {
       } else if (type === "post") {
         // For direct post without saving, create header first if needed
 
-        console.log('x2')
+        console.log("x2");
 
         if (!urlDocNo) {
           await postStockHdr(data, "create");
@@ -2242,12 +2354,12 @@ function AddGrn({ docData }) {
         // await apiService.post("Inventorylogs", inventoryLog);
 
         let batchId;
-        console.log(details,'details')
+        console.log(details, "details");
 
         const stktrns = details.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
-        console.log(stktrns,'stktrns')
+        console.log(stktrns, "stktrns");
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         const itemRequests = stktrns.map((d) => {
           const filter = {
@@ -2292,8 +2404,8 @@ function AddGrn({ docData }) {
             d.trnBalcst = (
               Number(d.trnBalcst || 0) + Number(on.trnBalcst || 0)
             ).toString();
-            d.itemBatchCost = (on.batchCost || 0).toString();
-            // d.itemBatchCost = (d.itemBatchCost || 0).toString();
+            // d.itemBatchCost = (on.batchCost || 0).toString();
+            d.itemBatchCost = (d.itemBatchCost || 0).toString();
           } else {
             const errorLog = {
               trnDocNo: docNo,
@@ -2433,98 +2545,196 @@ function AddGrn({ docData }) {
               },
             };
 
-            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
-              if (d.useExistingBatch) {
-                // For existing batches, first get the current batch data
-                // await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(fil))}`)
-                //   .then((res) => {
-                //     const batchData = res[0];
-                //     if (batchData) {
-                //       batchUpdate = {
-                //         itemCode: batchData.itemCode || trimmedItemCode,
-                //         siteCode: batchData.siteCode,
-                //         uom: batchData.uom,
-                //         qty: Number(batchData.qty) + Number(d.trnQty),
-                //         batchCost: Number(batchData.batchCost) + Number(d.trnCost),
-                //         batchNo: batchData.batchNo,
-                //         expDate: d?.docExpdate ? d?.docExpdate : batchData.expDate
-                //       };
-                //     }
-                //   })
-                //   .catch(async (err) => {
-                //     // Log qty update error
-                //     const errorLog = {
-                //       trnDocNo: docNo,
-                //       itemCode: d.itemcode,
-                //       loginUser: userDetails.username,
-                //       siteCode: userDetails.siteCode,
-                //       logMsg: `ItemBatches/updateqty ${err.message}`,
-                //       createdDate: new Date().toISOString().split("T")[0],
-                //     };
-                //     // await apiService.post("Inventorylogs", errorLog);
-                //   });
+            if (window?.APP_CONFIG?.BATCH_NO === "Yes" && d.itemBatch!==null) {
+              // Check if this is a save->post scenario (urlDocNo exists) or direct post
+              if (urlDocNo) {
+                // SAVE -> POST: useExistingBatch flag is lost, check database
+                const batchCheckFilter = {
+                  where: {
+                    and: [
+                      { itemCode: trimmedItemCode },
+                      { siteCode: userDetails.siteCode },
+                      { uom: d.itemUom },
+                      { batchNo: d.itemBatch },
+                    ],
+                  },
+                };
 
-                                  batchUpdate = {
+                try {
+                  const existingBatchCheck = await apiService.get(
+                    `ItemBatches?filter=${encodeURIComponent(
+                      JSON.stringify(batchCheckFilter)
+                    )}`
+                  );
+
+                  const batchExists = existingBatchCheck && existingBatchCheck.length > 0;
+
+                  if (batchExists) {
+                    // For existing batches, use updateqty
+                    batchUpdate = {
+                      itemcode: trimmedItemCode,
+                      sitecode: userDetails.siteCode,
+                      uom: d.itemUom,
+                      qty: Number(d.trnQty),
+                      batchcost: Number(d.itemBatchCost),
+                      // Only include batch number if batch functionality is enabled
+                      ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                        batchno: d.itemBatch,
+                      }),
+                      // Only include expiry date if expiry date functionality is enabled
+                      ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
+                        d?.docExpdate && {
+                          expDate: d.docExpdate,
+                        }),
+                    };
+
+                    await apiService
+                      .post("ItemBatches/updateqty", batchUpdate)
+                      .catch(async (err) => {
+                        // Log qty update error
+                        const errorLog = {
+                          trnDocNo: docNo,
+                          itemCode: d.itemcode,
+                          loginUser: userDetails.username,
+                          siteCode: userDetails.siteCode,
+                          logMsg: `ItemBatches/updateqty ${err.message}`,
+                          createdDate: new Date().toISOString().split("T")[0],
+                        };
+                        // await apiService.post("Inventorylogs", errorLog);
+                      });
+                  } else {
+                    // For new batches, create a new batch record
+                    batchUpdate = {
+                      itemCode: trimmedItemCode,
+                      siteCode: userDetails.siteCode,
+                      uom: d.itemUom,
+                      qty: Number(d.trnQty),
+                      batchCost: Number(d.itemBatchCost),
+                      // Only include batch number if batch functionality is enabled
+                      ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                        batchNo: d.itemBatch,
+                      }),
+                      // Only include expiry date if expiry date functionality is enabled
+                      ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
+                        d?.docExpdate && {
+                          expDate: d.docExpdate,
+                        }),
+                    };
+
+                    await apiService
+                      .post(`ItemBatches`, batchUpdate)
+                      .catch(async (err) => {
+                        const errorLog = {
+                          trnDocNo: docNo,
+                          itemCode: d.itemcode,
+                          loginUser: userDetails.username,
+                          siteCode: userDetails.siteCode,
+                          logMsg: `ItemBatches/create error: ${err.message}`,
+                          createdDate: new Date().toISOString().split("T")[0],
+                        };
+                      });
+                  }
+                } catch (error) {
+                  console.error(
+                    `Error checking existing batch for item ${d.itemcode}:`,
+                    error
+                  );
+                  // Fallback to creating new batch if check fails
+                  batchUpdate = {
+                    itemCode: trimmedItemCode,
+                    siteCode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchCost: Number(d.itemBatchCost),
+                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      batchNo: d.itemBatch,
+                    }),
+                    ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
+                      d?.docExpdate && {
+                        expDate: d.docExpdate,
+                      }),
+                  };
+
+                  await apiService
+                    .post(`ItemBatches`, batchUpdate)
+                    .catch(async (err) => {
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/create error (fallback): ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                    });
+                }
+              } else {
+                // DIRECT POST: useExistingBatch flag is available, use it
+                if (d.useExistingBatch) {
+                  // For existing batches, use updateqty
+                  batchUpdate = {
                     itemcode: trimmedItemCode,
                     sitecode: userDetails.siteCode,
                     uom: d.itemUom,
                     qty: Number(d.trnQty),
-                  batchcost: Number(d.itemBatchCost),
-                  // Only include batch number if batch functionality is enabled
+                    batchcost: Number(d.itemBatchCost),
+                    // Only include batch number if batch functionality is enabled
                     ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
                       batchno: d.itemBatch,
                     }),
-                  // Only include expiry date if expiry date functionality is enabled
-                  ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && d?.docExpdate && {
-                    expDate: d.docExpdate,
-                  }),
+                    // Only include expiry date if expiry date functionality is enabled
+                    ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
+                      d?.docExpdate && {
+                        expDate: d.docExpdate,
+                      }),
                   };
 
-                await apiService
-                  .post("ItemBatches/updateqty", batchUpdate)
-                  // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-                  .catch(async (err) => {
-                    // Log qty update error
-                    const errorLog = {
-                      trnDocNo: docNo,
-                      itemCode: d.itemcode,
-                      loginUser: userDetails.username,
-                      siteCode: userDetails.siteCode,
-                      logMsg: `ItemBatches/updateqty ${err.message}`,
-                      createdDate: new Date().toISOString().split("T")[0],
-                    };
-                    // await apiService.post("Inventorylogs", errorLog);
-                  });
-              } else {
-                // For new batches, create a new batch record
-                batchUpdate = {
-                  itemCode: trimmedItemCode,
-                  siteCode: userDetails.siteCode,
-                  uom: d.itemUom,
-                  qty: Number(d.trnQty),
-                  batchCost: Number(d.itemBatchCost),
-                  // Only include batch number if batch functionality is enabled
-                  ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
-                  batchNo: d.itemBatch,
-                  }),
-                  // Only include expiry date if expiry date functionality is enabled
-                  ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && d?.docExpdate && {
-                    expDate: d.docExpdate,
-                  }),
-                };
+                  await apiService
+                    .post("ItemBatches/updateqty", batchUpdate)
+                    .catch(async (err) => {
+                      // Log qty update error
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/updateqty ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                      // await apiService.post("Inventorylogs", errorLog);
+                    });
+                } else {
+                  // For new batches, create a new batch record
+                  batchUpdate = {
+                    itemCode: trimmedItemCode,
+                    siteCode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchCost: Number(d.itemBatchCost),
+                    // Only include batch number if batch functionality is enabled
+                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      batchNo: d.itemBatch,
+                    }),
+                    // Only include expiry date if expiry date functionality is enabled
+                    ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
+                      d?.docExpdate && {
+                        expDate: d.docExpdate,
+                      }),
+                  };
 
-                await apiService
-                  .post(`ItemBatches`, batchUpdate)
-                  .catch(async (err) => {
-                    const errorLog = {
-                      trnDocNo: docNo,
-                      itemCode: d.itemcode,
-                      loginUser: userDetails.username,
-                      siteCode: userDetails.siteCode,
-                      logMsg: `ItemBatches/create error: ${err.message}`,
-                      createdDate: new Date().toISOString().split("T")[0],
-                    };
-                  });
+                  await apiService
+                    .post(`ItemBatches`, batchUpdate)
+                    .catch(async (err) => {
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/create error: ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                    });
+                }
               }
             } else {
               // Without batch functionality, don't include batch-related fields
@@ -2537,21 +2747,21 @@ function AddGrn({ docData }) {
                 // No batch number or expiry date
               };
 
-            await apiService
-              .post("ItemBatches/updateqty", batchUpdate)
-              // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-              .catch(async (err) => {
-                // Log qty update error
-                const errorLog = {
-                  trnDocNo: docNo,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `ItemBatches/updateqty ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // await apiService.post("Inventorylogs", errorLog);
-              });
+              await apiService
+                .post("ItemBatches/updateqty", batchUpdate)
+                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
+                .catch(async (err) => {
+                  // Log qty update error
+                  const errorLog = {
+                    trnDocNo: docNo,
+                    itemCode: d.itemcode,
+                    loginUser: userDetails.username,
+                    siteCode: userDetails.siteCode,
+                    logMsg: `ItemBatches/updateqty ${err.message}`,
+                    createdDate: new Date().toISOString().split("T")[0],
+                  };
+                  // await apiService.post("Inventorylogs", errorLog);
+                });
             }
           }
         } else {
@@ -2667,7 +2877,7 @@ function AddGrn({ docData }) {
                 Cancel
               </Button>
               <Button
-                disabled={(stockHdrs.docStatus === 7 ) || saveLoading}
+                disabled={stockHdrs.docStatus === 7 || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -2688,7 +2898,11 @@ function AddGrn({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || postLoading}
+                disabled={
+                  (stockHdrs.docStatus === 7 &&
+                    userDetails?.isSettingPostedChangePrice !== "True") ||
+                  postLoading
+                }
               >
                 {postLoading ? (
                   <>
@@ -2733,7 +2947,10 @@ function AddGrn({ docData }) {
                     <Label>GR Ref 1</Label>
                     <Input
                       placeholder="Enter GR Ref 1"
-                        disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={
+                        urlStatus == 7 &&
+                        userDetails?.isSettingPostedChangePrice !== "True"
+                      }
                       value={stockHdrs.docRef1}
                       onChange={(e) =>
                         setStockHdrs((prev) => ({
@@ -2752,7 +2969,10 @@ function AddGrn({ docData }) {
                       Supply No<span className="text-red-500">*</span>
                     </Label>
                     <Select
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={
+                        urlStatus == 7 &&
+                        userDetails?.isSettingPostedChangePrice !== "True"
+                      }
                       value={stockHdrs.supplyNo}
                       onValueChange={(value) =>
                         setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
@@ -2775,7 +2995,10 @@ function AddGrn({ docData }) {
                       Delivery Date<span className="text-red-500">*</span>
                     </Label>
                     <Input
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={
+                        urlStatus == 7 &&
+                        userDetails?.isSettingPostedChangePrice !== "True"
+                      }
                       type="date"
                       // value={stockHdrs.postDate}
                       value={stockHdrs.deliveryDate}
@@ -2785,7 +3008,10 @@ function AddGrn({ docData }) {
                   <div className="space-y-2">
                     <Label>GR Ref 2</Label>
                     <Input
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={
+                        urlStatus == 7 &&
+                        userDetails?.isSettingPostedChangePrice !== "True"
+                      }
                       placeholder="Enter GR Ref 2"
                       value={stockHdrs.docRef2}
                       onChange={(e) =>
@@ -2823,7 +3049,10 @@ function AddGrn({ docData }) {
                     </Label>
                     <Input
                       type="number"
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={
+                        urlStatus == 7 &&
+                        userDetails?.isSettingPostedChangePrice !== "True"
+                      }
                       placeholder="Enter term"
                       value={stockHdrs.docTerm}
                       onChange={(e) =>
@@ -2863,7 +3092,10 @@ function AddGrn({ docData }) {
                   <Label>Remarks</Label>
                   <Input
                     placeholder="Enter remarks"
-                     disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                    disabled={
+                      urlStatus == 7 &&
+                      userDetails?.isSettingPostedChangePrice !== "True"
+                    }
                     value={stockHdrs.docRemk1}
                     onChange={(e) =>
                       setStockHdrs((prev) => ({
@@ -2975,7 +3207,9 @@ function AddGrn({ docData }) {
                       onAddToCart={(index, item) => addToCart(index, item)}
                       currentPage={pagination.page}
                       itemsPerPage={6}
-                      totalPages={Math.ceil(filteredItemTotal / pagination.limit)}
+                      totalPages={Math.ceil(
+                        filteredItemTotal / pagination.limit
+                      )}
                       onPageChange={handlePageChange}
                       showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
                       // Add sorting functionality
@@ -3064,15 +3298,37 @@ function AddGrn({ docData }) {
 
           {/* Move the Add Item Details button to the top right above the table */}
           {cartData.length > 0 && (
-            <div className="flex justify-end my-5">
-              {selectedRows.length > 0 && (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) && (
-                <Button
-                  onClick={handleBatchEditClick}
-                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
-                >
-                  Update Selected
-                </Button>
+            <div className="space-y-4">
+              {/* Batch Number Status */}
+              {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                (() => {
+                  const itemsWithoutBatch = cartData.filter(item => !item.docBatchNo);
+                  return itemsWithoutBatch.length > 0 ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-amber-600">⚠</span>
+                        <span className="text-amber-800">
+                          {itemsWithoutBatch.length} item(s) need batch numbers. Click edit icon to add.
+                        </span>
+                      </div>
+                    </div>
+                  ) : null;
+                })()
               )}
+              
+              <div className="flex justify-end">
+                {selectedRows.length > 0 &&
+                  (urlStatus != 7 ||
+                    (urlStatus == 7 &&
+                      userDetails?.isSettingPostedChangePrice === "True")) && (
+                    <Button
+                      onClick={handleBatchEditClick}
+                      className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                    >
+                      Update Selected
+                    </Button>
+                  )}
+              </div>
             </div>
           )}
           {cartData.length > 0 && (
@@ -3081,9 +3337,11 @@ function AddGrn({ docData }) {
                 Selected Items
               </CardTitle>
               <Table>
-                  <TableHeader className="bg-slate-100">
-                    <TableRow className="border-b border-slate-200">
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                <TableHeader className="bg-slate-100">
+                  <TableRow className="border-b border-slate-200">
+                    {urlStatus != 7 ||
+                    (urlStatus == 7 &&
+                      userDetails?.isSettingPostedChangePrice === "True") ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -3101,17 +3359,17 @@ function AddGrn({ docData }) {
                           }}
                         />
                       </TableHead>
-                    ) : null}  
-                      <TableHead className="font-semibold text-slate-700">
-                        NO
-                      </TableHead>
-                      <TableHead className="font-semibold text-slate-700">
-                        Item Code
-                      </TableHead>
-                      <TableHead>Item Description</TableHead>
-                      <TableHead>UOM</TableHead>
-                      <TableHead>Quantity</TableHead>
-                                          {userDetails?.isSettingViewPrice === "True" && (
+                    ) : null}
+                    <TableHead className="font-semibold text-slate-700">
+                      NO
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700">
+                      Item Code
+                    </TableHead>
+                    <TableHead>Item Description</TableHead>
+                    <TableHead>UOM</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    {userDetails?.isSettingViewPrice === "True" && (
                       <TableHead>Price</TableHead>
                     )}
                     {userDetails?.isSettingViewPrice === "True" && (
@@ -3119,18 +3377,20 @@ function AddGrn({ docData }) {
                         Amount
                       </TableHead>
                     )}
-                      {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-                        <>
-                          <TableHead>Expiry Date</TableHead>
-                          <TableHead>Batch No</TableHead>
-                        </>
-                      )}
-                      <TableHead>Remarks</TableHead>
-                      {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
-                        <TableHead>Action</TableHead>
-                      ) : null}
-                    </TableRow>
-                  </TableHeader>
+                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                      <>
+                        <TableHead>Expiry Date</TableHead>
+                        <TableHead>Batch No</TableHead>
+                      </>
+                    )}
+                    <TableHead>Remarks</TableHead>
+                    {urlStatus != 7 ||
+                    (urlStatus == 7 &&
+                      userDetails?.isSettingPostedChangePrice === "True") ? (
+                      <TableHead>Action</TableHead>
+                    ) : null}
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableSpinner colSpan={9} />
@@ -3150,7 +3410,10 @@ function AddGrn({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                          {urlStatus != 7 ||
+                          (urlStatus == 7 &&
+                            userDetails?.isSettingPostedChangePrice ===
+                              "True") ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -3179,42 +3442,51 @@ function AddGrn({ docData }) {
                           </TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell>
-                              {isNaN(item.docPrice) ? 0 : (item.docPrice || 0)}
+                              {isNaN(item.docPrice) ? 0 : item.docPrice || 0}
                             </TableCell>
                           )}
                           {userDetails?.isSettingViewPrice === "True" && (
-                          <TableCell className="font-semibold text-slate-700">
-                              {isNaN(item.docAmt) ? 0 : (item.docAmt || 0)}
-                          </TableCell>
+                            <TableCell className="font-semibold text-slate-700">
+                              {isNaN(item.docAmt) ? 0 : item.docAmt || 0}
+                            </TableCell>
                           )}
                           {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
                             <>
-                              <TableCell>{format_Date(item.docExpdate)}</TableCell>
+                              <TableCell>
+                                {format_Date(item.docExpdate)}
+                              </TableCell>
                               <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
                             </>
                           )}
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
 
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                          {urlStatus != 7 ||
+                          (urlStatus == 7 &&
+                            userDetails?.isSettingPostedChangePrice ===
+                              "True") ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => editPopup(item, index)}
-                                  className="cursor-pointer hover:bg-slate-200 hover:text-blue-600 transition-colors duration-150"
+                                  className={`cursor-pointer transition-colors duration-150 ${
+                                    window?.APP_CONFIG?.BATCH_NO === "Yes" && !item.docBatchNo
+                                      ? "animate-pulse bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-300"
+                                      : "hover:bg-slate-200 hover:text-blue-600"
+                                  }`}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                {(urlStatus != 7 ) && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => onDeleteCart(item, index)}
-                                  className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                {urlStatus != 7 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => onDeleteCart(item, index)}
+                                    className="cursor-pointer hover:bg-red-50 hover:text-red-600 transition-colors duration-150"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
                                 )}
                               </div>
                             </TableCell>
@@ -3232,16 +3504,32 @@ function AddGrn({ docData }) {
                         <TableCell className="text-slate-700">
                           {calculateTotals(cartData).totalQty}
                         </TableCell>
-                        {userDetails?.isSettingViewPrice === "True" && <TableCell />}
                         {userDetails?.isSettingViewPrice === "True" && (
-                        <TableCell className="font-semibold text-slate-700">
-                          {calculateTotals(cartData).totalAmt.toFixed(2)}
-                        </TableCell>
+                          <TableCell />
+                        )}
+                        {userDetails?.isSettingViewPrice === "True" && (
+                          <TableCell className="font-semibold text-slate-700">
+                            {calculateTotals(cartData).totalAmt.toFixed(2)}
+                          </TableCell>
                         )}
                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
-                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />
+                          <TableCell
+                            colSpan={
+                              2 +
+                              (userDetails?.isSettingViewPrice === "True"
+                                ? 1
+                                : 0)
+                            }
+                          />
                         ) : (
-                          <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />
+                          <TableCell
+                            colSpan={
+                              2 +
+                              (userDetails?.isSettingViewPrice === "True"
+                                ? 1
+                                : 0)
+                            }
+                          />
                         )}
                       </TableRow>
                     </>

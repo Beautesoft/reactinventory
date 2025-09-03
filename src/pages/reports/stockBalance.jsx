@@ -152,9 +152,20 @@ const StockBalance = () => {
       // Handle the response structure - ASP.NET returns DataTable directly
       if (response && response.success === "1") {
         if (response.result && Array.isArray(response.result) && response.result.length > 0) {
-          setReportData(response.result);
+          // Process the data to add calculated fields
+          const processedData = response.result.map(item => ({
+            ...item,
+            // Calculate TotalCost = Qty * Cost
+            TotalCost: (Number(item.Qty || 0) * Number(item.Cost || 0)).toFixed(2),
+            // SellingPrice is missing from API, show '-' for now
+            SellingPrice: '-',
+            // Calculate TotalAmount = Qty * SellingPrice (since SellingPrice is '-', this will be '-')
+            TotalAmount: '-'
+          }));
+          
+          setReportData(processedData);
           setHasGeneratedReport(true);
-          toast.success(`Report generated with ${response.result.length} items`);
+          toast.success(`Report generated with ${processedData.length} items`);
         } else {
           // Success but no data
           setReportData([]);
@@ -197,14 +208,19 @@ const StockBalance = () => {
     setHasGeneratedReport(false);
   };
 
-  // Column configuration for the report - simplified 6 columns
+  // Column configuration for the report - updated headers as requested
   const columns = [
     { key: 'Outlet', header: 'Outlet', align: 'left' },
-    { key: 'ItemCode', header: 'Item Code', align: 'left' },
+    { key: 'Dept', header: 'Description', align: 'left' },
+    { key: 'Brand', header: 'Brand', align: 'left' },
+    { key: 'Ranges', header: 'Range', align: 'left' },
     { key: 'ItemName', header: 'Item Name', align: 'left' },
     { key: 'UOM', header: 'UOM', align: 'left' },
     { key: 'Qty', header: 'Qty', align: 'right', type: 'number' },
-    { key: 'Cost', header: 'Value', align: 'right', type: 'number' }
+    { key: 'Cost', header: 'Cost Price', align: 'right', type: 'number' },
+    { key: 'TotalCost', header: 'Total Cost', align: 'right', type: 'number' },
+    { key: 'SellingPrice', header: 'Selling Price', align: 'right', type: 'number' },
+    { key: 'TotalAmount', header: 'Total Amount', align: 'right', type: 'number' }
   ];
 
   // Company information - use titles from API if available, fallback to default
@@ -259,26 +275,32 @@ const StockBalance = () => {
           const outletData = groupedData[outlet];
           
           // Add outlet header row
-          itemsData.push([outlet, "", "", "", "", ""]);
+          itemsData.push([outlet, "", "", "", "", "", "", "", "", "", ""]);
           
           // Add outlet items
           outletData.forEach(item => {
             itemsData.push([
               "", // Empty outlet column for items
-              item.ItemCode || "",
+              item.Dept || "",
+              item.Brand || "",
+              item.Ranges || "",
               item.ItemName || "",
               item.UOM || "",
               Number(item.Qty || 0),
-              Number(item.Cost || 0)
+              Number(item.Cost || 0),
+              Number(item.TotalCost || 0),
+              item.SellingPrice || "-",
+              item.TotalAmount || "-"
             ]);
           });
           
           // Calculate outlet totals
           const outletTotals = outletData.reduce((totals, item) => {
             totals.qty += Number(item.Qty || 0);
-            totals.value += Number(item.Cost || 0);
+            totals.cost += Number(item.Cost || 0);
+            totals.totalCost += Number(item.TotalCost || 0);
             return totals;
-          }, { qty: 0, value: 0 });
+          }, { qty: 0, cost: 0, totalCost: 0 });
           
           // Add outlet total row
           itemsData.push([
@@ -286,23 +308,29 @@ const StockBalance = () => {
             "",
             "",
             "",
+            "",
+            "",
             outletTotals.qty,
-            outletTotals.value
+            outletTotals.cost,
+            outletTotals.totalCost,
+            "-",
+            "-"
           ]);
           
           // Add empty row for spacing
-          itemsData.push(["", "", "", "", "", ""]);
+          itemsData.push(["", "", "", "", "", "", "", "", "", "", ""]);
         });
 
         // Calculate grand totals
         const grandTotals = data.reduce((totals, item) => {
           totals.qty += Number(item.Qty || 0);
-          totals.value += Number(item.Cost || 0);
+          totals.cost += Number(item.Cost || 0);
+          totals.totalCost += Number(item.TotalCost || 0);
           return totals;
-        }, { qty: 0, value: 0 });
+        }, { qty: 0, cost: 0, totalCost: 0 });
         
         // Add grand totals row
-        const totalsRow = ["Total", "", "", "", grandTotals.qty, grandTotals.value];
+        const totalsRow = ["Total", "", "", "", "", "", grandTotals.qty, grandTotals.cost, grandTotals.totalCost, "-", "-"];
 
         // Combine all data
         const excelData = [

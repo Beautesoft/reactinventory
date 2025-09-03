@@ -76,6 +76,12 @@ const UserAuthorization = () => {
     }
   };
 
+  // Filter function to show only required forms
+  const filterRequiredForms = (authData) => {
+    const requiredFormCodes = ["F10001", "F10002", "F10003", "F10004", "F10009", "F10011"];
+    return authData.filter(auth => requiredFormCodes.includes(auth.Code));
+  };
+
   // Fetch user authorizations
   const fetchUserAuthorizations = async (userCode) => {
     try {
@@ -83,8 +89,10 @@ const UserAuthorization = () => {
       if (response && response.result) {
         // Transform DataTable response to array format
         const authData = Array.isArray(response.result) ? response.result : [];
-        setUserAuthorizations(authData);
-        return authData; // Return the data for localStorage update
+        // Filter to show only required forms
+        const filteredData = filterRequiredForms(authData);
+        setUserAuthorizations(filteredData);
+        return filteredData; // Return the filtered data for localStorage update
       } else {
         setUserAuthorizations([]);
         return [];
@@ -92,19 +100,20 @@ const UserAuthorization = () => {
     } catch (error) {
       console.error("Error fetching user authorizations:", error);
       toast.error("Failed to fetch user authorizations");
-      // Mock data for demonstration
+      // Mock data for demonstration - Only showing required forms
       const mockData = [
         { Code: "F10001", Name: "Goods Receive Note List", Active: "Y" },
         { Code: "F10002", Name: "Goods Transfer Out List", Active: "N" },
         { Code: "F10003", Name: "Goods Transfer In List", Active: "Y" },
         { Code: "F10004", Name: "Goods Return List", Active: "N" },
-        { Code: "F10005", Name: "Stock Adjustment List", Active: "Y" },
-        { Code: "F10006", Name: "Purchase Order List", Active: "N" },
-        { Code: "F10007", Name: "Approved PO List", Active: "Y" },
-        { Code: "F10008", Name: "Purchase Order Approval", Active: "N" },
         { Code: "F10009", Name: "Stock Balance", Active: "Y" },
-        { Code: "F10010", Name: "Stock Usage Memo List", Active: "N" },
         { Code: "F10011", Name: "Stock Movement - Detail", Active: "Y" },
+        // Commented out other forms for now
+        // { Code: "F10005", Name: "Stock Adjustment List", Active: "Y" },
+        // { Code: "F10006", Name: "Purchase Order List", Active: "N" },
+        // { Code: "F10007", Name: "Approved PO List", Active: "Y" },
+        // { Code: "F10008", Name: "Purchase Order Approval", Active: "N" },
+        // { Code: "F10010", Name: "Stock Usage Memo List", Active: "N" },
       ];
       setUserAuthorizations(mockData);
       return mockData;
@@ -178,7 +187,9 @@ const UserAuthorization = () => {
         const response = await apiService1.get(`api/getInventoryAuth?userCode=${currentUser.usercode||currentUser.username}`);
         if (response && response.result) {
           const authData = Array.isArray(response.result) ? response.result : [];
-          localStorage.setItem("userAuthorizations", JSON.stringify(authData));
+          // Filter to show only required forms
+          const filteredData = filterRequiredForms(authData);
+          localStorage.setItem("userAuthorizations", JSON.stringify(filteredData));
           toast.success("User list and current user authorizations refreshed successfully.");
         }
       } else {

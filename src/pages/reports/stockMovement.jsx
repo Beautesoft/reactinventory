@@ -683,13 +683,13 @@ const StockMovement = () => {
 
             <div className="space-y-2">
               <Label htmlFor="suppliers">Supplier</Label>
-              <MultiSelect
-                options={suppliers}
-                selected={filters.suppliers}
-                onChange={(value) => handleFilterChange("suppliers", value)}
-                placeholder="Select suppliers..."
-                className="w-full"
-              />
+                             <MultiSelect
+                 options={suppliers}
+                 selected={filters.suppliers}
+                 onChange={(value) => handleFilterChange("suppliers", value)}
+                 placeholder="Select suppliers..."
+                 className="w-full"
+               />
             </div>
 
             <div className="space-y-2">

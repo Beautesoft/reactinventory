@@ -1610,6 +1610,9 @@ function AddAdj({ docData }) {
         const docNo = urlDocNo || stockHdrs.docNo;
         const details = cartData;
         
+        // Calculate new totals based on updated details for posted docs
+        const newTotals = calculateTotals(details);
+        
         // Create header data - for posted docs, only allow editing ref and remarks
         const headerData = {
           docNo: stockHdrs.docNo,
@@ -1622,8 +1625,8 @@ function AddAdj({ docData }) {
           docDate: stockHdrs.docDate, // Keep original
           postDate: stockHdrs.postDate, // Keep original post date
           docStatus: "7", // Keep as posted
-          docQty: stockHdrs.docQty, // Keep original - don't recalculate for posted docs
-          docAmt: stockHdrs.docAmt, // Keep original - don't recalculate for posted docs
+          docQty: newTotals.totalQty, // ✅ RECALCULATE - Update with new total quantity
+          docAmt: newTotals.totalAmt, // ✅ RECALCULATE - Update with new total amount
           docRemk1: stockHdrs.docRemk1, // ALLOW EDITING
           staffNo: stockHdrs.staffNo, // Keep original
           createUser: stockHdrs.createUser, // Keep original
@@ -1886,7 +1889,7 @@ function AddAdj({ docData }) {
                   itemsiteCode: d.storeNo,
                   Qty: d.trnQty,
                   ExpDate: d?.docExpdate ? d?.docExpdate : null,
-                  batchCost: Number(d.trnCost),
+                  batchCost: Number(d.itemBatchCost),
                 });
 
                 const payload = {
@@ -1900,7 +1903,7 @@ function AddAdj({ docData }) {
                   expDate: d.docExpdate
                     ? new Date(d.docExpdate).toISOString()
                     : null,
-                  batchCost: Number(d.trnCost) || 0,
+                  batchCost: Number(d.itemBatchCost) || 0,
                 };
 
                 try {
