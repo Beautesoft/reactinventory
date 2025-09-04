@@ -171,12 +171,12 @@ export function AppSidebar() {
       //   icon: FiFileText,
       // },
       {
-        title: "Stock Balance",
+        title: "Stock Balance Report",
         url: "/stock-balance",
         icon: FiBarChart2,
       },
       {
-        title: "Stock Movement",
+        title: "Stock Movement Report",
         url: "/stock-movement",
         icon: FiTrendingUp,
       },

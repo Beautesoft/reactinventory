@@ -56,7 +56,7 @@ export function NavMain({ items }) {
                           asChild
                         >
                           <Link to={subItem.url}>
-                            <span className="text-gray-600 dark:text-gray-300 text-[15px]">
+                            <span className="text-gray-600 dark:text-gray-300 text-[12.5px] break-words whitespace-normal">
                               {subItem.title}
                             </span>
                           </Link>
