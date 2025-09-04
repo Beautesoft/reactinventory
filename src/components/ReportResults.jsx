@@ -239,9 +239,11 @@ const ReportResults = ({
     return outletData.reduce((totals, item) => {
       // Handle different column structures for different reports
       if (columns.some(col => col.key === 'Qty') && columns.some(col => col.key === 'Cost')) {
-        // Stock Balance report structure
+        // Stock Balance report structure - updated for new data structure
         totals.qty += Number(item.Qty || 0);
-        totals.value += Number(item.Cost || 0);
+        totals.cost += Number(item.Cost || 0);
+        totals.totalCost += Number(item.TotalCost || 0);
+        totals.totalAmount += Number(item.TotalAmount || 0);
       } else if (columns.some(col => col.key === 'TranQty') && columns.some(col => col.key === 'TranAmt')) {
         // Stock Movement report structure - use TranQty and TranAmt
         totals.qty += Number(item.TranQty || 0);
@@ -252,7 +254,7 @@ const ReportResults = ({
         totals.value += Number(item.trnAmt || 0);
       }
       return totals;
-    }, { qty: 0, value: 0 });
+    }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0, value: 0 });
   };
 
   // Calculate item totals by transaction type
@@ -274,9 +276,11 @@ const ReportResults = ({
     return data.reduce((totals, item) => {
       // Handle different column structures for different reports
       if (columns.some(col => col.key === 'Qty') && columns.some(col => col.key === 'Cost')) {
-        // Stock Balance report structure
+        // Stock Balance report structure - updated for new data structure
         totals.qty += Number(item.Qty || 0);
-        totals.value += Number(item.Cost || 0);
+        totals.cost += Number(item.Cost || 0);
+        totals.totalCost += Number(item.TotalCost || 0);
+        totals.totalAmount += Number(item.TotalAmount || 0);
       } else if (columns.some(col => col.key === 'TranQty') && columns.some(col => col.key === 'TranAmt')) {
         // Stock Movement report structure - use TranQty and TranAmt
         totals.qty += Number(item.TranQty || 0);
@@ -287,7 +291,7 @@ const ReportResults = ({
         totals.value += Number(item.trnAmt || 0);
       }
       return totals;
-    }, { qty: 0, value: 0 });
+    }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0, value: 0 });
   };
 
   // Toggle outlet collapse state
@@ -399,7 +403,7 @@ const ReportResults = ({
               // Quantity columns
               const sum = filteredData.reduce((acc, item) => acc + (Number(item[col.key]) || 0), 0);
               return index === 0 ? "Total:" : sum.toLocaleString();
-            } else if (col.key === 'Cost' || col.key === 'TranAmt' || col.key === 'trnAmt') {
+            } else if (col.key === 'Cost' || col.key === 'TranAmt' || col.key === 'trnAmt' || col.key === 'TotalCost' || col.key === 'TotalAmount') {
               // Value/Amount columns
               const sum = filteredData.reduce((acc, item) => acc + (Number(item[col.key]) || 0), 0);
               return index === 0 ? "Total:" : sum.toFixed(2);
@@ -526,14 +530,13 @@ const ReportResults = ({
               {showDetailedInfo ? (
                 // Detailed report info for Stock Movement
                 <div className="grid grid-cols-2 gap-8 text-sm">
-                  <div>
-                    <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
-                    <p><span className="w-32 inline-block">From Date:</span> {reportDetails.fromDate || "-"}</p>
-                    <p><span className="w-32 inline-block">To Date:</span> {reportDetails.toDate || "-"}</p>
-                    <p><span className="w-32 inline-block">Site:</span> {reportDetails.Outlet || "-" || "-"}</p>
-                    <p><span className="w-32 inline-block">Department:</span> {reportDetails.department || "-"}</p>
-                    <p><span className="w-32 inline-block">Brand:</span> {reportDetails.brand || "-"}</p>
-                  </div>
+                                  <div>
+                  <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
+                  <p><span className="w-32 inline-block">As On Date:</span> {reportDetails.asOnDate || "-"}</p>
+                  <p><span className="w-32 inline-block">Site:</span> {reportDetails.site || "-"}</p>
+                  <p><span className="w-32 inline-block">Department:</span> {reportDetails.department || "-"}</p>
+                  <p><span className="w-32 inline-block">Brand:</span> {reportDetails.brand || "-"}</p>
+                </div>
                   <div>
                     <p><span className="w-32 inline-block">From Item:</span> {reportDetails.fromItem || "-"}</p>
                     <p><span className="w-32 inline-block">To Item:</span> {reportDetails.toItem || "-"}</p>
@@ -737,8 +740,7 @@ const ReportResults = ({
               <div className="grid grid-cols-2 gap-8 text-sm">
                 <div>
                   <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
-                  <p><span className="w-32 inline-block">From Date:</span> {reportDetails.fromDate || "-"}</p>
-                  <p><span className="w-32 inline-block">To Date:</span> {reportDetails.toDate || "-"}</p>
+                  <p><span className="w-32 inline-block">As On Date:</span> {reportDetails.asOnDate || "-"}</p>
                   <p><span className="w-32 inline-block">Site:</span> {reportDetails.site || outlet || "-"}</p>
                   <p><span className="w-32 inline-block">Department:</span> {reportDetails.department || "-"}</p>
                   <p><span className="w-32 inline-block">Brand:</span> {reportDetails.brand || "-"}</p>
@@ -830,7 +832,7 @@ const ReportResults = ({
                           {!isCollapsed && (
                             <tr className="bg-blue-50 font-semibold print-row">
                               <td className="py-3 px-4 font-semibold print-cell">{outlet} Total :</td>
-                              <td colSpan={columns.length - 3} className="print-cell"></td>
+                              <td colSpan={columns.length - 5} className="print-cell"></td>
                               <td className="py-3 px-4 text-right font-semibold print-cell">
                                 {(() => {
                                   // Handle different column structures for different reports
@@ -847,12 +849,25 @@ const ReportResults = ({
                               <td className="py-3 px-4 text-right font-semibold print-cell">
                                 {(() => {
                                   // Handle different column structures for different reports
-                                  if (columns.some(col => col.key === 'Cost')) {
-                                    // Stock Balance report - show value total
-                                    return outletTotals.value.toFixed(2);
+                                  if (columns.some(col => col.key === 'TotalCost')) {
+                                    // Stock Balance report - show total cost
+                                    return outletTotals.totalCost.toFixed(2);
+                                  } else if (columns.some(col => col.key === 'Cost')) {
+                                    // Stock Balance report - show cost total
+                                    return outletTotals.cost.toFixed(2);
                                   } else if (columns.some(col => col.key === 'TranAmt' || col.key === 'trnAmt')) {
                                     // Stock Movement report - show transaction amount total
                                     return outletTotals.value.toFixed(2);
+                                  }
+                                  return "0.00";
+                                })()}
+                              </td>
+                              <td className="py-3 px-4 text-right font-semibold print-cell">
+                                {(() => {
+                                  // Handle different column structures for different reports
+                                  if (columns.some(col => col.key === 'TotalAmount')) {
+                                    // Stock Balance report - show total amount
+                                    return outletTotals.totalAmount.toFixed(2);
                                   }
                                   return "0.00";
                                 })()}
@@ -872,7 +887,7 @@ const ReportResults = ({
                   {/* Grand Total Row */}
                   <tr className="bg-blue-100 font-bold text-lg border-t-2 print-row">
                     <td className="py-3 px-4 font-bold print-cell">Total</td>
-                    <td colSpan={columns.length - 3} className="print-cell"></td>
+                    <td colSpan={columns.length - 5} className="print-cell"></td>
                     <td className="py-3 px-4 text-right font-bold print-cell">
                       {(() => {
                         const grandTotals = calculateGrandTotals(filteredData);
@@ -891,12 +906,26 @@ const ReportResults = ({
                       {(() => {
                         const grandTotals = calculateGrandTotals(filteredData);
                         // Handle different column structures for different reports
-                        if (columns.some(col => col.key === 'Cost')) {
-                          // Stock Balance report - show value total
-                          return grandTotals.value.toFixed(2);
+                        if (columns.some(col => col.key === 'TotalCost')) {
+                          // Stock Balance report - show total cost
+                          return grandTotals.totalCost.toFixed(2);
+                        } else if (columns.some(col => col.key === 'Cost')) {
+                          // Stock Balance report - show cost total
+                          return grandTotals.cost.toFixed(2);
                         } else if (columns.some(col => col.key === 'TranAmt' || col.key === 'trnAmt')) {
                           // Stock Movement report - show transaction amount total
                           return grandTotals.value.toFixed(2);
+                        }
+                        return "0.00";
+                      })()}
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold print-cell">
+                      {(() => {
+                        const grandTotals = calculateGrandTotals(filteredData);
+                        // Handle different column structures for different reports
+                        if (columns.some(col => col.key === 'TotalAmount')) {
+                          // Stock Balance report - show total amount
+                          return grandTotals.totalAmount.toFixed(2);
                         }
                         return "0.00";
                       })()}
@@ -1122,7 +1151,7 @@ const ReportResults = ({
                             if (column.key === 'Qty' || column.key === 'TranQty' || column.key === 'trnQty') {
                               // Quantity columns
                               return filteredData.reduce((sum, item) => sum + (Number(item[column.key]) || 0), 0).toLocaleString();
-                            } else if (column.key === 'Cost' || column.key === 'TranAmt' || column.key === 'trnAmt') {
+                            } else if (column.key === 'Cost' || column.key === 'TranAmt' || column.key === 'trnAmt' || column.key === 'TotalCost' || column.key === 'TotalAmount') {
                               // Value/Amount columns
                               return filteredData.reduce((sum, item) => sum + (Number(item[column.key]) || 0), 0).toFixed(2);
                             } else {

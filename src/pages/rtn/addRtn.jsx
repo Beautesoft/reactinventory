@@ -606,8 +606,7 @@ function AddRtn({ docData }) {
     RunningNo: "",
   });
 
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [pendingCartItem, setPendingCartItem] = useState(null);
+
   const [validationErrors, setValidationErrors] = useState([]);
   const [showValidationDialog, setShowValidationDialog] = useState(false);
   const [brandOption, setBrandOption] = useState([]);
@@ -1630,11 +1629,14 @@ function AddRtn({ docData }) {
     // Prepare batch data for storage in database fields (for future use)
     let recQtyFields = { recQty1: 0, recQty2: 0, recQty3: 0, recQty4: 0, recQty5: 0 };
     let ordMemoFields = { ordMemo1: "fifo", ordMemo2: "", ordMemo3: "0", ordMemo4: "" };
-    let docBatchNo = null; // Don't store multiple batch numbers in docBatchNo
+    let docBatchNo = null; // Will be set based on batch selection
     let docExpdate = "";
 
-    // If specific batches are selected, update memo fields
+    // If specific batches are selected, update memo fields and set batch number
     if (hasSpecificBatches) {
+      // For specific batches, set the primary batch number (first batch or combined)
+      docBatchNo = item.selectedBatches.batchNo || "";
+      
       ordMemoFields = {
         ordMemo1: "specific",
         ordMemo2: item.selectedBatches.batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(','),
@@ -1699,12 +1701,18 @@ function AddRtn({ docData }) {
 
     const existingItemIndex = cartData.findIndex(
       (cartItem) =>
-        cartItem.itemcode === item.stockCode && cartItem.docUom === item.itemUom
+        cartItem.itemcode === item.stockCode && cartItem.docUom === item.uom
     );
 
+    // Debug logging
+    console.log("🔍 Duplicate check:", {
+      newItem: { itemcode: item.stockCode, docUom: item.uom },
+      existingItems: cartData.map(c => ({ itemcode: c.itemcode, docUom: c.docUom })),
+      existingItemIndex
+    });
+
     if (existingItemIndex !== -1) {
-      setPendingCartItem({ newCartItem, index });
-      setShowConfirmDialog(true);
+      toast.error("This item is already in the cart");
       return;
     }
 
@@ -2194,30 +2202,62 @@ function AddRtn({ docData }) {
               );
 
               if (cartItem && cartItem.transferType === 'specific' && cartItem.batchDetails) {
-                // Specific batch selection - use the selected batch numbers
+                // Specific batch selection - process each selected batch individually
                 console.log(`🔄 Processing specific batch return for ${trimmedItemCode}`);
                 
-                batchUpdate = {
-                  itemcode: trimmedItemCode,
-                  sitecode: userDetails.siteCode,
-                  uom: d.itemUom,
-                  qty: Number(d.trnQty),
-                  batchcost: Number(d.itemBatchCost),
-                  batchno: d.itemBatch,
-                };
+                // Process individual batches from the selection
+                if (cartItem.batchDetails.individualBatches && cartItem.batchDetails.individualBatches.length > 0) {
+                  for (const batchDetail of cartItem.batchDetails.individualBatches) {
+                    if (batchDetail.quantity > 0) {
+                      batchUpdate = {
+                        itemcode: trimmedItemCode,
+                        sitecode: userDetails.siteCode,
+                        uom: d.itemUom,
+                        qty: -batchDetail.quantity, // Negative for return (reduce quantity)
+                        batchcost: Number(d.itemBatchCost),
+                        batchno: batchDetail.batchNo,
+                      };
 
-                await apiService
-                  .post("ItemBatches/updateqty", batchUpdate)
-                  .catch(async (err) => {
-                    const errorLog = {
-                      trnDocNo: docNo,
-                      itemCode: d.itemcode,
-                      loginUser: userDetails.username,
-                      siteCode: userDetails.siteCode,
-                      logMsg: `ItemBatches/updateqty error: ${err.message}`,
-                      createdDate: new Date().toISOString().split("T")[0],
-                    };
-                  });
+                      await apiService
+                        .post("ItemBatches/updateqty", batchUpdate)
+                        .catch(async (err) => {
+                          const errorLog = {
+                            trnDocNo: docNo,
+                            itemCode: d.itemcode,
+                            loginUser: userDetails.username,
+                            siteCode: userDetails.siteCode,
+                            logMsg: `ItemBatches/updateqty specific batch error: ${err.message}`,
+                            createdDate: new Date().toISOString().split("T")[0],
+                          };
+                        });
+                    }
+                  }
+                }
+                
+                // Process "No Batch" quantity if any
+                if (cartItem.batchDetails.noBatchTransferQty > 0) {
+                  batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: userDetails.siteCode,
+                    uom: d.itemUom,
+                    qty: -cartItem.batchDetails.noBatchTransferQty, // Negative for return
+                    batchcost: Number(d.itemBatchCost),
+                    batchno: "", // Empty string for "No Batch"
+                  };
+
+                  await apiService
+                    .post("ItemBatches/updateqty", batchUpdate)
+                    .catch(async (err) => {
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/updateqty no batch error: ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                    });
+                }
               } else {
                 // FIFO return - find existing batches and reduce quantities
                 console.log(`🔄 Processing FIFO batch return for ${trimmedItemCode}`);
@@ -2407,6 +2447,11 @@ function AddRtn({ docData }) {
       return;
     }
 
+    if (window?.APP_CONFIG?.ManualBatchSelection !== true) {
+      toast.error("Manual batch selection is disabled");
+      return;
+    }
+
     // Always check if quantity is entered and valid
     if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity first");
@@ -2547,6 +2592,21 @@ function AddRtn({ docData }) {
     }
 
     setShowBatchDialog(false);
+  };
+
+  // NEW: Handle removing batch selection
+  const handleRemoveBatchSelection = (index, item) => {
+    setStockList((prev) =>
+      prev.map((stockItem, i) =>
+        i === index 
+          ? { 
+              ...stockItem, 
+              selectedBatches: null // Remove batch selection
+            }
+          : stockItem
+      )
+    );
+    toast.success("Batch selection removed");
   };
 
   // Edit Posted Document Functions - START
@@ -3349,6 +3409,7 @@ function AddRtn({ docData }) {
                       sortConfig={sortConfig}
                       // NEW: Batch selection for RTN with modal
                       onBatchSelection={(index, item) => handleRowBatchSelection(item, index)}
+                      onRemoveBatchSelection={handleRemoveBatchSelection}
                       isBatchLoading={false} // Global loading not needed
                       itemBatchLoading={itemBatchLoading} // Pass per-item loading state
                     />
@@ -3648,36 +3709,7 @@ function AddRtn({ docData }) {
         urlStatus={urlStatus}
         userDetails={userDetails}
       />
-      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Duplicate Item</AlertDialogTitle>
-            <AlertDialogDescription>
-              This item already exists in the cart. Would you like to add it
-              again?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowConfirmDialog(false)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingCartItem) {
-                  addItemToCart(
-                    pendingCartItem.newCartItem,
-                    pendingCartItem.index
-                  );
-                  setPendingCartItem(null);
-                }
-                setShowConfirmDialog(false);
-              }}
-            >
-              Add Again
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      
       <AlertDialog
         open={showValidationDialog}
         onOpenChange={setShowValidationDialog}

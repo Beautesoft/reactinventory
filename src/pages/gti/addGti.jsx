@@ -374,7 +374,6 @@ const EditDialog = memo(
     isBatchEdit,
     urlStatus,
     userDetails,
-    hdrs
   }) => {
     const [validationErrors, setValidationErrors] = useState([]);
 
@@ -392,13 +391,19 @@ const EditDialog = memo(
     const handleSubmit = () => {
       const errors = [];
 
-      // Validate quantity and price
-      if (!editData?.docQty || editData.docQty <= 0) {
-        errors.push("Quantity must be greater than 0");
+      // Only validate quantity and price if not batch editing
+      if (!isBatchEdit) {
+        if (!editData?.docQty || editData.docQty <= 0) {
+          errors.push("Quantity must be greater than 0");
+        }
+        
+        // Only validate price if price viewing is enabled
+        if (userDetails?.isSettingViewPrice === "True" && (!editData?.docPrice || editData.docPrice <= 0)) {
+          errors.push("Price must be greater than 0");
+        }
       }
-      if (userDetails?.isSettingViewPrice === "True" && (!editData?.docPrice || editData.docPrice <= 0)) {
-        errors.push("Price must be greater than 0");
-      }
+
+      // Batch number and expiry date validation removed - handled by separate batch selection modal
 
       if (errors.length > 0) {
         setValidationErrors(errors);
@@ -411,7 +416,7 @@ const EditDialog = memo(
     return (
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent
-          className="sm:max-w-[500px]"
+          className="sm:max-w-[425px]"
           aria-describedby="edit-item-description"
         >
           <DialogHeader>
@@ -444,61 +449,35 @@ const EditDialog = memo(
 
 
 
-          {/* Always show Quantity and Price */}
-          <div className="space-y-2">
-            <Label htmlFor="qty">Quantity</Label>
-            <Input
-              id="qty"
-              type="number"
-              min="0"
-              value={editData?.docQty || ""}
-              onChange={(e) => onEditCart(e, "docQty")}
-              className="w-full"
-              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
-            />
-          </div>
-          {userDetails?.isSettingViewPrice === "True" && (
-            <div className="space-y-2">
-              <Label htmlFor="price">Price</Label>
-              <Input
-                id="price"
-                type="number"
-                min="0"
-                value={editData?.docPrice || ""}
-                onChange={(e) => onEditCart(e, "docPrice")}
-                className="w-full"
-              />
-            </div>
-          )}
-          {/* Show expiry date field when EXPIRY_DATE is enabled */}
-          {window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && (
-            <div className="space-y-2">
-              <Label htmlFor="expiry">Expiry Date</Label>
-              <Input
-                id="expiry"
-                type="date"
-                value={editData?.docExpdate || ""}
-                onChange={(e) => onEditCart(e, "docExpdate")}
-                className="w-full"
-                disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True"}
-              />
-            </div>
-          )}
-
-          {/* FIFO Information */}
-          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-              <div className="flex items-start space-x-2">
-                <Info className="h-4 w-4 text-blue-600 mt-0.5" />
-                <div className="text-sm text-blue-800">
-                  <p className="font-medium">Batch Transfer Information</p>
-                  <p className="text-xs mt-1">
-                    Items are transferred using FIFO (First In, First Out) by expiry date. 
-                    Use the "Select Specific Batch" button in the item table to choose specific batches.
-                  </p>
-                </div>
+          {/* Show Quantity and Price only for individual edit (not batch edit) */}
+          {!isBatchEdit && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="qty">Quantity</Label>
+                <Input
+                  id="qty"
+                  type="number"
+                  min="0"
+                  value={editData?.docQty || ""}
+                  onChange={(e) => onEditCart(e, "docQty")}
+                  className="w-full"
+                  disabled={urlStatus == 7}
+                />
               </div>
-            </div>
+              {userDetails?.isSettingViewPrice === "True" && (
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    value={editData?.docPrice || ""}
+                    onChange={(e) => onEditCart(e, "docPrice")}
+                    className="w-full"
+                  />
+                </div>
+              )}
+            </>
           )}
 
           <div className="space-y-2">
@@ -509,7 +488,6 @@ const EditDialog = memo(
               onChange={(e) => onEditCart(e, "itemRemark")}
               placeholder="Enter remarks"
               className="w-full"
-              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
             />
           </div>
 
@@ -2411,6 +2389,11 @@ function AddGti({ docData }) {
       return;
     }
 
+    if (window?.APP_CONFIG?.ManualBatchSelection !== true) {
+      toast.error("Manual batch selection is disabled");
+      return;
+    }
+
     // Always check if quantity is entered and valid
     if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity first");
@@ -2637,6 +2620,21 @@ function AddGti({ docData }) {
     setShowBatchDialog(false);
     setEditData(null);
     setEditingIndex(null);
+  };
+
+  // NEW: Handle removing batch selection
+  const handleRemoveBatchSelection = (index, item) => {
+    setStockList((prev) =>
+      prev.map((stockItem, i) =>
+        i === index 
+          ? { 
+              ...stockItem, 
+              selectedBatches: null // Remove batch selection
+            }
+          : stockItem
+      )
+    );
+    toast.success("Batch selection removed");
   };
 
   // Helper function to handle multi-batch transfers (creates separate records for each batch)
@@ -3680,6 +3678,7 @@ function AddGti({ docData }) {
                       sortConfig={sortConfig}
                       // NEW: Batch selection for GTI
                       onBatchSelection={(index, item) => handleRowBatchSelection(item, index)}
+                      onRemoveBatchSelection={handleRemoveBatchSelection}
                       isBatchLoading={false} // Global loading not needed
                       itemBatchLoading={itemBatchLoading} // Pass per-item loading state
                     />
@@ -3903,7 +3902,6 @@ function AddGti({ docData }) {
           isBatchEdit={isBatchEdit}
           urlStatus={urlStatus}
           userDetails={userDetails}
-          hdrs={stockHdrs}
         />
               <BatchSelectionDialog
           showBatchDialog={showBatchDialog}

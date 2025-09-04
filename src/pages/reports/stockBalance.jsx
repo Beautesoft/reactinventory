@@ -157,10 +157,8 @@ const StockBalance = () => {
             ...item,
             // Calculate TotalCost = Qty * Cost
             TotalCost: (Number(item.Qty || 0) * Number(item.Cost || 0)).toFixed(2),
-            // SellingPrice is missing from API, show '-' for now
-            SellingPrice: '-',
-            // Calculate TotalAmount = Qty * SellingPrice (since SellingPrice is '-', this will be '-')
-            TotalAmount: '-'
+            // Calculate TotalAmount = Qty * Price
+            TotalAmount: (Number(item.Qty || 0) * Number(item.Price || 0)).toFixed(2)
           }));
           
           setReportData(processedData);
@@ -216,11 +214,11 @@ const StockBalance = () => {
     { key: 'Ranges', header: 'Range', align: 'left' },
     { key: 'ItemName', header: 'Item Name', align: 'left' },
     { key: 'UOM', header: 'UOM', align: 'left' },
-    { key: 'Qty', header: 'Qty', align: 'right', type: 'number' },
-    { key: 'Cost', header: 'Cost Price', align: 'right', type: 'number' },
-    { key: 'TotalCost', header: 'Total Cost', align: 'right', type: 'number' },
-    { key: 'SellingPrice', header: 'Selling Price', align: 'right', type: 'number' },
-    { key: 'TotalAmount', header: 'Total Amount', align: 'right', type: 'number' }
+    { key: 'Qty', header: 'Qty', align: 'right', type: 'number', render: (value) => Number(value).toLocaleString() },
+    { key: 'Cost', header: 'Cost Price', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) },
+    { key: 'TotalCost', header: 'Total Cost', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) },
+    { key: 'Price', header: 'Selling Price', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) },
+    { key: 'TotalAmount', header: 'Total Amount', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) }
   ];
 
   // Company information - use titles from API if available, fallback to default
@@ -289,7 +287,7 @@ const StockBalance = () => {
               Number(item.Qty || 0),
               Number(item.Cost || 0),
               Number(item.TotalCost || 0),
-              item.SellingPrice || "-",
+              item.Price || "-",
               item.TotalAmount || "-"
             ]);
           });
@@ -299,8 +297,9 @@ const StockBalance = () => {
             totals.qty += Number(item.Qty || 0);
             totals.cost += Number(item.Cost || 0);
             totals.totalCost += Number(item.TotalCost || 0);
+            totals.totalAmount += Number(item.TotalAmount || 0);
             return totals;
-          }, { qty: 0, cost: 0, totalCost: 0 });
+          }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0 });
           
           // Add outlet total row
           itemsData.push([
@@ -314,7 +313,7 @@ const StockBalance = () => {
             outletTotals.cost,
             outletTotals.totalCost,
             "-",
-            "-"
+            outletTotals.totalAmount
           ]);
           
           // Add empty row for spacing
@@ -326,11 +325,12 @@ const StockBalance = () => {
           totals.qty += Number(item.Qty || 0);
           totals.cost += Number(item.Cost || 0);
           totals.totalCost += Number(item.TotalCost || 0);
+          totals.totalAmount += Number(item.TotalAmount || 0);
           return totals;
-        }, { qty: 0, cost: 0, totalCost: 0 });
+        }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0 });
         
         // Add grand totals row
-        const totalsRow = ["Total", "", "", "", "", "", grandTotals.qty, grandTotals.cost, grandTotals.totalCost, "-", "-"];
+        const totalsRow = ["Total", "", "", "", "", "", grandTotals.qty, grandTotals.cost, grandTotals.totalCost, "-", grandTotals.totalAmount];
 
         // Combine all data
         const excelData = [

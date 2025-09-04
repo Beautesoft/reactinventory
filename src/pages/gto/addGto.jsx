@@ -94,12 +94,6 @@ const EditDialog = memo(
     userDetails,
   }) => {
     const [validationErrors, setValidationErrors] = useState([]);
-    const [newBatchNo, setNewBatchNo] = useState("");
-    console.log(editData,"editData")
-
-    // Check if the item has a batch number
-    const hasBatchNumber = editData?.docBatchNo && editData.docBatchNo.trim() !== "";
-    const showBatchFields = window?.APP_CONFIG?.BATCH_NO === "Yes" && hasBatchNumber;
 
     // Reset states when dialog closes
     useEffect(() => {
@@ -116,16 +110,14 @@ const EditDialog = memo(
         if (!editData?.docQty || editData.docQty <= 0) {
           errors.push("Quantity must be greater than 0");
         }
+        
         // Only validate price if price viewing is enabled
         if (userDetails?.isSettingViewPrice === "True" && (!editData?.docPrice || editData.docPrice <= 0)) {
           errors.push("Price must be greater than 0");
         }
       }
 
-      // Validate expiry date only if expiry date functionality is enabled
-      if (window?.APP_CONFIG?.EXPIRY_DATE === "Yes" && !editData?.docExpdate) {
-        errors.push("Expiry date is required");
-      }
+      // Batch number and expiry date validation removed - handled by separate batch selection modal
 
       if (errors.length > 0) {
         setValidationErrors(errors);
@@ -198,25 +190,6 @@ const EditDialog = memo(
               )}
             </>
           )}
-          {/* Show batch fields when BATCH_NO is enabled */}
-          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
-            <div className="space-y-2">
-              <Label htmlFor="batchNo">Batch No</Label>
-              <Input
-                id="batchNo"
-                value={editData?.docBatchNo || ""}
-                className="w-full bg-gray-50"
-                disabled={true}
-                placeholder={editData?.docBatchNo ? "Batch number (read-only)" : "No batch number assigned"}
-              />
-              <p className="text-xs text-gray-500">
-                {editData?.docBatchNo 
-                  ? "Batch numbers cannot be modified during transfers" 
-                  : "Batch numbers can only be assigned during Goods Receive (GRN)"
-                }
-              </p>
-            </div>
-          )}
           <div className="space-y-2">
             <Label htmlFor="remarks">Remarks</Label>
             <Input
@@ -225,7 +198,6 @@ const EditDialog = memo(
               onChange={(e) => onEditCart(e, "itemRemark")}
               placeholder="Enter remarks"
               className="w-full"
-              disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
             />
           </div>
           <DialogFooter>
@@ -2822,6 +2794,11 @@ function AddGto({ docData }) {
       return;
     }
 
+    if (window?.APP_CONFIG?.ManualBatchSelection !== true) {
+      toast.error("Manual batch selection is disabled");
+      return;
+    }
+
     // Always check if quantity is entered and valid
     if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity first");
@@ -3013,6 +2990,21 @@ function AddGto({ docData }) {
     setShowBatchDialog(false);
     setEditData(null);
     setEditingIndex(null);
+  };
+
+  // NEW: Handle removing batch selection
+  const handleRemoveBatchSelection = (index, item) => {
+    setStockList((prev) =>
+      prev.map((stockItem, i) =>
+        i === index 
+          ? { 
+              ...stockItem, 
+              selectedBatches: null // Remove batch selection
+            }
+          : stockItem
+      )
+    );
+    toast.success("Batch selection removed");
   };
 
   // Helper function to handle multi-batch transfers (creates separate records for each batch)
@@ -3681,6 +3673,7 @@ function AddGto({ docData }) {
                       onSort={handleSort}
                       sortConfig={sortConfig}
                       onBatchSelection={(index, item) => handleRowBatchSelection(item, index)}
+                      onRemoveBatchSelection={handleRemoveBatchSelection}
                       isBatchLoading={false} // Global loading not needed
                       itemBatchLoading={itemBatchLoading} // Pass per-item loading state
                     />

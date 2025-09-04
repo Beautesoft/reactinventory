@@ -293,8 +293,8 @@ function PrintPreview({
       colSpan: 3
     },
     admin: {
-      headers: ['No', 'Item Code', 'Item Description', 'Qty', 'Unit Price', 'Amount', 'Cost', 'Total Cost'],
-      keys: ['no', 'itemcode', 'itemdesc', 'docQty', 'docPrice', 'docAmt', 'itemprice', 'totalCost'],
+      headers: ['No', 'Item Code', 'Item Description', 'Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
+      keys: ['no', 'itemcode', 'itemdesc', 'docQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
       widths: [8, 15, 35, 10, 15, 15, 15, 15],
       alignments: ['left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
       colSpan: 3
@@ -578,8 +578,8 @@ function PrintPreview({
              row.push(
                item.docPrice,
                item.docAmt,
-                              (item.itemprice || 0).toFixed(1),
-                              ((item.docQty * item.itemprice) || 0).toFixed(1)
+                              (item.itemCost || 0).toFixed(1),
+                              ((item.docQty * item.itemCost) || 0).toFixed(1)
              );
            }
            
@@ -889,8 +889,8 @@ function PrintPreview({
                   <>
                     <td className="py-3 px-3 print-cell text-right">{item.docPrice || "-"}</td>
                     <td className="py-3 px-3 print-cell text-right font-medium">{item.docAmt || "-"}</td>
-                    <td className="py-3 px-3 print-cell text-right">{(item.itemprice || 0).toFixed(2)}</td>
-                    <td className="py-3 px-3 print-cell text-right font-medium">{((item.docQty * item.itemprice) || 0).toFixed(2)}</td>
+                    <td className="py-3 px-3 print-cell text-right">{(item.itemCost || 0).toFixed(2)}</td>
+                    <td className="py-3 px-3 print-cell text-right font-medium">{((item.docQty * item.itemCost) || 0).toFixed(2)}</td>
                   </>
                 )}
               </tr>
@@ -920,7 +920,7 @@ function PrintPreview({
                   <td className="py-3 px-4 text-right">-</td>
                   <td className="py-3 px-4 text-right font-bold text-blue-600">
                     {currentItems.reduce(
-                      (sum, item) => sum + ((item.docQty * item.itemprice) || 0),
+                      (sum, item) => sum + ((item.docQty * item.itemCost) || 0),
                       0
                     ).toFixed(2)}
                   </td>
@@ -953,7 +953,7 @@ function PrintPreview({
                     <td className="py-4 px-4 text-right">-</td>
                     <td className="py-4 px-4 text-right text-blue-800">
                       {filteredItems.reduce(
-                        (sum, item) => sum + ((item.docQty * item.itemprice) || 0),
+                        (sum, item) => sum + ((item.docQty * item.itemCost) || 0),
                         0
                       ).toFixed(2)}
                     </td>

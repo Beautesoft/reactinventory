@@ -44,6 +44,8 @@ function ItemTable({
   allowNegativeQty = false, // New prop to allow negative quantities
   // NEW: Batch selection prop
   onBatchSelection = null,
+  // NEW: Remove batch selection prop
+  onRemoveBatchSelection = null,
   // NEW: Batch loading state
   isBatchLoading = false,
   // NEW: Per-item batch loading state
@@ -305,13 +307,27 @@ function ItemTable({
                           placeholder="0"
                         />
                         {/* NEW: Batch Selection Indicator */}
-                        {window?.APP_CONFIG?.BATCH_NO === "Yes" && item.selectedBatches && (
+                        {window?.APP_CONFIG?.BATCH_NO === "Yes" && 
+                         window?.APP_CONFIG?.ManualBatchSelection === true && 
+                         item.selectedBatches && (
                           <div className="mt-1 text-xs">
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               ✓ {item.selectedBatches.batchDetails && item.selectedBatches.batchDetails.length > 1 
                                 ? `Multiple batches selected (${item.selectedBatches.batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(', ')})`
                                 : `Batch ${item.selectedBatches.batchNo} selected`
                               }
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onRemoveBatchSelection && onRemoveBatchSelection(index, item);
+                                }}
+                                className="ml-2 hover:bg-green-200 rounded-full p-0.5 transition-colors"
+                                title="Remove batch selection"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
                             </span>
                           </div>
                         )}
@@ -359,7 +375,9 @@ function ItemTable({
                             <Plus className="h-4 w-4" />
                           </Button>
                           {/* NEW: Batch Selection Button */}
-                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && onBatchSelection && (
+                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && 
+                           window?.APP_CONFIG?.ManualBatchSelection === true && 
+                           onBatchSelection && (
                             <Button
                               variant="ghost"
                               size="icon"
