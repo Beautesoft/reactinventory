@@ -832,7 +832,11 @@ const ReportResults = ({
                           {!isCollapsed && (
                             <tr className="bg-blue-50 font-semibold print-row">
                               <td className="py-3 px-4 font-semibold print-cell">{outlet} Total :</td>
-                              <td colSpan={columns.length - 5} className="print-cell"></td>
+                              <td className="print-cell"></td>
+                              <td className="print-cell"></td>
+                              <td className="print-cell"></td>
+                              <td className="print-cell"></td>
+                              <td className="print-cell"></td>
                               <td className="py-3 px-4 text-right font-semibold print-cell">
                                 {(() => {
                                   // Handle different column structures for different reports
@@ -847,20 +851,23 @@ const ReportResults = ({
                                 })()}
                               </td>
                               <td className="py-3 px-4 text-right font-semibold print-cell">
+                                {/* Cost Price column - no total (unit price) */}
+                              </td>
+                              <td className="py-3 px-4 text-right font-semibold print-cell">
                                 {(() => {
                                   // Handle different column structures for different reports
                                   if (columns.some(col => col.key === 'TotalCost')) {
                                     // Stock Balance report - show total cost
                                     return outletTotals.totalCost.toFixed(2);
-                                  } else if (columns.some(col => col.key === 'Cost')) {
-                                    // Stock Balance report - show cost total
-                                    return outletTotals.cost.toFixed(2);
                                   } else if (columns.some(col => col.key === 'TranAmt' || col.key === 'trnAmt')) {
                                     // Stock Movement report - show transaction amount total
                                     return outletTotals.value.toFixed(2);
                                   }
                                   return "0.00";
                                 })()}
+                              </td>
+                              <td className="py-3 px-4 text-right font-semibold print-cell">
+                                {/* Selling Price column - no total */}
                               </td>
                               <td className="py-3 px-4 text-right font-semibold print-cell">
                                 {(() => {
@@ -887,7 +894,11 @@ const ReportResults = ({
                   {/* Grand Total Row */}
                   <tr className="bg-blue-100 font-bold text-lg border-t-2 print-row">
                     <td className="py-3 px-4 font-bold print-cell">Total</td>
-                    <td colSpan={columns.length - 5} className="print-cell"></td>
+                    <td className="print-cell"></td>
+                    <td className="print-cell"></td>
+                    <td className="print-cell"></td>
+                    <td className="print-cell"></td>
+                    <td className="print-cell"></td>
                     <td className="py-3 px-4 text-right font-bold print-cell">
                       {(() => {
                         const grandTotals = calculateGrandTotals(filteredData);
@@ -903,21 +914,24 @@ const ReportResults = ({
                       })()}
                     </td>
                     <td className="py-3 px-4 text-right font-bold print-cell">
+                      {/* Cost Price column - no total (unit price) */}
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold print-cell">
                       {(() => {
                         const grandTotals = calculateGrandTotals(filteredData);
                         // Handle different column structures for different reports
                         if (columns.some(col => col.key === 'TotalCost')) {
                           // Stock Balance report - show total cost
                           return grandTotals.totalCost.toFixed(2);
-                        } else if (columns.some(col => col.key === 'Cost')) {
-                          // Stock Balance report - show cost total
-                          return grandTotals.cost.toFixed(2);
                         } else if (columns.some(col => col.key === 'TranAmt' || col.key === 'trnAmt')) {
                           // Stock Movement report - show transaction amount total
                           return grandTotals.value.toFixed(2);
                         }
                         return "0.00";
                       })()}
+                    </td>
+                    <td className="py-3 px-4 text-right font-bold print-cell">
+                      {/* Selling Price column - no total */}
                     </td>
                     <td className="py-3 px-4 text-right font-bold print-cell">
                       {(() => {
