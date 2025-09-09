@@ -465,3 +465,32 @@ export const checkMenuAuthorization = (menuTitle) => {
   if (!authCode) return true; // If no auth code mapped, allow access
   return hasUserAuthorization(authCode);
 };
+
+// Function to get dynamic APP_CONFIG with user-specific overrides
+export const getAppConfig = () => {
+  // Get base config from window.APP_CONFIG
+  const baseConfig = window.APP_CONFIG || {};
+  
+  // Get user details from localStorage
+  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  
+  // Create config with user-specific overrides for settings only
+  const dynamicConfig = {
+    ...baseConfig, // Keep all existing config (API URLs, etc.)
+    // Override only the user-specific settings
+    BATCH_NO: userDetails.batchNo === "True" ? "Yes" : "No",
+    EXPIRY_DATE: userDetails.expiryDate === "True" ? "Yes" : "No", 
+    AUTO_POST: userDetails.autoPost === "True" ? "Yes" : "No",
+    DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays) || baseConfig.DEFAULT_EXPIRY_DAYS || 365,
+    ManualBatchSelection: userDetails.manualBatchSelection === "True",
+    BATCH_SNO: userDetails.batchSNo === "True" ? "Yes" : "No",
+  };
+  
+  return dynamicConfig;
+};
+
+// Helper function to get a specific config value with user override
+export const getConfigValue = (key) => {
+  const config = getAppConfig();
+  return config[key];
+};

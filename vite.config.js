@@ -2,7 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from "@tailwindcss/vite";
 import path from "path"
+import fs from "fs"
 
+// Read version directly from package.json
+const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -19,7 +22,7 @@ export default defineConfig({
   // Define build-time environment variables
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
-    __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.0.0'),
+    __BUILD_VERSION__: JSON.stringify(packageJson.version), // ✅ Read directly from package.json
   },
   
   server: {

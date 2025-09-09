@@ -52,6 +52,7 @@ import {
   buildFilterQuery,
   format_Date,
   queryParamsGenerate,
+  getConfigValue,
 } from "@/utils/utils";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -114,7 +115,7 @@ const EditDialog = memo(
             />
           </div>
                      {/* Price field removed as it's not displayed in the cart table */}
-          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+          {getConfigValue('BATCH_NO') === "Yes" && (
             <>
               <div className="space-y-2">
                 <Label htmlFor="batchNo">Batch No</Label>
@@ -904,7 +905,7 @@ function AddTake({ docData }) {
         cancelQty: 0,
         createUser: userDetails?.username || "SYSTEM",
               docUom: item.docUom || "",
-      docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || "") : "",
+      docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.docExpdate || "") : "",
       itmBrand: item.itmBrand || "",
         itmRange: item.itmRange || "",
         itmBrandDesc: item.itmBrandDesc || "",
@@ -990,7 +991,7 @@ function AddTake({ docData }) {
           loginUser: userDetails?.username || "SYSTEM",
           siteCode: userDetails?.siteCode,
           itemBatch: item.docBatchNo || null,
-          docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || null) : null,
+          docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.docExpdate || null) : null,
         };
       });
 
@@ -1013,7 +1014,7 @@ function AddTake({ docData }) {
         for (const d of stktrns) {
           const trimmedItemCode = d.itemcode.replace(/0000$/, "");
 
-          if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+          if (getConfigValue('BATCH_NO') === "Yes") {
             // With batch functionality enabled
             const batchUpdate = {
               itemcode: trimmedItemCode,
@@ -1175,7 +1176,7 @@ function AddTake({ docData }) {
     }
 
     // Batch and Expiry Date Validation - Only for submit and when batch functionality is enabled
-    if (type === "submit" && window?.APP_CONFIG?.BATCH_NO === "Yes") {
+    if (type === "submit" && getConfigValue('BATCH_NO') === "Yes") {
       cart.forEach((item, index) => {
         if (!item.docBatchNo) {
           errors.push(
@@ -1249,9 +1250,9 @@ function AddTake({ docData }) {
      setEditData({
        ...item,
        docQty: Number(item.docQty) || 0,
-       docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || "") : "",
+       docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.docExpdate || "") : "",
        itemRemark: item.itemRemark || "",
-       ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+       ...(getConfigValue('BATCH_NO') === "Yes" && {
          docBatchNo: item.docBatchNo || "",
        }),
      });
@@ -1305,7 +1306,7 @@ function AddTake({ docData }) {
        cancelQty: 0,
        createUser: userDetails?.username || "SYSTEM",
        docUom: item.uom || "",
-       docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.expiryDate || "") : "",
+       docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.expiryDate || "") : "",
        itmBrand: item.brandCode,
        itmRange: item.rangeCode,
        itmBrandDesc: item.brand,
@@ -1314,7 +1315,7 @@ function AddTake({ docData }) {
        itemRemark: "",
        docMdisc: 0,
        recTtl: 0,
-       ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+       ...(getConfigValue('BATCH_NO') === "Yes" && {
          docBatchNo: item.batchNo || "",
        }),
      };
@@ -1881,7 +1882,7 @@ function AddTake({ docData }) {
                       totalPages={Math.ceil(itemTotal / itemFilter.limit)}
                       onPageChange={handlePageChange}
                       emptyMessage="No items Found"
-                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      showBatchColumns={getConfigValue('BATCH_NO') === "Yes"}
                       qtyLabel="Stock Take Qty"
                       priceLabel="Price"
                       costLabel="Cost"
@@ -1927,7 +1928,7 @@ function AddTake({ docData }) {
                      <TableHead className="font-semibold text-slate-700">
                        Variance
                      </TableHead>
-                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                    {getConfigValue('BATCH_NO') === "Yes" && (
                       <>
                         <TableHead>Batch No</TableHead>
                         <TableHead>Expiry Date</TableHead>
@@ -1944,13 +1945,13 @@ function AddTake({ docData }) {
                 <TableBody>
                                      {loading ? (
                      <TableSpinner
-                       colSpan={window?.APP_CONFIG?.BATCH_NO === "Yes" ? 10 : 8}
+                       colSpan={getConfigValue('BATCH_NO') === "Yes" ? 10 : 8}
                      />
                    ) : cartData.length === 0 ? (
                      <TableRow>
                        <TableCell
                          colSpan={
-                           window?.APP_CONFIG?.BATCH_NO === "Yes" ? 10 : 8
+                           getConfigValue('BATCH_NO') === "Yes" ? 10 : 8
                          }
                          className="text-center py-10"
                        >
@@ -1988,7 +1989,7 @@ function AddTake({ docData }) {
                            }`}>
                              {((parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0)).toFixed(2)}
                            </TableCell>
-                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                          {getConfigValue('BATCH_NO') === "Yes" && (
                             <>
                               <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
                               <TableCell>
@@ -2044,7 +2045,7 @@ function AddTake({ docData }) {
                              return sum + variance;
                            }, 0).toFixed(2)}
                          </TableCell>
-                         {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                         {getConfigValue('BATCH_NO') === "Yes" ? (
                            <TableCell colSpan={4} />
                          ) : (
                            <TableCell colSpan={2} />
@@ -2111,7 +2112,7 @@ function AddTake({ docData }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowValidationDialog(false)}>
+            <AlertDialogAction onClick={() => setShowValidationDialog(false)} className="cursor-pointer">
               Close
             </AlertDialogAction>
           </AlertDialogFooter>

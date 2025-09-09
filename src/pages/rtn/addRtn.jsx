@@ -52,6 +52,7 @@ import {
   buildFilterQuery,
   format_Date,
   queryParamsGenerate,
+  getConfigValue,
 } from "@/utils/utils";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -1751,12 +1752,12 @@ function AddRtn({ docData }) {
       itemUom: item.docUom,
       movType: "VGRN",
       // Only set itemBatch if batch functionality is enabled
-      itemBatch: window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
+      itemBatch: getConfigValue('BATCH_NO') === "Yes" ? item?.docBatchNo : null,
       itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
       // Only set docExpdate if batch functionality is enabled and we have a valid date
-              docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
+              docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? item.docExpdate : null,
       useExistingBatch: item.useExistingBatch,
       // docExpdate: process.env.REACT_APP_EXPIRY_DATE === "Yes"
       //   ? item.docExpdate
@@ -2111,7 +2112,7 @@ function AddRtn({ docData }) {
             //   batchNo:d.itemBatch
             // };
 
-            if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+            if (getConfigValue('BATCH_SNO') === "Yes") {
               const params = new URLSearchParams({
                 docNo: d.trnDocno,
                 itemCode: d.itemcode,
@@ -2193,7 +2194,7 @@ function AddRtn({ docData }) {
               },
             };
 
-            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+            if (getConfigValue('BATCH_NO') === "Yes") {
               // For RTN, we need to find existing batches and reduce their quantities
               // Check if this is a specific batch selection or FIFO
               const cartItem = cartData.find(item => 
@@ -2214,7 +2215,7 @@ function AddRtn({ docData }) {
                         sitecode: userDetails.siteCode,
                         uom: d.itemUom,
                         qty: -batchDetail.quantity, // Negative for return (reduce quantity)
-                        batchcost: Number(d.itemBatchCost),
+                        batchcost: 0,
                         batchno: batchDetail.batchNo,
                       };
 
@@ -2241,7 +2242,7 @@ function AddRtn({ docData }) {
                     sitecode: userDetails.siteCode,
                     uom: d.itemUom,
                     qty: -cartItem.batchDetails.noBatchTransferQty, // Negative for return
-                    batchcost: Number(d.itemBatchCost),
+                    batchcost: 0,
                     batchno: "", // Empty string for "No Batch"
                   };
 
@@ -2301,7 +2302,7 @@ function AddRtn({ docData }) {
                         sitecode: userDetails.siteCode,
                         uom: d.itemUom,
                         qty: -batchQty, // Negative for return (reduce quantity)
-                        batchcost: Number(batch.batchCost),
+                        batchcost: 0,
                         batchno: batch.batchNo,
                       };
 
@@ -2333,7 +2334,7 @@ function AddRtn({ docData }) {
                 sitecode: userDetails.siteCode,
                 uom: d.itemUom,
                 qty: Number(d.trnQty),
-                batchcost: Number(d.trnCost),
+                batchcost: 0,
 
                 // expDate: d?.docExpdate ? d?.docExpdate : null
               };
@@ -2442,12 +2443,12 @@ function AddRtn({ docData }) {
 
   // NEW: Batch selection for RTN with modal
   const handleRowBatchSelection = async (item, index) => {
-    if (window?.APP_CONFIG?.BATCH_NO !== "Yes") {
+    if (getConfigValue('BATCH_NO') !== "Yes") {
       toast.error("Batch functionality is not enabled");
       return;
     }
 
-    if (window?.APP_CONFIG?.ManualBatchSelection !== true) {
+    if (getConfigValue('ManualBatchSelection') !== true) {
       toast.error("Manual batch selection is disabled");
       return;
     }
@@ -2848,7 +2849,7 @@ function AddRtn({ docData }) {
             // Update ItemBatches - batchCost is static, no weighted average needed
             const trimmedItemCode = item.itemcode.replace(/0000$/, "");
             
-            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+            if (getConfigValue('BATCH_NO') === "Yes") {
               // WITH BATCH NUMBERS: Find and update specific batch record
               console.log(`Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`);
               
@@ -3726,7 +3727,7 @@ function AddRtn({ docData }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowValidationDialog(false)}>
+            <AlertDialogAction onClick={() => setShowValidationDialog(false)} className="cursor-pointer">
               Close
             </AlertDialogAction>
           </AlertDialogFooter>

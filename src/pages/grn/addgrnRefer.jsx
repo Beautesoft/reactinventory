@@ -1710,7 +1710,7 @@ class AddInventory extends Component {
               >
                 Post
               </div>
-              <div onClick={() => this.props.routeto()} className="btn list">
+              <div onClick={() => this.props.routeto()} className="btn list cursor-pointer">
                 {/* <div onClick={() => this.print()} className="btn list"> */}
                 List
               </div>

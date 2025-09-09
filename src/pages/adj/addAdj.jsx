@@ -42,6 +42,7 @@ import {
   buildFilterQuery,
   format_Date,
   queryParamsGenerate,
+  getConfigValue,
 } from "@/utils/utils";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -216,7 +217,7 @@ const EditDialog = memo(
       }
 
       // Validate batch number only if batch functionality is enabled
-      if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      if (getConfigValue('BATCH_NO') === "Yes") {
         if (useExistingBatch && !selectedBatch?.value) {
           errors.push("Please select an existing batch");
         } else if (!useExistingBatch && !newBatchNo.trim()) {
@@ -300,7 +301,7 @@ const EditDialog = memo(
               </>
             )}
             {/* Always show Batch No, Expiry Date, and Remarks */}
-            {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+            {getConfigValue('BATCH_NO') === "Yes" && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="batchNo">Batch No</Label>
@@ -397,7 +398,7 @@ const EditDialog = memo(
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+          <Button variant="outline" onClick={() => setShowEditDialog(false)} className="cursor-pointer">
             Cancel
           </Button>
             <Button onClick={handleSubmit}>Save Changes</Button>
@@ -441,7 +442,7 @@ function AddAdj({ docData }) {
   const [isBatchEdit, setIsBatchEdit] = useState(false);
   
   // Log batch functionality status
-  console.log("Batch functionality enabled:", window?.APP_CONFIG?.BATCH_NO === "Yes");
+  console.log("Batch functionality enabled:", getConfigValue('BATCH_NO') === "Yes");
 
   const [filter, setFilter] = useState({
     movCode: "ADJ",
@@ -1283,7 +1284,7 @@ function AddAdj({ docData }) {
     });
 
     // Batch and Expiry Date Validation - Only when batch functionality is enabled
-    if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+    if (getConfigValue('BATCH_NO') === "Yes") {
       cart.forEach((item, index) => {
         if (!item.docBatchNo) {
           errors.push(
@@ -1481,7 +1482,7 @@ function AddAdj({ docData }) {
       itemBatchCost: item.docPrice,
       stockIn: null,
       transPackageLineNo: null,
-      docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.docExpdate || null) : null, // Only set if expiry date functionality is enabled
+      docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.docExpdate || null) : null, // Only set if expiry date functionality is enabled
       useExistingBatch: item.useExistingBatch || false, // Ensure boolean value
     };
   };
@@ -1541,7 +1542,7 @@ function AddAdj({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.uom || "",
-      docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.expiryDate || "") : "",
+      docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.expiryDate || "") : "",
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
@@ -1550,7 +1551,7 @@ function AddAdj({ docData }) {
       itemRemark: "",
       docMdisc: 0,
       recTtl: 0,
-      ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+      ...(getConfigValue('BATCH_NO') === "Yes" && {
         docBatchNo: item.batchNo || "",
       }),    };
 
@@ -1881,7 +1882,7 @@ function AddAdj({ docData }) {
                           // 10) Update ItemBatches quantity
               console.log("Starting ItemBatches updates for", stktrns.length, "items");
               for (const d of stktrns) {
-              if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+              if (getConfigValue('BATCH_SNO') === "Yes") {
                 const params = new URLSearchParams({
                   docNo: d.trnDocno,
                   itemCode: d.itemcode,
@@ -1947,13 +1948,13 @@ function AddAdj({ docData }) {
               };
 
               console.log("Batch configuration:", {
-                BATCH_NO: window?.APP_CONFIG?.BATCH_NO,
-                BATCH_SNO: window?.APP_CONFIG?.BATCH_SNO,
+                BATCH_NO: getConfigValue('BATCH_NO'),
+                BATCH_SNO: getConfigValue('BATCH_SNO'),
                 useExistingBatch: d.useExistingBatch,
                 itemBatch: d.itemBatch
               });
               
-              if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+              if (getConfigValue('BATCH_NO') === "Yes") {
                 if (d.useExistingBatch) {
                   // For existing batches, update quantity
                   batchUpdate = {
@@ -1962,7 +1963,7 @@ function AddAdj({ docData }) {
                     uom: d.itemUom,
                     qty: Number(d.trnQty),
                     batchcost: Number(d.trnCost),
-                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                    ...(getConfigValue('BATCH_NO') === "Yes" && {
                       batchno: d.itemBatch,
                     }),                  };
 
@@ -2320,7 +2321,7 @@ function AddAdj({ docData }) {
             // Update ItemBatches - batchCost is static, no weighted average needed
             const trimmedItemCode = item.itemcode.replace(/0000$/, "");
             
-            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+            if (getConfigValue('BATCH_NO') === "Yes") {
               // WITH BATCH NUMBERS: Find and update specific batch record
               console.log(`Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`);
               
@@ -2714,7 +2715,7 @@ function AddAdj({ docData }) {
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
                       emptyMessage="No items Found"
-                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      showBatchColumns={getConfigValue('BATCH_NO') === "Yes"}
                       qtyLabel="Adj Qty (±)"
                       priceLabel="Adj Price"
                       costLabel="Adj Cost"
@@ -2788,7 +2789,7 @@ function AddAdj({ docData }) {
                       Amount
                     </TableHead>
                     )}
-                      {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                      {getConfigValue('BATCH_NO') === "Yes" && (
                         <>
                     <TableHead>Expiry Date</TableHead>
                           <TableHead>Batch No</TableHead>
@@ -2800,10 +2801,10 @@ function AddAdj({ docData }) {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableSpinner colSpan={window?.APP_CONFIG?.BATCH_NO === "Yes" ? 11 : 9} />
+                    <TableSpinner colSpan={getConfigValue('BATCH_NO') === "Yes" ? 11 : 9} />
                   ) : cartData.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={window?.APP_CONFIG?.BATCH_NO === "Yes" ? 11 : 9} className="text-center py-10">
+                      <TableCell colSpan={getConfigValue('BATCH_NO') === "Yes" ? 11 : 9} className="text-center py-10">
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -2853,7 +2854,7 @@ function AddAdj({ docData }) {
                             {item.docAmt}
                           </TableCell>
                           )}
-                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                          {getConfigValue('BATCH_NO') === "Yes" && (
                             <>
                           <TableCell>{format_Date(item.docExpdate)}</TableCell>
                               <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
@@ -2905,7 +2906,7 @@ function AddAdj({ docData }) {
                           {calculateTotals(cartData).totalAmt.toFixed(2)}
                         </TableCell>
                         )}
-                                                {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                                                {getConfigValue('BATCH_NO') === "Yes" ? (
                           <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />
                         ) : (
                           <TableCell colSpan={2 + (userDetails?.isSettingViewPrice === "True" ? 1 : 0)} />
@@ -2975,7 +2976,7 @@ function AddAdj({ docData }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowValidationDialog(false)}>
+            <AlertDialogAction onClick={() => setShowValidationDialog(false)} className="cursor-pointer">
               Close
             </AlertDialogAction>
           </AlertDialogFooter>

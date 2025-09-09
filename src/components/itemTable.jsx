@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getConfigValue } from "@/utils/utils";
 import {
   Table,
   TableHeader,
@@ -307,8 +308,8 @@ function ItemTable({
                           placeholder="0"
                         />
                         {/* NEW: Batch Selection Indicator */}
-                        {window?.APP_CONFIG?.BATCH_NO === "Yes" && 
-                         window?.APP_CONFIG?.ManualBatchSelection === true && 
+                        {getConfigValue('BATCH_NO') === "Yes" && 
+                         getConfigValue('ManualBatchSelection') === true && 
                          item.selectedBatches && (
                           <div className="mt-1 text-xs">
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -375,8 +376,8 @@ function ItemTable({
                             <Plus className="h-4 w-4" />
                           </Button>
                           {/* NEW: Batch Selection Button */}
-                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && 
-                           window?.APP_CONFIG?.ManualBatchSelection === true && 
+                          {getConfigValue('BATCH_NO') === "Yes" && 
+                           getConfigValue('ManualBatchSelection') === true && 
                            onBatchSelection && (
                             <Button
                               variant="ghost"

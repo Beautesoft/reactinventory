@@ -54,6 +54,7 @@ import {
   buildFilterQuery,
   format_Date,
   queryParamsGenerate,
+  getConfigValue,
 } from "@/utils/utils";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -83,6 +84,15 @@ const calculateTotals = (cartData) => {
     }),
     { totalQty: 0, totalAmt: 0 }
   );
+};
+
+// Helper function to calculate default expiry date
+const calculateDefaultExpiryDate = () => {
+  const defaultDays = getConfigValue('DEFAULT_EXPIRY_DAYS') || 365;
+  const currentDate = new Date();
+  const expiryDate = new Date(currentDate);
+  expiryDate.setDate(currentDate.getDate() + defaultDays);
+  return expiryDate.toISOString().split("T")[0]; // Return in YYYY-MM-DD format
 };
 
 const EditDialog = memo(
@@ -219,6 +229,10 @@ const EditDialog = memo(
         // Update the useExistingBatch flag in editData
         onEditCart({ target: { value: false } }, "useExistingBatch");
         onEditCart({ target: { value } }, "docBatchNo");
+        // Set default expiry date when creating new batch
+        if (!editData?.docExpdate) {
+          onEditCart({ target: { value: calculateDefaultExpiryDate() } }, "docExpdate");
+        }
       }
     };
 
@@ -236,17 +250,15 @@ const EditDialog = memo(
       }
 
       // Validate batch number only if batch functionality is enabled
-      if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+      if (getConfigValue('BATCH_NO') === "Yes") {
         if (useExistingBatch && !selectedBatch?.value) {
           errors.push("Please select an existing batch");
         } else if (!useExistingBatch && !newBatchNo.trim()) {
           errors.push("Please enter a new batch number");
         }
 
-        // Validate expiry date only if batch functionality is enabled
-        if (!editData?.docExpdate) {
-          errors.push("Expiry date is required");
-        }
+        // Note: Expiry date is now optional - if not provided, it will be auto-calculated
+        // No validation error for missing expiry date
       }
 
       if (errors.length > 0) {
@@ -254,10 +266,17 @@ const EditDialog = memo(
         return;
       }
 
+      // Auto-calculate expiry date if not provided and creating new batch
+      let finalExpiryDate = editData?.docExpdate;
+      if (getConfigValue('BATCH_NO') === "Yes" && !useExistingBatch && !finalExpiryDate) {
+        finalExpiryDate = calculateDefaultExpiryDate();
+      }
+
       const updatedEditData = {
         ...editData,
         useExistingBatch,
         docBatchNo: useExistingBatch ? selectedBatch?.value : newBatchNo,
+        docExpdate: finalExpiryDate,
       };
 
       onSubmit(updatedEditData);
@@ -325,7 +344,7 @@ const EditDialog = memo(
               </>
             )}
             {/* Always show Batch No, Expiry Date, and Remarks */}
-            {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+            {getConfigValue('BATCH_NO') === "Yes" && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="batchNo">Batch No</Label>
@@ -345,6 +364,8 @@ const EditDialog = memo(
                             setIsExpiryReadOnly(false);
                             onEditCart({ target: { value: false } }, "useExistingBatch");
                             onEditCart({ target: { value: "" } }, "docBatchNo");
+                            // Set default expiry date when switching to create new batch
+                            onEditCart({ target: { value: calculateDefaultExpiryDate() } }, "docExpdate");
                           }
                         }}
                         disabled={urlStatus == 7}
@@ -418,6 +439,11 @@ const EditDialog = memo(
                       Expiry date is auto-filled from existing batch
                     </p>
                   )}
+                  {!useExistingBatch && (
+                    <p className="text-xs text-gray-500">
+                      Default expiry date is set to {getConfigValue('DEFAULT_EXPIRY_DAYS') || 365} days from today
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -437,7 +463,7 @@ const EditDialog = memo(
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)} className="cursor-pointer">
               Cancel
             </Button>
             <Button onClick={handleSubmit}>Save Changes</Button>
@@ -462,7 +488,7 @@ function AddGrn({ docData }) {
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
   ];
-  console.log(window?.APP_CONFIG?.BATCH_SNO, "bnoooo");
+  console.log(getConfigValue('BATCH_SNO'), "bnoooo");
   const [activeTab, setActiveTab] = useState("detail");
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
@@ -1338,19 +1364,16 @@ function AddGrn({ docData }) {
     // Cart Validation
     if (cart.length === 0) errors.push("Cart shouldn't be empty");
 
-    // Batch and Expiry Date Validation - Only for post and when batch functionality is enabled
-    if (type === "post" && window?.APP_CONFIG?.BATCH_NO === "Yes") {
+    // Batch Validation - Only for post and when batch functionality is enabled
+    if (type === "post" && getConfigValue('BATCH_NO') === "Yes") {
       cart.forEach((item, index) => {
         if (!item.docBatchNo) {
           errors.push(
             `Batch number is required for item ${index + 1} (${item.itemcode})`
           );
         }
-        if (!item.docExpdate) {
-          errors.push(
-            `Expiry date is required for item ${index + 1} (${item.itemcode})`
-          );
-        }
+        // Note: Expiry date is now optional - if missing, it will be auto-calculated during processing
+        // No validation error for missing expiry date
       });
     }
 
@@ -1479,6 +1502,9 @@ function AddGrn({ docData }) {
         console.error("Error parsing expiry date:", error);
         expiryDate = "";
       }
+    } else {
+      // If no expiry date exists, set default to 365 days from today
+      expiryDate = calculateDefaultExpiryDate();
     }
 
     console.log("Original docExpdate:", item.docExpdate);
@@ -1536,7 +1562,7 @@ function AddGrn({ docData }) {
 
     // Only set docExpdate if batch functionality is enabled
     // let docExpdate = null;
-    // if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+    // if (getConfigValue('BATCH_NO') === "Yes") {
     //   // Convert batchexpirydate to ISO 8601 format for storage
     //   if (item.batchexpirydate) {
     //     try {
@@ -1612,11 +1638,11 @@ function AddGrn({ docData }) {
       itemRemark: item?.itemRemark || null,
       itemprice: Number(item.Cost) || Number(item.Price) || 0,
       // Only set docBatchNo if batch functionality is enabled
-      // docBatchNo: window?.APP_CONFIG?.BATCH_NO === "Yes" ? (item.batchno || null) : null,
+      // docBatchNo: getConfigValue('BATCH_NO') === "Yes" ? (item.batchno || null) : null,
       docBatchNo: "",
       // Set useExistingBatch to true if item already has a batch number
       useExistingBatch:
-        window?.APP_CONFIG?.BATCH_NO === "Yes" ? !!item.batchno : false,
+        getConfigValue('BATCH_NO') === "Yes" ? !!item.batchno : false,
 
       docMdisc: 0,
       recTtl: 0,
@@ -1673,13 +1699,15 @@ function AddGrn({ docData }) {
       movType: "GRN",
       // Only set itemBatch if batch functionality is enabled
       itemBatch:
-        window?.APP_CONFIG?.BATCH_NO === "Yes" ? item?.docBatchNo : null,
+        getConfigValue('BATCH_NO') === "Yes" ? item?.docBatchNo : null,
       itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
-      // Only set docExpdate if batch functionality is enabled and we have a valid date
+      // Only set docExpdate if batch functionality is enabled, use auto-calculated if needed
       docExpdate:
-        window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? item.docExpdate : null,
+        getConfigValue('EXPIRY_DATE') === "Yes" 
+          ? (item.docExpdate || calculateDefaultExpiryDate()) 
+          : null,
       useExistingBatch: item.useExistingBatch,
     };
   };
@@ -1966,7 +1994,7 @@ function AddGrn({ docData }) {
             // Update ItemBatches - batchCost is static, no weighted average needed
             const trimmedItemCode = item.itemcode.replace(/0000$/, "");
 
-            if (window?.APP_CONFIG?.BATCH_NO === "Yes") {
+            if (getConfigValue('BATCH_NO') === "Yes") {
               // WITH BATCH NUMBERS: Find and update specific batch record
               console.log(
                 `Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`
@@ -2338,6 +2366,14 @@ function AddGrn({ docData }) {
         }
       }
 
+      // Auto-calculate expiry dates for items that don't have them before posting
+      if (type === "post" && getConfigValue('BATCH_NO') === "Yes") {
+        details = details.map(item => ({
+          ...item,
+          docExpdate: item.docExpdate || calculateDefaultExpiryDate()
+        }));
+      }
+
       // Handle details operations
       await postStockDetails(details);
 
@@ -2464,7 +2500,7 @@ function AddGrn({ docData }) {
             //   batchNo:d.itemBatch
             // };
 
-            if (window?.APP_CONFIG?.BATCH_SNO === "Yes") {
+            if (getConfigValue('BATCH_SNO') === "Yes") {
               const params = new URLSearchParams({
                 docNo: d.trnDocno,
                 itemCode: d.itemcode,
@@ -2545,7 +2581,7 @@ function AddGrn({ docData }) {
               },
             };
 
-            if (window?.APP_CONFIG?.BATCH_NO === "Yes" && d.itemBatch!==null) {
+            if (getConfigValue('BATCH_NO') === "Yes" && d.itemBatch!==null) {
               // Check if this is a save->post scenario (urlDocNo exists) or direct post
               if (urlDocNo) {
                 // SAVE -> POST: useExistingBatch flag is lost, check database
@@ -2576,16 +2612,15 @@ function AddGrn({ docData }) {
                       sitecode: userDetails.siteCode,
                       uom: d.itemUom,
                       qty: Number(d.trnQty),
-                      batchcost: Number(d.itemBatchCost),
+                      batchcost: 0,
                       // Only include batch number if batch functionality is enabled
-                      ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      ...(getConfigValue('BATCH_NO') === "Yes" && {
                         batchno: d.itemBatch,
                       }),
                       // Only include expiry date if expiry date functionality is enabled
-                      ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
-                        d?.docExpdate && {
-                          expDate: d.docExpdate,
-                        }),
+                      ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                        expDate: d.docExpdate || calculateDefaultExpiryDate(),
+                      }),
                     };
 
                     await apiService
@@ -2611,14 +2646,13 @@ function AddGrn({ docData }) {
                       qty: Number(d.trnQty),
                       batchCost: Number(d.itemBatchCost),
                       // Only include batch number if batch functionality is enabled
-                      ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                      ...(getConfigValue('BATCH_NO') === "Yes" && {
                         batchNo: d.itemBatch,
                       }),
                       // Only include expiry date if expiry date functionality is enabled
-                      ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
-                        d?.docExpdate && {
-                          expDate: d.docExpdate,
-                        }),
+                      ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                        expDate: d.docExpdate || calculateDefaultExpiryDate(),
+                      }),
                     };
 
                     await apiService
@@ -2646,13 +2680,12 @@ function AddGrn({ docData }) {
                     uom: d.itemUom,
                     qty: Number(d.trnQty),
                     batchCost: Number(d.itemBatchCost),
-                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                    ...(getConfigValue('BATCH_NO') === "Yes" && {
                       batchNo: d.itemBatch,
                     }),
-                    ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
-                      d?.docExpdate && {
-                        expDate: d.docExpdate,
-                      }),
+                    ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                      expDate: d.docExpdate || calculateDefaultExpiryDate(),
+                    }),
                   };
 
                   await apiService
@@ -2677,16 +2710,15 @@ function AddGrn({ docData }) {
                     sitecode: userDetails.siteCode,
                     uom: d.itemUom,
                     qty: Number(d.trnQty),
-                    batchcost: Number(d.itemBatchCost),
+                    batchcost: 0,
                     // Only include batch number if batch functionality is enabled
-                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                    ...(getConfigValue('BATCH_NO') === "Yes" && {
                       batchno: d.itemBatch,
                     }),
                     // Only include expiry date if expiry date functionality is enabled
-                    ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
-                      d?.docExpdate && {
-                        expDate: d.docExpdate,
-                      }),
+                    ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                      expDate: d.docExpdate || calculateDefaultExpiryDate(),
+                    }),
                   };
 
                   await apiService
@@ -2712,14 +2744,13 @@ function AddGrn({ docData }) {
                     qty: Number(d.trnQty),
                     batchCost: Number(d.itemBatchCost),
                     // Only include batch number if batch functionality is enabled
-                    ...(window?.APP_CONFIG?.BATCH_NO === "Yes" && {
+                    ...(getConfigValue('BATCH_NO') === "Yes" && {
                       batchNo: d.itemBatch,
                     }),
                     // Only include expiry date if expiry date functionality is enabled
-                    ...(window?.APP_CONFIG?.EXPIRY_DATE === "Yes" &&
-                      d?.docExpdate && {
-                        expDate: d.docExpdate,
-                      }),
+                    ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                      expDate: d.docExpdate || calculateDefaultExpiryDate(),
+                    }),
                   };
 
                   await apiService
@@ -2743,7 +2774,7 @@ function AddGrn({ docData }) {
                 sitecode: userDetails.siteCode,
                 uom: d.itemUom,
                 qty: Number(d.trnQty),
-                batchcost: Number(d.itemBatchCost),
+                batchcost: 0,
                 // No batch number or expiry date
               };
 
@@ -2832,7 +2863,7 @@ function AddGrn({ docData }) {
   // 2. Add handleBatchEditClick and handleBatchEditSubmit
   const handleBatchEditClick = () => {
     setIsBatchEdit(true);
-    setEditData({ docBatchNo: "", docExpdate: "", itemRemark: "" });
+    setEditData({ docBatchNo: "", docExpdate: calculateDefaultExpiryDate(), itemRemark: "" });
     setShowEditDialog(true);
   };
 
@@ -3211,7 +3242,7 @@ function AddGrn({ docData }) {
                         filteredItemTotal / pagination.limit
                       )}
                       onPageChange={handlePageChange}
-                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      showBatchColumns={getConfigValue('BATCH_NO') === "Yes"}
                       // Add sorting functionality
                       enableSorting={true}
                       onSort={handleSort}
@@ -3300,7 +3331,7 @@ function AddGrn({ docData }) {
           {cartData.length > 0 && (
             <div className="space-y-4">
               {/* Batch Number Status */}
-              {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+              {getConfigValue('BATCH_NO') === "Yes" && (
                 (() => {
                   const itemsWithoutBatch = cartData.filter(item => !item.docBatchNo);
                   return itemsWithoutBatch.length > 0 ? (
@@ -3377,7 +3408,7 @@ function AddGrn({ docData }) {
                         Amount
                       </TableHead>
                     )}
-                    {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                    {getConfigValue('BATCH_NO') === "Yes" && (
                       <>
                         <TableHead>Expiry Date</TableHead>
                         <TableHead>Batch No</TableHead>
@@ -3450,7 +3481,7 @@ function AddGrn({ docData }) {
                               {isNaN(item.docAmt) ? 0 : item.docAmt || 0}
                             </TableCell>
                           )}
-                          {window?.APP_CONFIG?.BATCH_NO === "Yes" && (
+                          {getConfigValue('BATCH_NO') === "Yes" && (
                             <>
                               <TableCell>
                                 {format_Date(item.docExpdate)}
@@ -3471,7 +3502,7 @@ function AddGrn({ docData }) {
                                   size="icon"
                                   onClick={() => editPopup(item, index)}
                                   className={`cursor-pointer transition-colors duration-150 ${
-                                    window?.APP_CONFIG?.BATCH_NO === "Yes" && !item.docBatchNo
+                                    getConfigValue('BATCH_NO') === "Yes" && !item.docBatchNo
                                       ? "animate-pulse bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-300"
                                       : "hover:bg-slate-200 hover:text-blue-600"
                                   }`}
@@ -3512,7 +3543,7 @@ function AddGrn({ docData }) {
                             {calculateTotals(cartData).totalAmt.toFixed(2)}
                           </TableCell>
                         )}
-                        {window?.APP_CONFIG?.BATCH_NO === "Yes" ? (
+                        {getConfigValue('BATCH_NO') === "Yes" ? (
                           <TableCell
                             colSpan={
                               2 +
@@ -3596,7 +3627,7 @@ function AddGrn({ docData }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowValidationDialog(false)}>
+            <AlertDialogAction onClick={() => setShowValidationDialog(false)} className="cursor-pointer">
               Close
             </AlertDialogAction>
           </AlertDialogFooter>

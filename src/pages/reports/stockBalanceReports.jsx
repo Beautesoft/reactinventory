@@ -17,7 +17,7 @@ import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
 
 
-const StockBalance = () => {
+const StockBalanceReports = () => {
   
 
   const [filters, setFilters] = useState({
@@ -522,4 +522,4 @@ const StockBalance = () => {
   );
 };
 
-export default StockBalance;
+export default StockBalanceReports;

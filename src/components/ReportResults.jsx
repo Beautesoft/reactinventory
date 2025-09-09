@@ -801,7 +801,7 @@ const ReportResults = ({
                             <td className="py-3 px-4 print-cell">
                               <button
                                 onClick={() => toggleOutlet(outlet)}
-                                className="flex items-center gap-2 text-left font-semibold hover:text-blue-600 transition-colors"
+                                className="flex items-center gap-2 text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer"
                               >
                                 {isCollapsed ? (
                                   <ChevronRightIcon className="h-4 w-4" />
@@ -991,7 +991,7 @@ const ReportResults = ({
                             <td className="py-3 px-4 print-cell" colSpan="10">
                               <button
                                 onClick={() => toggleItem(itemCode)}
-                                className="flex items-center gap-2 text-left font-semibold hover:text-blue-600 transition-colors"
+                                className="flex items-center gap-2 text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer"
                               >
                                 {isCollapsed ? (
                                   <ChevronRightIcon className="h-4 w-4" />

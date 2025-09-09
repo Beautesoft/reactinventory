@@ -19,7 +19,7 @@ import html2canvas from "html2canvas";
 import { saveAs } from "file-saver";
 import { formatCurrentDate } from "@/utils/utils";
 
-const StockMovement = () => {
+const StockMovementReports = () => {
   const [filters, setFilters] = useState({
     fromDate: "2025-08-01",
     toDate: "2025-08-29",
@@ -786,4 +786,4 @@ const StockMovement = () => {
   );
 };
 
-export default StockMovement;
+export default StockMovementReports;

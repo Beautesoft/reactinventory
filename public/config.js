@@ -37,7 +37,7 @@ window.APP_CONFIG = {
     BATCH_NO:"Yes",
     // BATCH_NO:"No",
     EXPIRY_DATE: "Yes",
-    EXPIRY_DATE: "Yes",
+    // EXPIRY_DATE: "Yes",
     ManualBatchSelection : false,
   // EXPIRY_DATE: "No",
   NOTIFICATION_MAIL_SEND:'NO',

@@ -27,8 +27,9 @@ import AddSum from "./pages/sum/addSum";
 import AddTake from "./pages/take/addTake";
 import StockTake from "./pages/take/stockTake";
 import UserAuthorization from "./pages/userAuthorization";
-import StockBalance from "./pages/reports/stockBalance";
-import StockMovement from "./pages/reports/stockMovement";
+import StockBalanceReport from "./pages/reports/stockBalanceReports";
+import StockBalance from "./pages/stockBalance";
+import StockMovementReport from "./pages/reports/stockMovementReports";
 
 function App() {
   return (
@@ -110,9 +111,12 @@ function App() {
                   <Route path="stock-usage-memo/edit/:docNo" element={<AddSum />} />
                   <Route path="stock-usage-memo/print/:docNo" element={<PrintPreview documentType="sum" />} />
                   
+                  {/* Stock Balance Routes */}
+                  <Route path="stock-balance-live" element={<StockBalance />} />
+                  
                   {/* Report Routes */}
-                  <Route path="stock-balance" element={<StockBalance />} />
-                  <Route path="stock-movement" element={<StockMovement />} />
+                  <Route path="stock-balance" element={<StockBalanceReport />} />
+                  <Route path="stock-movement" element={<StockMovementReport />} />
                   
                   {/* Other Routes */}
                   <Route path="purchase-order" element={<h1>Purchase Order</h1>} />

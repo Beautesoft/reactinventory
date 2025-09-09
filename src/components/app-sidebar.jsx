@@ -40,6 +40,7 @@ import {
   FiFileText,
   FiBarChart2,
   FiTrendingUp,
+  FiLayers,
 } from "react-icons/fi";
 
 import { NavMain } from "./nav-main";
@@ -117,6 +118,11 @@ export function AppSidebar() {
               url: "/stock-usage-memo",
               icon: FiFileText,
             },
+            {
+              title: "Stock Balance",
+              url: "/stock-balance-live",
+              icon: FiLayers,
+            },
             // Stock Take is always available for all users
             { title: "Stock Take", 
               url: "/stock-take", 
@@ -170,6 +176,11 @@ export function AppSidebar() {
       //   url: "/stock-usage-memo",
       //   icon: FiFileText,
       // },
+      {
+        title: "Stock Balance",
+        url: "/stock-balance-live",
+        icon: FiLayers,
+      },
       {
         title: "Stock Balance Report",
         url: "/stock-balance",

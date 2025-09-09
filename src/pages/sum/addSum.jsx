@@ -41,6 +41,7 @@ import {
   buildFilterQuery,
   format_Date,
   queryParamsGenerate,
+  getConfigValue,
 } from "@/utils/utils";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -1106,7 +1107,7 @@ function AddSum({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.itemUom,
-      docExpdate: window?.APP_CONFIG?.EXPIRY_DATE === "Yes" ? (item.expiryDate || "") : "",
+      docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.expiryDate || "") : "",
       itmBrand: item.brandCode,
       itmRange: item.rangeCode,
       itmBrandDesc: item.brand,
@@ -1483,7 +1484,7 @@ function AddSum({ docData }) {
                       totalPages={Math.ceil(itemTotal / pagination.limit)}
                       onPageChange={handlePageChange}
                       emptyMessage="No items Found"
-                      showBatchColumns={window?.APP_CONFIG?.BATCH_NO === "Yes"}
+                      showBatchColumns={getConfigValue('BATCH_NO') === "Yes"}
                       qtyLabel="Adj Qty"
                       priceLabel="Adj Price"
                       costLabel="Adj Cost"
@@ -1676,7 +1677,7 @@ function AddSum({ docData }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowValidationDialog(false)}>
+            <AlertDialogAction onClick={() => setShowValidationDialog(false)} className="cursor-pointer">
               Close
             </AlertDialogAction>
           </AlertDialogFooter>
