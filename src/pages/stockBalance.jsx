@@ -64,15 +64,57 @@ function StockBalance() {
   const [batchData, setBatchData] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
 
+  // Loading states for search and filter operations
+  const [isSearching, setIsSearching] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
+
   const debouncedSearchValue = useDebounce(searchValue, 1000);
 
-  // Separate memo for sorting and pagination to avoid API calls
+  // Handle search loading state
+  useEffect(() => {
+    if (searchValue !== debouncedSearchValue) {
+      setIsSearching(true);
+    } else {
+      setIsSearching(false);
+    }
+  }, [searchValue, debouncedSearchValue]);
+
+  // Handle filter loading state
+  useEffect(() => {
+    if (activeTab) {
+      setIsFiltering(true);
+      // Simulate a brief loading state for filter changes
+      const timer = setTimeout(() => {
+        setIsFiltering(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab]);
+
+  // Separate memo for filtering, sorting and pagination to avoid API calls
   const sortedAndPaginatedData = useMemo(() => {
-    let sortedData = [...stockData];
+    let filteredData = [...stockData];
+
+    // Apply department filter
+    if (activeTab === "retail") {
+      filteredData = filteredData.filter(item => item.Department === "RETAIL PRODUCT");
+    } else if (activeTab === "salon") {
+      filteredData = filteredData.filter(item => item.Department === "SALON PRODUCT");
+    }
+
+    // Apply search filter
+    if (debouncedSearchValue) {
+      filteredData = filteredData.filter(item =>
+        item.stockCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.stockName?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.BrandCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
+      );
+    }
 
     // Apply sorting if specified
     if (sortConfig.key) {
-      sortedData.sort((a, b) => {
+      filteredData.sort((a, b) => {
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
 
@@ -108,8 +150,32 @@ function StockBalance() {
     // Apply pagination
     const startIndex = pagination.skip;
     const endIndex = startIndex + pagination.limit;
-    return sortedData.slice(startIndex, endIndex);
-  }, [stockData, sortConfig.key, sortConfig.direction, pagination.skip, pagination.limit]);
+    return filteredData.slice(startIndex, endIndex);
+  }, [stockData, activeTab, debouncedSearchValue, sortConfig.key, sortConfig.direction, pagination.skip, pagination.limit]);
+
+  // Memo for filtered data length (for pagination)
+  const filteredDataLength = useMemo(() => {
+    let filteredData = [...stockData];
+
+    // Apply department filter
+    if (activeTab === "retail") {
+      filteredData = filteredData.filter(item => item.Department === "RETAIL PRODUCT");
+    } else if (activeTab === "salon") {
+      filteredData = filteredData.filter(item => item.Department === "SALON PRODUCT");
+    }
+
+    // Apply search filter
+    if (debouncedSearchValue) {
+      filteredData = filteredData.filter(item =>
+        item.stockCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.stockName?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.BrandCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
+      );
+    }
+
+    return filteredData.length;
+  }, [stockData, activeTab, debouncedSearchValue]);
 
   const getStockBalance = async () => {
     setIsLoading(true);
@@ -145,24 +211,7 @@ function StockBalance() {
       
       let stockItems = dataResponse?.result || dataResponse || [];
 
-      // Apply department filter
-      if (activeTab === "retail") {
-        stockItems = stockItems.filter(item => item.Department === "RETAIL PRODUCT");
-      } else if (activeTab === "salon") {
-        stockItems = stockItems.filter(item => item.Department === "SALON PRODUCT");
-      }
-
-      // Apply search filter
-      if (debouncedSearchValue) {
-        stockItems = stockItems.filter(item =>
-          item.stockCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
-          item.stockName?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
-          item.BrandCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
-          item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
-        );
-      }
-
-      // Store the raw filtered data without sorting or pagination
+      // Store the raw data without any filtering - filtering will be done locally
       setStockData(stockItems);
       setTotalCount(stockItems.length);
     } catch (err) {
@@ -249,15 +298,15 @@ function StockBalance() {
     initialize();
   }, []); // Run only once on mount
 
-  useEffect(() => {
-    if (!initialLoading) {
-      getStockBalance();
-    }
-  }, [
-    pagination.skip,
-    debouncedSearchValue,
-    activeTab
-  ]);
+  // Remove this useEffect - search and tab changes should be handled locally
+  // useEffect(() => {
+  //   if (!initialLoading) {
+  //     getStockBalance();
+  //   }
+  // }, [
+  //   debouncedSearchValue,
+  //   activeTab
+  // ]);
 
   const handleSearch = (e) => {
     const value = e.target.value;
@@ -308,24 +357,18 @@ function StockBalance() {
 
   return (
     <>
-      {initialLoading ? (
-        <div className="flex flex-col items-center justify-center h-screen">
-          <Loader2 className="w-8 h-8 text-gray-500 animate-spin" />
-          <span className="text-gray-600 ml-4 text-sm">Loading...</span>
+      <div className="h-screen w-full mt-6 light">
+        <div className="ml-2 mb-7">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Stock Balance
+          </h1>
+          {isLoading && (
+            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Loading data...</span>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="h-screen w-full mt-6 light">
-          <div className="ml-2 mb-7">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Stock Balance
-            </h1>
-            {isLoading && (
-              <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Loading data...</span>
-              </div>
-            )}
-          </div>
 
           <Tabs
             value={activeTab}
@@ -343,11 +386,15 @@ function StockBalance() {
                     onChange={(e) => handleSearch(e)}
                     className="pl-10"
                   />
-                  <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                  {isSearching ? (
+                    <Loader2 className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 animate-spin" />
+                  ) : (
+                    <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                  )}
                 </div>
               </div>
 
-              <TabsList className="w-[25%] bg-gray-200 h-[38px]">
+              <TabsList className="w-[25%] bg-gray-200 h-[38px] relative">
                 <TabsTrigger className="cursor-pointer" value="both">
                   Both
                 </TabsTrigger>
@@ -357,6 +404,11 @@ function StockBalance() {
                 <TabsTrigger className="cursor-pointer" value="salon">
                   Salon
                 </TabsTrigger>
+                {isFiltering && (
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-600" />
+                  </div>
+                )}
               </TabsList>
             </div>
 
@@ -367,6 +419,7 @@ function StockBalance() {
                 onSort={handleSort}
                 onBatchClick={handleBatchClick}
                 sortConfig={sortConfig}
+                pagination={pagination}
               />
             </TabsContent>
             <TabsContent value="retail">
@@ -376,6 +429,7 @@ function StockBalance() {
                 onSort={handleSort}
                 onBatchClick={handleBatchClick}
                 sortConfig={sortConfig}
+                pagination={pagination}
               />
             </TabsContent>
             <TabsContent value="salon">
@@ -385,17 +439,17 @@ function StockBalance() {
                 onSort={handleSort}
                 onBatchClick={handleBatchClick}
                 sortConfig={sortConfig}
+                pagination={pagination}
               />
             </TabsContent>
           </Tabs>
 
-          <Pagination
-            currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
-            totalPages={Math.ceil(stockData.length / pagination.limit)}
-            onPageChange={handlePageChange}
-          />
-        </div>
-      )}
+        <Pagination
+          currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
+          totalPages={Math.ceil(filteredDataLength / pagination.limit)}
+          onPageChange={handlePageChange}
+        />
+      </div>
 
       {/* Batch Details Modal */}
       <Dialog open={showBatchModal} onOpenChange={setShowBatchModal}>

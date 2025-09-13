@@ -17,7 +17,8 @@ const StockBalanceTable = ({
   isLoading, 
   onSort, 
   onBatchClick,
-  sortConfig = { key: null, direction: "ascending" } 
+  sortConfig = { key: null, direction: "ascending" },
+  pagination = { skip: 0, limit: 10 }
 }) => {
   const handleSort = (key) => {
     let direction = 'ascending';
@@ -130,14 +131,18 @@ const StockBalanceTable = ({
               </TableCell>
             </TableRow>
           ) : (
-            data.map((item, index) => (
-              <TableRow
-                key={index}
-                className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
-              >
-                <TableCell className="font-medium">
-                  {index + 1}
-                </TableCell>
+            data.map((item, index) => {
+              // Calculate the actual row number considering pagination
+              const rowNumber = pagination.skip + index + 1;
+              
+              return (
+                <TableRow
+                  key={index}
+                  className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
+                >
+                  <TableCell className="font-medium">
+                    {rowNumber}
+                  </TableCell>
                 <TableCell className="font-medium text-blue-600">
                   {item.stockCode}
                 </TableCell>
@@ -167,7 +172,8 @@ const StockBalanceTable = ({
                   </Button>
                 </TableCell>
               </TableRow>
-            ))
+              );
+            })
           )}
         </TableBody>
       </Table>
