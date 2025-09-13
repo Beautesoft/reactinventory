@@ -266,14 +266,14 @@ function StockUsageMemo() {
             <TabsContent value="all">
               <GoodsReceiveTable data={goodsData} isLoading={isLoading}
                               onSort={handleSort}
-
+                              supplierOptions={supplierOptions}
               type="sum" />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="sum" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="sum" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="sum" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="sum" supplierOptions={supplierOptions} />
             </TabsContent>
           </Tabs>
 

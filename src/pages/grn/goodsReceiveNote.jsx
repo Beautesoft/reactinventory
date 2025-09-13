@@ -96,7 +96,7 @@ function GoodsReceiveNote() {
     } catch (err) {
       console.error("Error fetching suppliers:", err);
     }
-  };
+  };  
 
   useEffect(() => {
     const initialize = async () => {
@@ -269,6 +269,8 @@ function GoodsReceiveNote() {
                 data={goodsData} 
                 isLoading={isLoading} 
                 onSort={handleSort}
+                type="grn"
+                supplierOptions={supplierOptions}
               />
             </TabsContent>
             <TabsContent value="open">
@@ -276,6 +278,8 @@ function GoodsReceiveNote() {
                 data={goodsData} 
                 isLoading={isLoading} 
                 onSort={handleSort}
+                type="grn"
+                supplierOptions={supplierOptions}
               />
             </TabsContent>
             <TabsContent value="posted">
@@ -283,6 +287,8 @@ function GoodsReceiveNote() {
                 data={goodsData} 
                 isLoading={isLoading} 
                 onSort={handleSort}
+                type="grn"
+                supplierOptions={supplierOptions}
               />
             </TabsContent>
           </Tabs>

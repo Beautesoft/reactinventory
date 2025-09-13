@@ -68,11 +68,29 @@ const StockMovementReports = () => {
   ];
 
   useEffect(() => {
-    loadMasterData();
-    getTitles();
+    const abortController = new AbortController();
+    
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          loadMasterData(abortController.signal),
+          getTitles(abortController.signal)
+        ]);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Error loading data:', error);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      abortController.abort();
+    };
   }, []);
 
-  const getTitles = async () => {
+  const getTitles = async (signal) => {
     try {
       const filter = {
         where: {
@@ -81,23 +99,25 @@ const StockMovementReports = () => {
       };
       
       const query = buildFilterQuery(filter);
-      const response = await apiService.get(`/Titles${query}`);
+      const response = await apiService.get(`/Titles${query}`, { signal });
       setTitles(response[0]);
       console.log("Titles data:", response);
     } catch (err) {
-      console.error("Error fetching titles:", err);
-      toast.error("Failed to fetch titles");
+      if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
+        console.error("Error fetching titles:", err);
+        toast.error("Failed to fetch titles");
+      }
     }
   };
 
-  const loadMasterData = async () => {
+  const loadMasterData = async (signal) => {
     try {
       // Load sites
-      const sitesResponse = await apiService.get("ItemSitelists");
+      const sitesResponse = await apiService.get("ItemSitelists", { signal });
       setSites(sitesResponse || []);
 
       // Load suppliers
-      const supplierResponse = await apiService1.get("/api/Supplier?siteCode=NIL");
+      const supplierResponse = await apiService1.get("/api/Supplier?siteCode=NIL", { signal });
       const supplierOp = (supplierResponse?.result || supplierResponse || []).map((item) => ({
         value: item.supplierCode || item.splyCode || '',
         label: item.supplierName || item.supplydesc || '',
@@ -105,7 +125,7 @@ const StockMovementReports = () => {
       setSuppliers(supplierOp);
 
       // Load departments
-      const deptResponse = await apiService1.get("/api/department?siteCode=NIL");
+      const deptResponse = await apiService1.get("/api/department?siteCode=NIL", { signal });
       const deptOptions = (deptResponse?.result || deptResponse || []).map((item) => ({
         value: item.departmentCode || item.itmCode || '',
         label: item.departmentName || item.itmDesc || '',
@@ -113,7 +133,7 @@ const StockMovementReports = () => {
       setDepartments(deptOptions);
 
       // Load brands
-      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL");
+      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL", { signal });
       const brandOp = (brandResponse?.result || brandResponse || []).map((item) => ({
         value: item.brandCode || item.itmCode || '',
         label: item.brandName || item.itmDesc || '',
@@ -121,7 +141,7 @@ const StockMovementReports = () => {
       setBrands(brandOp);
 
       // Load ranges
-      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL");
+      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL", { signal });
       const rangeOp = (rangeResponse?.result || []).map((item) => ({
         value: item.rangeCode,
         label: item.rangeName,
@@ -129,7 +149,7 @@ const StockMovementReports = () => {
       setRanges(rangeOp);
 
       // Load items
-      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL");
+      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL", { signal });
       const itemsOp = (itemResponse?.result || itemResponse || []).map((item) => ({
         value: item.itemCode || item.stockCode || '',
         label: item.itemName || item.stockName || '',
@@ -137,7 +157,7 @@ const StockMovementReports = () => {
       setItems(itemsOp);
 
       // Load movement codes
-      const movementCodeResponse = await apiService1.get("/api/MovementCode?siteCode=NIL");
+      const movementCodeResponse = await apiService1.get("/api/MovementCode?siteCode=NIL", { signal });
       const movementCodeOp = (movementCodeResponse?.result || movementCodeResponse || []).map((item) => ({
         value: item.movementCode || item.departmentCode || '',
         label: item.movementName || item.departmentName || '',
@@ -146,8 +166,10 @@ const StockMovementReports = () => {
 
       console.log("Master data loaded successfully");
     } catch (error) {
-      console.error("Error loading master data:", error);
-      toast.error("Failed to load master data");
+      if (error.name !== 'AbortError' && error.code !== 'ERR_CANCELED') {
+        console.error("Error loading master data:", error);
+        toast.error("Failed to load master data");
+      }
     }
   };
 

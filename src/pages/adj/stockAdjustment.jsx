@@ -256,13 +256,13 @@ function StockAdjustment() {
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="open">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="posted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="adj" supplierOptions={supplierOptions} />
             </TabsContent>
           </Tabs>
 

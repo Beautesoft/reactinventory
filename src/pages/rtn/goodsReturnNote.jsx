@@ -269,6 +269,7 @@ function GoodsReturnNote() {
                 isLoading={isLoading}
                 onSort={handleSort}
                 type="rtn"
+                supplierOptions={supplierOptions}
               />
             </TabsContent>
             <TabsContent value="open">
@@ -277,6 +278,7 @@ function GoodsReturnNote() {
                 isLoading={isLoading}
                 onSort={handleSort}
                 type="rtn"
+                supplierOptions={supplierOptions}
               />
             </TabsContent>
             <TabsContent value="posted">
@@ -285,6 +287,7 @@ function GoodsReturnNote() {
                 isLoading={isLoading}
                 onSort={handleSort}
                 type="rtn"
+                supplierOptions={supplierOptions}
               />
             </TabsContent>
           </Tabs>

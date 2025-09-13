@@ -267,19 +267,19 @@ function StockTake() {
             </div>
 
             <TabsContent value="all">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="saved">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="submitted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="approved">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
             <TabsContent value="rejected">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" />
+              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
           </Tabs>
 

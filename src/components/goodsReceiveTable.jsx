@@ -15,7 +15,7 @@ import { useGto } from "@/context/gtoContext";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
 
-function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
+function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOptions = [] }) {
   const navigate = useNavigate();
   const { setDefaultdata: setGrnDefault } = useGrn();
   const { setDefaultdata: setGtoDefault } = useGto();
@@ -35,33 +35,53 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
 
   useEffect(() => {
     if ((type === "grn" || type === "rtn") && data?.length > 0) {
-      const fetchSupplierNames = async () => {
+      const processSupplierNames = () => {
         const uniqueSupplyNos = [...new Set(data.map((item) => item.supplyNo))];
-        const uncachedSuppliers = uniqueSupplyNos.filter(
-          (code) => code && !supplierCache.current.has(code)
-        );
+        
+        // If supplierOptions are provided from parent, use them
+        if (supplierOptions.length > 0) {
+          const supplierMap = {};
+          supplierOptions.forEach((supplier) => {
+            supplierMap[supplier.value] = supplier.label;
+            supplierCache.current.set(supplier.value, supplier.label);
+          });
+          
+          setSupplierDetails((prev) => ({
+            ...prev,
+            ...supplierMap,
+          }));
+        } else {
+          // Fallback to API call if no supplierOptions provided
+          const uncachedSuppliers = uniqueSupplyNos.filter(
+            (code) => code && !supplierCache.current.has(code)
+          );
 
-        if (uncachedSuppliers.length > 0) {
-          try {
-            const res = await apiService.get(
-              `ItemSupplies?filter={"where":{"splyCode":{"inq":${JSON.stringify(
-                uncachedSuppliers
-              )}}}}`
-            );
+          if (uncachedSuppliers.length > 0) {
+            const fetchSupplierNames = async () => {
+              try {
+                const res = await apiService.get(
+                  `ItemSupplies?filter={"where":{"splyCode":{"inq":${JSON.stringify(
+                    uncachedSuppliers
+                  )}}}}`
+                );
 
-            res.forEach((supplier) => {
-              supplierCache.current.set(supplier.splyCode, supplier.supplydesc);
-            });
+                res.forEach((supplier) => {
+                  supplierCache.current.set(supplier.splyCode, supplier.supplydesc);
+                });
 
-            setSupplierDetails((prev) => ({
-              ...prev,
-              ...Object.fromEntries(
-                res.map((supplier) => [supplier.splyCode, supplier.supplydesc])
-              ),
-            }));
-          } catch (err) {
-            console.error("Error fetching supplier details:", err);
-            toast.error("Failed to fetch supplier details");
+                setSupplierDetails((prev) => ({
+                  ...prev,
+                  ...Object.fromEntries(
+                    res.map((supplier) => [supplier.splyCode, supplier.supplydesc])
+                  ),
+                }));
+              } catch (err) {
+                console.error("Error fetching supplier details:", err);
+                toast.error("Failed to fetch supplier details");
+              }
+            };
+
+            fetchSupplierNames();
           }
         }
 
@@ -74,9 +94,9 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort }) {
         setSupplierDetails((prev) => ({ ...prev, ...cachedDetails }));
       };
 
-      fetchSupplierNames();
+      processSupplierNames();
     }
-  }, [data, type]);
+  }, [data, type, supplierOptions]);
 
   // Fetch stock take details for tke type
   useEffect(() => {

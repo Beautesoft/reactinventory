@@ -2511,7 +2511,7 @@ function AddGrn({ docData }) {
                 // batchNo:d.itemBatch,
                 // batchSNo: d.itemBatch,
                 // itemsiteCode: userDetails.siteCode,
-                batchCost: Number(d.trnCost),
+                batchCost: Number(d.itemBatchCost),
 
                 // Make sure it's in correct format (e.g., "yyyy-MM-dd")
               });

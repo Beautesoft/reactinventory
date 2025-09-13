@@ -1600,7 +1600,7 @@ function AddGti({ docData }) {
       tstoreNo: tstoreNo,
       fstoreNo: fstoreNo,
       trnDocno: docNo,
-      trnType: "TFR",
+      trnType: "TFRF",
       trnDbQty: null,
       trnCrQty: null,
       trnQty: qty,
@@ -3839,7 +3839,7 @@ function AddGti({ docData }) {
                 tstoreNo: stockHdrs.tstoreNo, // Destination store
                 fstoreNo: stockHdrs.fstoreNo, // Source store
                 trnDocno: docNo,
-                trnType: "TFR",
+                trnType: "TFRF",
                 trnDbQty: null,
                 trnCrQty: null,
                 trnQty: item.docQty,

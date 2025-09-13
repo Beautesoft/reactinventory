@@ -144,10 +144,10 @@ const StockBalanceTable = ({
                 <TableCell>{item.stockName}</TableCell>
                 <TableCell>{item.Brand}</TableCell>
                 <TableCell className="text-center">
-                  {item.onHoldQty || 0}
+                  {item.onholdqty || 0}
                 </TableCell>
                 <TableCell className="text-center">
-                  {item.poQty || item.ReqQty || 0}
+                  {item.poqty || item.ReqQty || 0}
                 </TableCell>
                 <TableCell className="text-center font-medium">
                   {item.quantity || item.StockQty || 0}

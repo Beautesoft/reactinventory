@@ -45,11 +45,29 @@ const StockBalanceReports = () => {
 
 
   useEffect(() => {
-    loadMasterData();
-    getTitles();
+    const abortController = new AbortController();
+    
+    const loadData = async () => {
+      try {
+        await Promise.all([
+          loadMasterData(abortController.signal),
+          getTitles(abortController.signal)
+        ]);
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('Error loading data:', error);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      abortController.abort();
+    };
   }, []);
 
-  const getTitles = async () => {
+  const getTitles = async (signal) => {
     try {
       // Create filter object with where clause
       const filter = {
@@ -61,22 +79,24 @@ const StockBalanceReports = () => {
       // Build query string using the existing utility function
       const query = buildFilterQuery(filter);
       
-      const response = await apiService.get(`/Titles${query}`);
+      const response = await apiService.get(`/Titles${query}`, { signal });
       setTitles(response[0]);
     } catch (err) {
-      console.error("Error fetching titles:", err);
-      toast.error("Failed to fetch titles");
+      if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
+        console.error("Error fetching titles:", err);
+        toast.error("Failed to fetch titles");
+      }
     }
   };
 
-  const loadMasterData = async () => {
+  const loadMasterData = async (signal) => {
     try {
       // Load sites - using the same pattern as addGrn.jsx
-      const sitesResponse = await apiService.get("ItemSitelists");
+      const sitesResponse = await apiService.get("ItemSitelists", { signal });
       setSites(sitesResponse || []);
 
       // Load brands - using the correct API endpoint from ASP.NET code
-      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL");
+      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL", { signal });
       const brandOp = (brandResponse.result || []).map((item) => ({
         value: item.brandCode || item.itmCode || '',
         label: item.brandName || item.itmDesc || '',
@@ -84,7 +104,7 @@ const StockBalanceReports = () => {
       setBrands(brandOp);
 
       // Load ranges - using the correct API endpoint from ASP.NET code
-      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL");
+      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL", { signal });
       const rangeOp = (rangeResponse.result || []).map((item) => ({
         value: item.rangeCode || item.itmCode || '',
         label: item.rangeName || item.itmDesc || '',
@@ -92,7 +112,7 @@ const StockBalanceReports = () => {
       setRanges(rangeOp);
 
       // Load departments - using the correct API endpoint from ASP.NET code
-      const deptResponse = await apiService1.get("/api/department?siteCode=NIL");
+      const deptResponse = await apiService1.get("/api/department?siteCode=NIL", { signal });
       const deptOptions = (deptResponse.result || []).map((item) => ({
         value: item.departmentCode || item.itmCode || '',
         label: item.departmentName || item.itmDesc || '',
@@ -100,15 +120,17 @@ const StockBalanceReports = () => {
       setDepartments(deptOptions);
 
       // Load items - using the correct API endpoint from ASP.NET code
-      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL");
+      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL", { signal });
       const itemsOp = (itemResponse.result || []).map((item) => ({
         value: item.itemCode || item.stockCode || '',
         label: item.itemName || item.stockName || '',
       })).filter(item => item.value && item.label);
       setItems(itemsOp);
     } catch (error) {
-      console.error("Error loading master data:", error);
-      toast.error("Failed to load master data");
+      if (error.name !== 'AbortError' && error.code !== 'ERR_CANCELED') {
+        console.error("Error loading master data:", error);
+        toast.error("Failed to load master data");
+      }
     }
   };
 

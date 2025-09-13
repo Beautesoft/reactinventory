@@ -138,11 +138,12 @@ function StockBalance() {
 
       // Use the inventory API similar to addGrn.jsx
       const dataQuery = `?Site=${userDetails.siteCode}`;
+      
       const [dataResponse] = await Promise.all([
         apiService1.get(`api/GetInvitems${dataQuery}`),
       ]);
-
-      let stockItems = dataResponse.result || [];
+      
+      let stockItems = dataResponse?.result || dataResponse || [];
 
       // Apply department filter
       if (activeTab === "retail") {
@@ -318,6 +319,12 @@ function StockBalance() {
             <h1 className="text-2xl font-bold text-gray-900">
               Stock Balance
             </h1>
+            {isLoading && (
+              <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading data...</span>
+              </div>
+            )}
           </div>
 
           <Tabs
