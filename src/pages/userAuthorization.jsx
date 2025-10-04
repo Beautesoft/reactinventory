@@ -78,7 +78,7 @@ const UserAuthorization = () => {
 
   // Filter function to show only required forms
   const filterRequiredForms = (authData) => {
-    const requiredFormCodes = ["F10001", "F10002", "F10003", "F10004", "F10009", "F10011"];
+    const requiredFormCodes = ["F10001", "F10002", "F10003", "F10004", "F10009", "F10011","F10005"];
     return authData.filter(auth => requiredFormCodes.includes(auth.Code));
   };
 
@@ -109,7 +109,7 @@ const UserAuthorization = () => {
         { Code: "F10009", Name: "Stock Balance", Active: "Y" },
         { Code: "F10011", Name: "Stock Movement - Detail", Active: "Y" },
         // Commented out other forms for now
-        // { Code: "F10005", Name: "Stock Adjustment List", Active: "Y" },
+        { Code: "F10005", Name: "Stock Adjustment List", Active: "Y" },
         // { Code: "F10006", Name: "Purchase Order List", Active: "N" },
         // { Code: "F10007", Name: "Approved PO List", Active: "Y" },
         // { Code: "F10008", Name: "Purchase Order Approval", Active: "N" },

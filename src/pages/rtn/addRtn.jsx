@@ -93,6 +93,16 @@ const BatchSelectionDialog = memo(({
   const [noBatchSelected, setNoBatchSelected] = useState(false);
   const [noBatchQuantity, setNoBatchQuantity] = useState(0);
 
+  // Reset dialog state when dialog closes
+  useEffect(() => {
+    if (!showBatchDialog) {
+      setSelectedBatches([]);
+      setBatchQuantities({});
+      setNoBatchSelected(false);
+      setNoBatchQuantity(0);
+    }
+  }, [showBatchDialog]);
+
   // Calculate total selected quantity (including No Batch)
   const totalSelectedQty = selectedBatches.reduce((sum, batch) => sum + (batchQuantities[batch.batchNo] || 0), 0) + (noBatchSelected ? noBatchQuantity : 0);
   const remainingQty = transferQty - totalSelectedQty;
@@ -141,6 +151,12 @@ const BatchSelectionDialog = memo(({
   const handleSubmit = () => {
     if (totalSelectedQty === 0) {
       toast.error("Please select at least one batch or No Batch option");
+      return;
+    }
+
+    // Validate that selected quantity matches the required transfer quantity
+    if (totalSelectedQty !== transferQty) {
+      toast.error(`Selected quantity (${totalSelectedQty}) must match the required quantity (${transferQty}). Please adjust your selection.`);
       return;
     }
 
@@ -395,10 +411,9 @@ const EditDialog = memo(
           errors.push("Quantity must be greater than 0");
         }
         
-        // Check if quantity exceeds on-hand quantity (for returns, this might be different logic)
-        // Note: For returns, we might want to allow quantities up to the original cart quantity
+        // Check if quantity exceeds available stock for returns
         if (editData?.docQty && editData?.originalQty && Number(editData.docQty) > Number(editData.originalQty)) {
-          errors.push("Return quantity cannot exceed original quantity");
+          errors.push(`Cannot return ${Number(editData.docQty)}. Only ${Number(editData.originalQty)} available in stock.`);
         }
         
         // Only validate price if price viewing is enabled
@@ -458,7 +473,7 @@ const EditDialog = memo(
                   value={editData?.docQty || ""}
                   onChange={(e) => onEditCart(e, "docQty")}
                   className="w-full"
-                  disabled={urlStatus == 7}
+                  disabled={urlStatus == 7 || (editData?.transferType === 'specific' && editData?.batchDetails)}
                 />
                 {editData?.originalQty && (
                   <p className="text-xs text-gray-500">
@@ -1499,9 +1514,9 @@ function AddRtn({ docData }) {
         return;
       }
       
-      // Check if quantity exceeds original quantity (for returns)
+      // Check if quantity exceeds available stock for returns
       if (updatedEditData.docQty && updatedEditData.originalQty && Number(updatedEditData.docQty) > Number(updatedEditData.originalQty)) {
-        toast.error("Return quantity cannot exceed original quantity");
+        toast.error(`Cannot return ${Number(updatedEditData.docQty)}. Only ${Number(updatedEditData.originalQty)} available in stock.`);
         return;
       }
       
@@ -1580,10 +1595,17 @@ function AddRtn({ docData }) {
     console.log("Original docExpdate:", item.docExpdate);
     console.log("Processed expiryDate:", expiryDate);
     
+    // Use current stock quantity from stockList (Select Items data)
+    const currentStockItem = stockList.find(
+      stockItem => stockItem.stockCode === item.itemcode && stockItem.uom === item.docUom
+    );
+    
+    const currentAvailableQty = Number(currentStockItem?.quantity || 0);
+
     setEditData({
       ...item,
       docQty: Number(item.docQty) || 0,
-      originalQty: Number(item.docQty) || 0, // Store original quantity for validation
+      originalQty: currentAvailableQty, // Use current stock quantity for validation
       docPrice: Number(item.docPrice) || 0,
       docExpdate: expiryDate,
       itemRemark: item.itemRemark || "",
@@ -1604,7 +1626,11 @@ function AddRtn({ docData }) {
 
     setStockList((prev) =>
       prev.map((stockItem, i) =>
-        i === index ? { ...stockItem, Qty: 0 } : stockItem
+        i === index ? { 
+          ...stockItem, 
+          Qty: 0,
+          selectedBatches: null // Clear batch selection when added to cart
+        } : stockItem
       )
     );
   };
@@ -1719,6 +1745,140 @@ function AddRtn({ docData }) {
 
     addItemToCart(newCartItem, index);
   };
+  // Helper function to pre-calculate FIFO batch selection
+  const calculateFifoBatches = async (item) => {
+    if (item?.transferType !== "fifo" || getConfigValue('BATCH_NO') !== "Yes") {
+      return item;
+    }
+
+    try {
+      // Find all available batches in source store
+      const allBatchesFilter = {
+        where: {
+          and: [
+            { itemCode: item.itemcode },
+            { siteCode: userDetails.siteCode }, // Source store for returns
+            { uom: item.docUom },
+            { qty: { gt: 0 } } // Only batches with available quantity
+          ]
+        }
+      };
+
+      const allBatches = await apiService.get(
+        `ItemBatches?filter=${encodeURIComponent(JSON.stringify(allBatchesFilter))}`
+      );
+
+      if (allBatches && allBatches.length > 0) {
+        // Separate specific batches from "No Batch" records
+        const specificBatches = allBatches.filter(batch => 
+          batch.batchNo && batch.batchNo.trim() !== ""
+        );
+
+        // Sort specific batches by expiry date (FIFO)
+        const sortedBatches = specificBatches.sort((a, b) => 
+          new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
+        );
+
+        let remainingQty = Number(item.docQty);
+        const fifoBatches = [];
+
+        // Calculate which batches will be used for FIFO transfer
+        for (const batch of sortedBatches) {
+          if (remainingQty <= 0) break;
+          
+          const batchQty = Math.min(remainingQty, Number(batch.qty));
+          fifoBatches.push({
+            batchNo: batch.batchNo,
+            quantity: batchQty,
+            expDate: batch.expDate,
+            batchCost: batch.batchCost
+          });
+
+          remainingQty -= batchQty;
+        }
+
+        // If still need more quantity, take from "No Batch" records
+        if (remainingQty > 0) {
+          const noBatchRecords = allBatches.filter(batch => 
+            !batch.batchNo || batch.batchNo.trim() === ""
+          );
+
+          for (const noBatch of noBatchRecords) {
+            if (remainingQty <= 0) break;
+            
+            const batchQty = Math.min(remainingQty, Number(noBatch.qty));
+            fifoBatches.push({
+              batchNo: "", // Empty string for "No Batch"
+              quantity: batchQty,
+              expDate: noBatch.expDate,
+              batchCost: noBatch.batchCost
+            });
+
+            remainingQty -= batchQty;
+          }
+        }
+
+        // Update the item with FIFO batch details
+        return {
+          ...item,
+          fifoBatches: fifoBatches
+        };
+      }
+    } catch (error) {
+      console.error("Error calculating FIFO batches:", error);
+    }
+
+    return item;
+  };
+
+  // Helper function to create Stktrnbatches records
+  const createStktrnbatchesRecords = async (stktrnsRecords, processedDetails, type) => {
+    if (getConfigValue('BATCH_NO') !== "Yes") {
+      return; // Skip if batch functionality is disabled
+    }
+
+    try {
+      for (let i = 0; i < stktrnsRecords.length; i++) {
+        const stktrnRecord = stktrnsRecords[i];
+        const processedItem = processedDetails[i];
+        
+        if (!stktrnRecord.id) {
+          console.warn(`No Stktrns ID found for item ${stktrnRecord.itemcode}, skipping Stktrnbatches creation`);
+          continue;
+        }
+
+        let batchDetails = [];
+
+        // Get batch details based on transfer type
+        if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
+          // Specific batch transfer
+          batchDetails = processedItem.batchDetails.individualBatches;
+        } else if (processedItem?.transferType === "fifo" && processedItem?.fifoBatches?.length > 0) {
+          // FIFO transfer
+          batchDetails = processedItem.fifoBatches;
+        }
+
+        // Create Stktrnbatches records for each batch
+        for (const batch of batchDetails) {
+          const stktrnbatchesPayload = {
+            batchNo: batch.batchNo || "", // Empty string for "No Batch"
+            stkTrnId: stktrnRecord.id,
+            batchQty: -batch.quantity // Negative for returns (reducing stock)
+          };
+
+          try {
+            await apiService.post("Stktrnbatches", stktrnbatchesPayload);
+            console.log(`✅ Created Stktrnbatches for ${type}: ${batch.batchNo || "No Batch"} - ${batch.quantity} qty`);
+          } catch (error) {
+            console.error(`❌ Error creating Stktrnbatches for ${batch.batchNo || "No Batch"}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error in createStktrnbatchesRecords:", error);
+    }
+  };
+
   const createTransactionObject = (item, docNo, storeNo) => {
     console.log(item, "trafr object");
     const today = new Date();
@@ -1729,7 +1889,7 @@ function AddRtn({ docData }) {
 
     return {
       id: null,
-      trnPost: today.toISOString().split("T")[0],
+      trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
       aperiod: null,
@@ -1752,7 +1912,13 @@ function AddRtn({ docData }) {
       itemUom: item.docUom,
       movType: "VGRN",
       // Only set itemBatch if batch functionality is enabled
-      itemBatch: getConfigValue('BATCH_NO') === "Yes" ? item?.docBatchNo : null,
+      itemBatch: getConfigValue('BATCH_NO') === "Yes" ? 
+        (item?.transferType === "specific" && item?.batchDetails?.individualBatches?.length > 0 ?
+          item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',') :
+          item?.transferType === "fifo" && item?.fifoBatches?.length > 0 ?
+            item.fifoBatches.map(batch => batch.batchNo || "No Batch").join(',') : // Actual FIFO batch numbers
+            item?.docBatchNo || 
+            null) : null,
       itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
@@ -2003,11 +2169,18 @@ function AddRtn({ docData }) {
         // await apiService.post("Inventorylogs", inventoryLog);
 
         let batchId;
-        const stktrns = details.map((item) =>
+        
+        // Pre-calculate FIFO batches for all items
+        const processedDetails = await Promise.all(
+          details.map(async (item) => await calculateFifoBatches(item))
+        );
+        
+        const stktrns = processedDetails.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
 
         console.log(stktrns, "stktrns");
+
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         const itemRequests = stktrns.map((d) => {
           const filter = {
@@ -2080,7 +2253,19 @@ function AddRtn({ docData }) {
 
           // const data=
 
-          await apiService.post("Stktrns", stktrns);
+          const stktrnsResponse = await apiService.post("Stktrns", stktrns);
+          
+          // Update stktrns records with response IDs
+          if (stktrnsResponse && Array.isArray(stktrnsResponse)) {
+            stktrns.forEach((record, index) => {
+              if (stktrnsResponse[index] && stktrnsResponse[index].id) {
+                record.id = stktrnsResponse[index].id;
+              }
+            });
+          }
+
+          // Create Stktrnbatches records for each batch (AFTER Stktrns are posted)
+          await createStktrnbatchesRecords(stktrns, processedDetails, "return");
 
           // 9) Per-item log and (optional) BatchSNO GET
           for (const d of stktrns) {
@@ -2788,7 +2973,7 @@ function AddRtn({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: today.toISOString().split("T")[0],
+                trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,

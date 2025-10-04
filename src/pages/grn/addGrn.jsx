@@ -324,7 +324,7 @@ const EditDialog = memo(
                     value={editData?.docQty || ""}
                     onChange={(e) => onEditCart(e, "docQty")}
                     className="w-full"
-                    disabled={urlStatus == 7}
+                    disabled={urlStatus == 7 || (editData?.transferType === 'specific' && editData?.batchDetails)}
                   />
                 </div>
                 {userDetails?.isSettingViewPrice === "True" && (
@@ -1536,7 +1536,11 @@ function AddGrn({ docData }) {
 
     setStockList((prev) =>
       prev.map((stockItem, i) =>
-        i === index ? { ...stockItem, Qty: 0 } : stockItem
+        i === index ? { 
+          ...stockItem, 
+          Qty: 0,
+          selectedBatches: null // Clear batch selection when added to cart
+        } : stockItem
       )
     );
   };
@@ -1663,6 +1667,62 @@ function AddGrn({ docData }) {
     addItemToCart(newCartItem, index);
   };
 
+  // Helper function to create Stktrnbatches records
+  const createStktrnbatchesRecords = async (stktrnsRecords, processedDetails, type) => {
+    if (getConfigValue('BATCH_NO') !== "Yes") {
+      return; // Skip if batch functionality is disabled
+    }
+
+    try {
+      for (let i = 0; i < stktrnsRecords.length; i++) {
+        const stktrnRecord = stktrnsRecords[i];
+        const processedItem = processedDetails[i];
+        
+        if (!stktrnRecord.id) {
+          console.warn(`No Stktrns ID found for item ${stktrnRecord.itemcode}, skipping Stktrnbatches creation`);
+          continue;
+        }
+
+        let batchDetails = [];
+
+        // Get batch details based on transfer type
+        if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
+          // Specific batch transfer
+          batchDetails = processedItem.batchDetails.individualBatches;
+        } else if (processedItem?.transferType === "fifo" && processedItem?.fifoBatches?.length > 0) {
+          // FIFO transfer
+          batchDetails = processedItem.fifoBatches;
+        } else if (processedItem?.docBatchNo) {
+          // Single batch (GRN specific)
+          batchDetails = [{
+            batchNo: processedItem.docBatchNo,
+            quantity: processedItem.docQty,
+            expDate: processedItem.docExpdate,
+            batchCost: processedItem.itemprice
+          }];
+        }
+
+        // Create Stktrnbatches records for each batch
+        for (const batch of batchDetails) {
+          const stktrnbatchesPayload = {
+            batchNo: batch.batchNo || "", // Empty string for "No Batch"
+            stkTrnId: stktrnRecord.id,
+            batchQty: batch.quantity // Positive for GRN (receiving stock)
+          };
+
+          try {
+            await apiService.post("Stktrnbatches", stktrnbatchesPayload);
+            console.log(`✅ Created Stktrnbatches for ${type}: ${batch.batchNo || "No Batch"} - ${batch.quantity} qty`);
+          } catch (error) {
+            console.error(`❌ Error creating Stktrnbatches for ${batch.batchNo || "No Batch"}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error in createStktrnbatchesRecords:", error);
+    }
+  };
+
   const createTransactionObject = (item, docNo, storeNo) => {
     console.log(item, "trafr object");
     console.log(item.itemprice, "trafr object itemprice");
@@ -1675,7 +1735,7 @@ function AddGrn({ docData }) {
 
     return {
       id: null,
-      trnPost: today.toISOString().split("T")[0],
+      trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
       aperiod: null,
@@ -1929,7 +1989,7 @@ function AddGrn({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: today.toISOString().split("T")[0],
+                trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,
@@ -2396,6 +2456,7 @@ function AddGrn({ docData }) {
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
         console.log(stktrns, "stktrns");
+
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
         const itemRequests = stktrns.map((d) => {
           const filter = {
@@ -2468,7 +2529,19 @@ function AddGrn({ docData }) {
 
           // const data=
 
-          await apiService.post("Stktrns", stktrns);
+          const stktrnsResponse = await apiService.post("Stktrns", stktrns);
+          
+          // Update stktrns records with response IDs
+          if (stktrnsResponse && Array.isArray(stktrnsResponse)) {
+            stktrns.forEach((record, index) => {
+              if (stktrnsResponse[index] && stktrnsResponse[index].id) {
+                record.id = stktrnsResponse[index].id;
+              }
+            });
+          }
+
+          // Create Stktrnbatches records for each batch (AFTER Stktrns are posted)
+          await createStktrnbatchesRecords(stktrns, details, "grn");
 
           // 9) Per-item log and (optional) BatchSNO GET
           for (const d of stktrns) {

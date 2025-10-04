@@ -304,7 +304,7 @@ function ItemTable({
                           min={allowNegativeQty ? undefined : "0"}
                           // Remove max restriction to allow unlimited positive quantities
                           // step="0.01"
-                          disabled={!canEdit()}
+                          disabled={!canEdit() || (item.selectedBatches && item.selectedBatches.transferType === 'specific')}
                           placeholder="0"
                         />
                         {/* NEW: Batch Selection Indicator */}
