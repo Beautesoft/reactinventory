@@ -482,7 +482,7 @@ export const getAppConfig = () => {
     EXPIRY_DATE: userDetails.expiryDate === "True" ? "Yes" : "No", 
     AUTO_POST: userDetails.autoPost === "True" ? "Yes" : "No",
     DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays) || baseConfig.DEFAULT_EXPIRY_DAYS || 365,
-    ManualBatchSelection: userDetails.manualBatchSelection !== "True",
+    ManualBatchSelection: userDetails.manualBatchSelection === "True",
     BATCH_SNO: userDetails.batchSNo === "True" ? "Yes" : "No",
   };
   

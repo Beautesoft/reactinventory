@@ -109,7 +109,7 @@ const BatchSelectionDialog = memo(
         (sum, batch) => sum + (batchQuantities[batch.batchNo] || 0),
         0
       ) + (noBatchSelected ? noBatchQuantity : 0);
-    const remainingQty = transferQty - totalSelectedQty; // Use absolute value for adjustments
+    const remainingQty = Math.abs(transferQty) - totalSelectedQty; // Use absolute value for adjustments
 
     const handleBatchSelection = (batch, isSelected) => {
       if (isSelected) {
@@ -2970,6 +2970,10 @@ function AddAdj({ docData }) {
                   `🔄 Processing specific batch adjustment for ${trimmedItemCode}`
                 );
 
+                // Determine if this is a negative adjustment
+                const isNegativeAdjustment = Number(d.trnQty) < 0;
+                const adjustmentSign = isNegativeAdjustment ? -1 : 1;
+
                 // Process individual batches from the selection
                 if (
                   cartItem.selectedBatches.batchDetails &&
@@ -2982,7 +2986,7 @@ function AddAdj({ docData }) {
                         itemcode: trimmedItemCode,
                         sitecode: userDetails.siteCode,
                         uom: d.itemUom,
-                        qty: Number(batchDetail.quantity), // Use the specific batch quantity
+                        qty: Number(batchDetail.quantity) * adjustmentSign, // Apply sign based on adjustment type
                         // batchcost: Number(d.trnCost),
                         batchcost: 0,
                         batchno: batchDetail.batchNo,
@@ -3011,7 +3015,7 @@ function AddAdj({ docData }) {
                     itemcode: trimmedItemCode,
                     sitecode: userDetails.siteCode,
                     uom: d.itemUom,
-                    qty: Number(cartItem.selectedBatches.noBatchTransferQty), // Use the specific no batch quantity
+                    qty: Number(cartItem.selectedBatches.noBatchTransferQty) * adjustmentSign, // Apply sign based on adjustment type
                     // batchcost: Number(d.trnCost),
                     batchcost: 0,
                     batchno: "", // Empty string for "No Batch"
@@ -3065,6 +3069,7 @@ function AddAdj({ docData }) {
                     });
 
                     let remainingQty = Math.abs(Number(d.trnQty)); // Convert to positive for processing
+                    const isNegativeAdjustment = Number(d.trnQty) < 0;
 
                     // Process batches in FIFO order
                     for (const batch of sortedBatches) {
@@ -3075,11 +3080,14 @@ function AddAdj({ docData }) {
                         Number(batch.qty)
                       );
 
+                      // Apply the correct sign based on whether this is a positive or negative adjustment
+                      const signedBatchQty = isNegativeAdjustment ? -batchQty : batchQty;
+
                       batchUpdate = {
                         itemcode: trimmedItemCode,
                         sitecode: userDetails.siteCode,
                         uom: d.itemUom,
-                        qty: Number(d.trnQty), // Use the adjustment quantity (can be positive or negative)
+                        qty: signedBatchQty, // Use the calculated batch quantity with correct sign
                         batchcost: Number(d.trnCost),
                         batchno: batch.batchNo,
                       };

@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import { toast } from "sonner";
+import { format_Date } from "@/utils/utils";
 
 function DashBoard() {
   const [loading, setLoading] = useState(true);
@@ -161,10 +162,6 @@ function DashBoard() {
     },
   ];
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString();
-  };
 
   const getTrnTypeColor = (trnType) => {
     switch (trnType) {
@@ -220,9 +217,7 @@ function DashBoard() {
           qty: Number(batch.qty) || 0,
           batchCost: Number(batch.batchCost) || 0,
           expDate: batch.expDate,
-          formattedExpDate: batch.expDate ? 
-            new Date(batch.expDate).toLocaleDateString() : 
-            "N/A",
+          formattedExpDate: format_Date(batch.expDate),
           siteCode: batch.siteCode
         }));
 
@@ -317,7 +312,7 @@ function DashBoard() {
                 <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
                     <p className="font-medium text-sm">{transaction.trnDocno}</p>
-                    <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {formatDate(transaction.trnDate)}</p>
+                    <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {format_Date(transaction.trnDate)}</p>
                     <p className="text-xs text-gray-400">Amount: ${transaction.trnAmt || 0}</p>
                   </div>
                   <div className="text-right">

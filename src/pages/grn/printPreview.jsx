@@ -286,18 +286,18 @@ function PrintPreview({
   // Column configurations for different modes
   const columnConfigs = {
     user: {
-      headers: ['No', 'Item Code', 'Item Description', 'Qty'],
-      keys: ['no', 'itemcode', 'itemdesc', 'docQty'],
-      widths: [8, 18, 55, 15],
-      alignments: ['left', 'left', 'left', 'right'],
-      colSpan: 3
+      headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Qty'],
+      keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty'],
+      widths: [8, 18, 40, 14, 15],
+      alignments: ['left', 'left', 'left', 'left', 'right'],
+      colSpan: 4
     },
     admin: {
-      headers: ['No', 'Item Code', 'Item Description', 'Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
-      keys: ['no', 'itemcode', 'itemdesc', 'docQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
-      widths: [8, 15, 35, 10, 15, 15, 15, 15],
-      alignments: ['left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
-      colSpan: 3
+      headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
+      keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
+      widths: [8, 12, 28, 12, 10, 12, 12, 12, 12],
+      alignments: ['left', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
+      colSpan: 4
     }
   };
 
@@ -571,6 +571,7 @@ function PrintPreview({
              index + 1,
              item.itemcode,
              item.itemdesc,
+             item.batchselect || "-",
              item.docQty,
            ];
            
@@ -596,7 +597,7 @@ function PrintPreview({
           0
         );
 
-                 const totalsRow = ["", "", "Grand Total", totalQty];
+                 const totalsRow = ["", "", "Grand Total", "", totalQty];
          if (effectiveMode === 'admin') {
            totalsRow.push("", totalAmt, "", "");
          }
@@ -884,6 +885,7 @@ function PrintPreview({
                 </td>
                 <td className="py-3 px-3 print-cell font-medium">{item.itemcode}</td>
                 <td className="py-3 px-3 print-cell">{item.itemdesc}</td>
+                <td className="py-3 px-3 print-cell">{item.batchselect || "-"}</td>
                 <td className="py-3 px-3 print-cell text-right font-medium">{item.docQty}</td>
                 {effectiveMode === 'admin' && (
                   <>
