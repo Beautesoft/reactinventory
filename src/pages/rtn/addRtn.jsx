@@ -1241,7 +1241,7 @@ function AddRtn({ docData }) {
       }
     }
     
-    return null; // FIFO transfer
+    return null; // FEFO transfer
   };
 
   const getStockHdrDetails = async (filter) => {
@@ -1270,7 +1270,7 @@ function AddRtn({ docData }) {
           }
           return {
             ...item,
-            transferType: 'fifo',
+            transferType: 'fefo',
             batchDetails: null
           };
         })
@@ -1655,7 +1655,7 @@ function AddRtn({ docData }) {
 
     // Prepare batch data for storage in database fields (for future use)
     let recQtyFields = { recQty1: 0, recQty2: 0, recQty3: 0, recQty4: 0, recQty5: 0 };
-    let ordMemoFields = { ordMemo1: "fifo", ordMemo2: "", ordMemo3: "0", ordMemo4: "" };
+    let ordMemoFields = { ordMemo1: "fefo", ordMemo2: "", ordMemo3: "0", ordMemo4: "" };
     let docBatchNo = null; // Will be set based on batch selection
     let docExpdate = "";
 
@@ -1706,7 +1706,7 @@ function AddRtn({ docData }) {
       DOCUOMDesc: item.uomDescription,
       itemRemark: item?.itemRemark || null,
       // itemprice: 0,
-      itemprice: Number(item.Price) || 0,
+      itemprice: Number(item.Cost) || 0,
 
       // Batch number will be handled in edit mode, not here
       docBatchNo: docBatchNo,
@@ -1714,7 +1714,7 @@ function AddRtn({ docData }) {
       // Store transfer type and batch details in memo fields
       ...ordMemoFields,
       // Keep existing transferType and batchDetails for runtime use
-      transferType: hasSpecificBatches ? 'specific' : 'fifo',
+      transferType: hasSpecificBatches ? 'specific' : 'fefo',
       batchDetails: hasSpecificBatches ? {
         batchNo: item.selectedBatches.batchNo,
         expDate: item.selectedBatches.expDate,
@@ -1745,9 +1745,9 @@ function AddRtn({ docData }) {
 
     addItemToCart(newCartItem, index);
   };
-  // Helper function to pre-calculate FIFO batch selection
-  const calculateFifoBatches = async (item) => {
-    if (item?.transferType !== "fifo" || getConfigValue('BATCH_NO') !== "Yes") {
+  // Helper function to pre-calculate FEFO batch selection
+  const calculateFefoBatches = async (item) => {
+    if (item?.transferType !== "fefo" || getConfigValue('BATCH_NO') !== "Yes") {
       return item;
     }
 
@@ -1774,20 +1774,20 @@ function AddRtn({ docData }) {
           batch.batchNo && batch.batchNo.trim() !== ""
         );
 
-        // Sort specific batches by expiry date (FIFO)
+        // Sort specific batches by expiry date (FEFO)
         const sortedBatches = specificBatches.sort((a, b) => 
           new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
         );
 
         let remainingQty = Number(item.docQty);
-        const fifoBatches = [];
+        const fefoBatches = [];
 
-        // Calculate which batches will be used for FIFO transfer
+        // Calculate which batches will be used for FEFO transfer
         for (const batch of sortedBatches) {
           if (remainingQty <= 0) break;
           
           const batchQty = Math.min(remainingQty, Number(batch.qty));
-          fifoBatches.push({
+          fefoBatches.push({
             batchNo: batch.batchNo,
             quantity: batchQty,
             expDate: batch.expDate,
@@ -1807,7 +1807,7 @@ function AddRtn({ docData }) {
             if (remainingQty <= 0) break;
             
             const batchQty = Math.min(remainingQty, Number(noBatch.qty));
-            fifoBatches.push({
+            fefoBatches.push({
               batchNo: "", // Empty string for "No Batch"
               quantity: batchQty,
               expDate: noBatch.expDate,
@@ -1818,14 +1818,14 @@ function AddRtn({ docData }) {
           }
         }
 
-        // Update the item with FIFO batch details
+        // Update the item with FEFO batch details
         return {
           ...item,
-          fifoBatches: fifoBatches
+          fefoBatches: fefoBatches
         };
       }
     } catch (error) {
-      console.error("Error calculating FIFO batches:", error);
+      console.error("Error calculating FEFO batches:", error);
     }
 
     return item;
@@ -1853,15 +1853,15 @@ function AddRtn({ docData }) {
         if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
           // Specific batch transfer
           batchDetails = processedItem.batchDetails.individualBatches;
-        } else if (processedItem?.transferType === "fifo" && processedItem?.fifoBatches?.length > 0) {
-          // FIFO transfer
-          batchDetails = processedItem.fifoBatches;
+        } else if (processedItem?.transferType === "fefo" && processedItem?.fefoBatches?.length > 0) {
+          // FEFO transfer
+          batchDetails = processedItem.fefoBatches;
         }
 
         // Create Stktrnbatches records for each batch
         for (const batch of batchDetails) {
           const stktrnbatchesPayload = {
-            batchNo: batch.batchNo || "", // Empty string for "No Batch"
+            batchNo: batch.batchNo || "No Batch", // Use "No Batch" string for Stktrnbatches API
             stkTrnId: stktrnRecord.id,
             batchQty: -batch.quantity // Negative for returns (reducing stock)
           };
@@ -1915,8 +1915,8 @@ function AddRtn({ docData }) {
       itemBatch: getConfigValue('BATCH_NO') === "Yes" ? 
         (item?.transferType === "specific" && item?.batchDetails?.individualBatches?.length > 0 ?
           item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',') :
-          item?.transferType === "fifo" && item?.fifoBatches?.length > 0 ?
-            item.fifoBatches.map(batch => batch.batchNo || "No Batch").join(',') : // Actual FIFO batch numbers
+          item?.transferType === "fefo" && item?.fefoBatches?.length > 0 ?
+            item.fefoBatches.map(batch => batch.batchNo || "No Batch").join(',') : // Actual FEFO batch numbers
             item?.docBatchNo || 
             null) : null,
       itemBatchCost: item.itemprice,
@@ -2118,13 +2118,12 @@ function AddRtn({ docData }) {
         docAmt: calculateTotals(details).totalAmt,
         docAttn: supplierInfo.Attn,
         docRemk1: hdr.docRemk1,
-        staffNo: userDetails.usercode,
         bname: supplierInfo.Attn,
         baddr1: supplierInfo.line1,
         baddr2: supplierInfo.line2,
         baddr3: supplierInfo.line3,
         bpostcode: supplierInfo.pcode,
-        daddr1: supplierInfo.sline1,
+        daddr1: supplierInfo.sline1,  
         daddr2: supplierInfo.sline2,
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
@@ -2170,9 +2169,9 @@ function AddRtn({ docData }) {
 
         let batchId;
         
-        // Pre-calculate FIFO batches for all items
+        // Pre-calculate FEFO batches for all items
         const processedDetails = await Promise.all(
-          details.map(async (item) => await calculateFifoBatches(item))
+          details.map(async (item) => await calculateFefoBatches(item))
         );
         
         const stktrns = processedDetails.map((item) =>
@@ -2381,7 +2380,7 @@ function AddRtn({ docData }) {
 
             if (getConfigValue('BATCH_NO') === "Yes") {
               // For RTN, we need to find existing batches and reduce their quantities
-              // Check if this is a specific batch selection or FIFO
+              // Check if this is a specific batch selection or FEFO
               const cartItem = cartData.find(item => 
                 item.itemcode === trimmedItemCode && 
                 item.docUom === d.itemUom
@@ -2445,8 +2444,8 @@ function AddRtn({ docData }) {
                     });
                 }
               } else {
-                // FIFO return - find existing batches and reduce quantities
-                console.log(`🔄 Processing FIFO batch return for ${trimmedItemCode}`);
+                // FEFO return - find existing batches and reduce quantities
+                console.log(`🔄 Processing FEFO batch return for ${trimmedItemCode}`);
                 
                 // Find existing batches for this item
                 const batchFilter = {
@@ -2466,7 +2465,7 @@ function AddRtn({ docData }) {
                   );
 
                   if (existingBatches && existingBatches.length > 0) {
-                    // Sort by expiry date (FIFO) - earliest expiry first
+                    // Sort by expiry date (FEFO) - earliest expiry first
                     const sortedBatches = existingBatches.sort((a, b) => {
                       if (!a.expDate && !b.expDate) return 0;
                       if (!a.expDate) return 1;
@@ -2476,7 +2475,7 @@ function AddRtn({ docData }) {
 
                     let remainingQty = Math.abs(Number(d.trnQty)); // Convert to positive for processing
                     
-                    // Process batches in FIFO order
+                    // Process batches in FEFO order
                     for (const batch of sortedBatches) {
                       if (remainingQty <= 0) break;
                       
@@ -2499,7 +2498,7 @@ function AddRtn({ docData }) {
                             itemCode: d.itemcode,
                             loginUser: userDetails.username,
                             siteCode: userDetails.siteCode,
-                            logMsg: `ItemBatches/updateqty FIFO error: ${err.message}`,
+                            logMsg: `ItemBatches/updateqty FEFO error: ${err.message}`,
                             createdDate: new Date().toISOString().split("T")[0],
                           };
                         });
@@ -2510,7 +2509,7 @@ function AddRtn({ docData }) {
                     console.warn(`⚠️ No existing batches found for item ${trimmedItemCode} in store ${userDetails.siteCode}`);
                   }
                 } catch (error) {
-                  console.error(`Error fetching batches for FIFO return: ${error.message}`);
+                  console.error(`Error fetching batches for FEFO return: ${error.message}`);
                 }
               }
             } else {
@@ -2759,14 +2758,14 @@ function AddRtn({ docData }) {
 
       toast.success(`Specific batch selection saved for ${editData.stockCode}. Click + to add to cart.`);
     } else {
-      // No specific batches selected, use FIFO
+      // No specific batches selected, use FEFO
       setStockList((prev) =>
         prev.map((stockItem) =>
           stockItem.stockCode === editData.stockCode 
             ? { 
                 ...stockItem, 
                 selectedBatches: {
-                  transferType: 'fifo',
+                  transferType: 'fefo',
                   batchDetails: null
                 }
               }
@@ -2774,7 +2773,7 @@ function AddRtn({ docData }) {
         )
       );
 
-      toast.success(`FIFO return mode selected for ${editData.stockCode}. Click + to add to cart.`);
+      toast.success(`FEFO return mode selected for ${editData.stockCode}. Click + to add to cart.`);
     }
 
     setShowBatchDialog(false);
@@ -3820,7 +3819,7 @@ function AddRtn({ docData }) {
                               </div>
                             ) : (
                               <Badge variant="outline" className="text-xs">
-                                FIFO
+                                FEFO
                               </Badge>
                             )}
                           </TableCell>

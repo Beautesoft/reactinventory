@@ -221,7 +221,7 @@ function DashBoard() {
           siteCode: batch.siteCode
         }));
 
-        // Sort by expiry date (FIFO) - earliest expiry first
+        // Sort by expiry date (FEFO) - earliest expiry first
         batchInfo.sort((a, b) => {
           if (!a.expDate && !b.expDate) return 0;
           if (!a.expDate) return 1; // No expiry goes to end
@@ -536,7 +536,7 @@ function DashBoard() {
                       </p>
                     </div>
                     <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                      FIFO Sorted
+                      FEFO Sorted
                     </Badge>
                   </div>
                 </div>

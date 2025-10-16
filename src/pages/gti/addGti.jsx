@@ -1089,7 +1089,7 @@ function AddGti({ docData }) {
       }
     }
     
-    return null; // FIFO transfer
+    return null; // FEFO transfer
   };
 
   const getStockHdrDetails = async (filter) => {
@@ -1118,7 +1118,7 @@ function AddGti({ docData }) {
           }
           return {
             ...item,
-            transferType: 'fifo',
+            transferType: 'fefo',
             batchDetails: null
           };
         })
@@ -1512,7 +1512,7 @@ function AddGti({ docData }) {
 
     // Prepare batch data for storage in database fields
     let recQtyFields = { recQty1: 0, recQty2: 0, recQty3: 0, recQty4: 0, recQty5: 0 };
-    let ordMemoFields = { ordMemo1: "fifo", ordMemo2: "", ordMemo3: "0", ordMemo4: "" };
+    let ordMemoFields = { ordMemo1: "fefo", ordMemo2: "", ordMemo3: "0", ordMemo4: "" };
     let docBatchNo = null; // Don't store multiple batch numbers in docBatchNo
     let docExpdate = "";
 
@@ -1573,11 +1573,11 @@ function AddGti({ docData }) {
       DOCUOMDesc: item.uomDescription,
       itemRemark: "",
       docMdisc: 0,
-      itemprice: Number(item.Price) || 0,
+      itemprice: Number(item.Cost) || 0,
       // Store transfer type and batch details in memo fields
       ...ordMemoFields,
       // Keep existing transferType and batchDetails for runtime use
-      transferType: hasSpecificBatches ? 'specific' : 'fifo',
+      transferType: hasSpecificBatches ? 'specific' : 'fefo',
       batchDetails: hasSpecificBatches ? {
         batchNo: item.selectedBatches.batchNo,
         expDate: item.selectedBatches.expDate,
@@ -1598,14 +1598,14 @@ function AddGti({ docData }) {
         : `Item added to cart with specific batch ${item.selectedBatches.batchNo}: ${batchTransferQty} qty.`;
       toast.success(message);
     } else {
-      toast.success("Item added to cart using FIFO (First In, First Out) by expiry date");
+      toast.success("Item added to cart using FEFO (First Expired, First Out) by expiry date");
     }
   };
 
   // const createTransactionObject = (item, docNo, storeNo) => {
-  // Helper function to pre-calculate FIFO batch selection
-  const calculateFifoBatches = async (item) => {
-    if (item?.transferType !== "fifo" || getConfigValue('BATCH_NO') !== "Yes") {
+  // Helper function to pre-calculate FEFO batch selection
+  const calculateFefoBatches = async (item) => {
+    if (item?.transferType !== "fefo" || getConfigValue('BATCH_NO') !== "Yes") {
       return item;
     }
 
@@ -1632,20 +1632,20 @@ function AddGti({ docData }) {
           batch.batchNo && batch.batchNo.trim() !== ""
         );
 
-        // Sort specific batches by expiry date (FIFO)
+        // Sort specific batches by expiry date (FEFO)
         const sortedBatches = specificBatches.sort((a, b) => 
           new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
         );
 
         let remainingQty = Number(item.docQty);
-        const fifoBatches = [];
+        const fefoBatches = [];
 
-        // Calculate which batches will be used for FIFO transfer
+        // Calculate which batches will be used for FEFO transfer
         for (const batch of sortedBatches) {
           if (remainingQty <= 0) break;
           
           const batchQty = Math.min(remainingQty, Number(batch.qty));
-          fifoBatches.push({
+          fefoBatches.push({
             batchNo: batch.batchNo,
             quantity: batchQty,
             expDate: batch.expDate,
@@ -1665,7 +1665,7 @@ function AddGti({ docData }) {
             if (remainingQty <= 0) break;
             
             const batchQty = Math.min(remainingQty, Number(noBatch.qty));
-            fifoBatches.push({
+            fefoBatches.push({
               batchNo: "", // Empty string for "No Batch"
               quantity: batchQty,
               expDate: noBatch.expDate,
@@ -1676,14 +1676,14 @@ function AddGti({ docData }) {
           }
         }
 
-        // Update the item with FIFO batch details
+        // Update the item with FEFO batch details
         return {
           ...item,
-          fifoBatches: fifoBatches
+          fefoBatches: fefoBatches
         };
       }
     } catch (error) {
-      console.error("Error calculating FIFO batches:", error);
+      console.error("Error calculating FEFO batches:", error);
     }
 
     return item;
@@ -1711,15 +1711,15 @@ function AddGti({ docData }) {
         if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
           // Specific batch transfer
           batchDetails = processedItem.batchDetails.individualBatches;
-        } else if (processedItem?.transferType === "fifo" && processedItem?.fifoBatches?.length > 0) {
-          // FIFO transfer
-          batchDetails = processedItem.fifoBatches;
+        } else if (processedItem?.transferType === "fefo" && processedItem?.fefoBatches?.length > 0) {
+          // FEFO transfer
+          batchDetails = processedItem.fefoBatches;
         }
 
         // Create Stktrnbatches records for each batch
         for (const batch of batchDetails) {
           const stktrnbatchesPayload = {
-            batchNo: batch.batchNo || "", // Empty string for "No Batch"
+            batchNo: batch.batchNo || "No Batch", // Use "No Batch" string for Stktrnbatches API
             stkTrnId: stktrnRecord.id,
             batchQty: type === "source" ? -batch.quantity : batch.quantity // Negative for source, positive for destination
           };
@@ -1783,8 +1783,8 @@ function AddGti({ docData }) {
       itemBatch: getConfigValue('BATCH_NO') === "Yes" ? 
         (item?.transferType === "specific" && item?.batchDetails?.individualBatches?.length > 0 ?
           item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',') :
-          item?.transferType === "fifo" && item?.fifoBatches?.length > 0 ?
-            item.fifoBatches.map(batch => batch.batchNo || "No Batch").join(',') : // Actual FIFO batch numbers
+          item?.transferType === "fefo" && item?.fefoBatches?.length > 0 ?
+            item.fefoBatches.map(batch => batch.batchNo || "No Batch").join(',') : // Actual FEFO batch numbers
             item?.docBatchNo || 
             null) : null,
       movType: "TFR",
@@ -2189,9 +2189,9 @@ function AddGti({ docData }) {
 
         let batchId;
         
-        // Pre-calculate FIFO batches for all items
+        // Pre-calculate FEFO batches for all items
         const processedDetails = await Promise.all(
-          details.map(async (item) => await calculateFifoBatches(item))
+          details.map(async (item) => await calculateFefoBatches(item))
         );
         
         const stktrns = processedDetails.map((item) =>
@@ -2366,9 +2366,9 @@ function AddGti({ docData }) {
                     await handleDestinationBatchTransfer(noBatchStktrnItem, trimmedItemCode, cartItem.batchDetails.noBatchTransferQty);
                   }
                 } else {
-                  // Regular FIFO batch transfer - handle destination store only
-                  console.log(`🔄 Processing destination FIFO transfer for ${trimmedItemCode}`);
-                  await handleDestinationFifoTransfer(d, trimmedItemCode, cartItem?.docQty || d.trnQty);
+                  // Regular FEFO batch transfer - handle destination store only
+                  console.log(`🔄 Processing destination FEFO transfer for ${trimmedItemCode}`);
+                  await handleDestinationFefoTransfer(d, trimmedItemCode, cartItem?.docQty || d.trnQty);
                 }
               } else {
                 // No batch functionality - update Itemonqties only
@@ -2523,15 +2523,15 @@ function AddGti({ docData }) {
                     await handleSourceBatchTransfer(noBatchStktrnItem, trimmedItemCode, cartItem.batchDetails.noBatchTransferQty);
                   }
                 } else {
-                  // Regular FIFO batch transfer - handle source store only
-                  console.log(`🔄 Processing source FIFO transfer for ${trimmedItemCode}`);
-                  await handleSourceFifoTransfer(d, trimmedItemCode, cartItem?.docQty || d.trnQty);
+                  // Regular FEFO batch transfer - handle source store only
+                  console.log(`🔄 Processing source FEFO transfer for ${trimmedItemCode}`);
+                  await handleSourceFefoTransfer(d, trimmedItemCode, cartItem?.docQty || d.trnQty);
                 }
               } else {
-                // No batch functionality - try FIFO from existing batches first, then "No Batch"
-                console.log(`🔄 BATCH_NO=No: Trying FIFO from existing batches for ${trimmedItemCode}`);
+                // No batch functionality - try FEFO from existing batches first, then "No Batch"
+                console.log(`🔄 BATCH_NO=No: Trying FEFO from existing batches for ${trimmedItemCode}`);
                 
-                // First, try to find existing batches for FIFO
+                // First, try to find existing batches for FEFO
                 const existingBatchesFilter = {
                   where: {
                     and: [
@@ -2549,7 +2549,7 @@ function AddGti({ docData }) {
                   );
 
                   if (existingBatches && existingBatches.length > 0) {
-                    // Use FIFO from existing batches
+                    // Use FEFO from existing batches
                     const sortedBatches = existingBatches.sort((a, b) => 
                       new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
                     );
@@ -2571,11 +2571,11 @@ function AddGti({ docData }) {
                       };
 
                       await apiService.post(`ItemBatches/updateqty`, batchUpdate).catch(async (err) => {
-                        console.error(`Error reducing FIFO batch ${batch.batchNo}:`, err);
+                        console.error(`Error reducing FEFO batch ${batch.batchNo}:`, err);
                       });
 
                       remainingQty -= batchQty;
-                      console.log(`✅ Reduced FIFO batch ${batch.batchNo} by ${batchQty} qty`);
+                      console.log(`✅ Reduced FEFO batch ${batch.batchNo} by ${batchQty} qty`);
                     }
                   } else {
                     // No existing batches, use "No Batch" approach
@@ -2601,7 +2601,7 @@ function AddGti({ docData }) {
                       });
                   }
                 } catch (error) {
-                  console.error(`Error fetching existing batches for FIFO: ${error.message}`);
+                  console.error(`Error fetching existing batches for FEFO: ${error.message}`);
                   // Fallback to "No Batch" approach
                   const batchUpdate = {
                     itemcode: trimmedItemCode,
@@ -2808,7 +2808,7 @@ function AddGti({ docData }) {
         batchCost: batch.batchCost
       }));
 
-      // Sort by expiry date (FIFO) - actual batches first, then "No Batch"
+      // Sort by expiry date (FEFO) - actual batches first, then "No Batch"
       const sortedActualBatches = actualBatches.map(batch => ({
         batchNo: batch.batchNo,
         availableQty: Number(batch.qty) || 0,
@@ -2980,13 +2980,13 @@ function AddGti({ docData }) {
     toast.success("Batch selection removed");
   };
 
-  // Helper function to handle destination store FIFO batch operations (TO store) - ADD quantity
-  const handleDestinationFifoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
-    console.log(`🔄 Destination FIFO Transfer: ${transferQty || stktrnItem.trnQty} qty for ${trimmedItemCode}`);
+  // Helper function to handle destination store FEFO batch operations (TO store) - ADD quantity
+  const handleDestinationFefoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
+    console.log(`🔄 Destination FEFO Transfer: ${transferQty || stktrnItem.trnQty} qty for ${trimmedItemCode}`);
     
     // Validate required parameters
     if (!stktrnItem || !trimmedItemCode) {
-      console.error("❌ Missing required parameters for destination FIFO transfer");
+      console.error("❌ Missing required parameters for destination FEFO transfer");
       return;
     }
 
@@ -2996,8 +2996,8 @@ function AddGti({ docData }) {
       return;
     }
 
-    // For FIFO destination transfers, we need to handle multiple batches
-    // This function will be called multiple times for each batch from the source FIFO transfer
+    // For FEFO destination transfers, we need to handle multiple batches
+    // This function will be called multiple times for each batch from the source FEFO transfer
     // Each call represents one batch being transferred to destination
     
     // Check if this is a "No Batch" transfer
@@ -3062,7 +3062,7 @@ function AddGti({ docData }) {
           console.error(`Error creating batch for ${trimmedItemCode}:`, err);
         });
 
-        console.log(`✅ Created new FIFO batch ${stktrnItem.itemBatch} in destination store ${stockHdrs.tstoreNo} with ${qty} qty`);
+        console.log(`✅ Created new FEFO batch ${stktrnItem.itemBatch} in destination store ${stockHdrs.tstoreNo} with ${qty} qty`);
       } else {
         // Update existing batch in destination store (tstoreNo)
         const batchUpdate = {
@@ -3080,19 +3080,19 @@ function AddGti({ docData }) {
             console.error(`Error updating batch for ${trimmedItemCode}:`, err);
           });
 
-        console.log(`✅ Updated existing FIFO batch ${stktrnItem.itemBatch} in destination store ${stockHdrs.tstoreNo} by ${qty} qty`);
+        console.log(`✅ Updated existing FEFO batch ${stktrnItem.itemBatch} in destination store ${stockHdrs.tstoreNo} by ${qty} qty`);
       }
     }
   };
 
-  // Helper function to handle source store FIFO batch operations (FROM store) - REDUCE quantity
+  // Helper function to handle source store FEFO batch operations (FROM store) - REDUCE quantity
   // This function also coordinates with destination store to ensure proper batch transfer
-  const handleSourceFifoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
-    console.log(`🔄 Source FIFO Transfer: ${transferQty || stktrnItem.trnQty} qty for ${trimmedItemCode}`);
+  const handleSourceFefoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
+    console.log(`🔄 Source FEFO Transfer: ${transferQty || stktrnItem.trnQty} qty for ${trimmedItemCode}`);
     
     // Validate required parameters
     if (!stktrnItem || !trimmedItemCode) {
-      console.error("❌ Missing required parameters for source FIFO transfer");
+      console.error("❌ Missing required parameters for source FEFO transfer");
       return;
     }
 
@@ -3128,7 +3128,7 @@ function AddGti({ docData }) {
           !batch.batchNo || batch.batchNo.trim() === ""
         );
 
-        // Sort specific batches by expiry date (FIFO)
+        // Sort specific batches by expiry date (FEFO)
         const sortedBatches = specificBatches.sort((a, b) => 
           new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
         );
@@ -3136,7 +3136,7 @@ function AddGti({ docData }) {
         let remainingQty = qty;
         const transferDetails = []; // Track what we're transferring
 
-        // First, try to fulfill from specific batches (FIFO)
+        // First, try to fulfill from specific batches (FEFO)
         for (const batch of sortedBatches) {
           if (remainingQty <= 0) break;
           
@@ -3153,7 +3153,7 @@ function AddGti({ docData }) {
           };
 
           await apiService.post(`ItemBatches/updateqty`, sourceUpdate).catch(async (err) => {
-            console.error(`Error reducing FIFO batch ${batch.batchNo}:`, err);
+            console.error(`Error reducing FEFO batch ${batch.batchNo}:`, err);
           });
 
           // Add to transfer details for destination store
@@ -3165,7 +3165,7 @@ function AddGti({ docData }) {
           });
 
           remainingQty -= batchQty;
-          console.log(`✅ Reduced FIFO batch ${batch.batchNo} by ${batchQty} qty`);
+          console.log(`✅ Reduced FEFO batch ${batch.batchNo} by ${batchQty} qty`);
         }
 
         // If still need more quantity, take from "No Batch" records
@@ -3199,8 +3199,8 @@ function AddGti({ docData }) {
           console.log(`✅ Reduced "No Batch" by ${noBatchQty} qty`);
         }
 
-        // Source FIFO transfer completed - destination store will be handled separately
-        console.log(`✅ Source FIFO transfer completed for ${trimmedItemCode}: ${transferDetails.length} batches processed`);
+        // Source FEFO transfer completed - destination store will be handled separately
+        console.log(`✅ Source FEFO transfer completed for ${trimmedItemCode}: ${transferDetails.length} batches processed`);
 
         if (remainingQty > 0) {
           console.warn(`⚠️ Could not fulfill complete source transfer. Remaining qty: ${remainingQty}`);
@@ -3209,13 +3209,13 @@ function AddGti({ docData }) {
         console.error(`❌ No batches found for item ${trimmedItemCode} in source store ${stockHdrs.fstoreNo}`);
       }
     } catch (error) {
-      console.error(`Error in source FIFO transfer: ${error.message}`);
+      console.error(`Error in source FEFO transfer: ${error.message}`);
     }
   };
 
-  // Helper function to handle GTI FIFO transfer when BATCH_NO = "Yes" (DEPRECATED - use separate functions)
-  const handleGtiFifoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
-    console.log(`🔄 GTI FIFO Transfer: ${transferQty} qty for ${trimmedItemCode}`);
+  // Helper function to handle GTI FEFO transfer when BATCH_NO = "Yes" (DEPRECATED - use separate functions)
+  const handleGtiFefoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
+    console.log(`🔄 GTI FEFO Transfer: ${transferQty} qty for ${trimmedItemCode}`);
     
     // Find all available batches in source store (including "No Batch")
     const allBatchesFilter = {
@@ -3243,7 +3243,7 @@ function AddGti({ docData }) {
           !batch.batchNo || batch.batchNo.trim() === ""
         );
 
-        // Sort specific batches by expiry date (FIFO)
+        // Sort specific batches by expiry date (FEFO)
         const sortedBatches = specificBatches.sort((a, b) => 
           new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
         );
@@ -3251,7 +3251,7 @@ function AddGti({ docData }) {
         let remainingQty = transferQty || Number(stktrnItem.trnQty);
         const transferDetails = []; // Track what we're transferring
 
-        // First, try to fulfill from specific batches (FIFO)
+        // First, try to fulfill from specific batches (FEFO)
         for (const batch of sortedBatches) {
           if (remainingQty <= 0) break;
           
@@ -3268,7 +3268,7 @@ function AddGti({ docData }) {
           };
 
           await apiService.post(`ItemBatches/updateqty`, sourceUpdate).catch(async (err) => {
-            console.error(`Error reducing FIFO batch ${batch.batchNo}:`, err);
+            console.error(`Error reducing FEFO batch ${batch.batchNo}:`, err);
           });
 
           // Add to transfer details
@@ -3280,7 +3280,7 @@ function AddGti({ docData }) {
           });
 
           remainingQty -= batchQty;
-          console.log(`✅ Reduced FIFO batch ${batch.batchNo} by ${batchQty} qty`);
+          console.log(`✅ Reduced FEFO batch ${batch.batchNo} by ${batchQty} qty`);
         }
 
         // If still need more quantity, take from "No Batch" records
@@ -3314,8 +3314,8 @@ function AddGti({ docData }) {
           console.log(`✅ Reduced "No Batch" by ${noBatchQty} qty`);
         }
 
-        // GTI FIFO transfer completed - destination store will be handled separately
-        console.log(`✅ GTI FIFO transfer completed for ${trimmedItemCode}: ${transferDetails.length} batches processed`);
+        // GTI FEFO transfer completed - destination store will be handled separately
+        console.log(`✅ GTI FEFO transfer completed for ${trimmedItemCode}: ${transferDetails.length} batches processed`);
 
         if (remainingQty > 0) {
           console.warn(`⚠️ Could not fulfill complete transfer. Remaining qty: ${remainingQty}`);
@@ -3324,7 +3324,7 @@ function AddGti({ docData }) {
         console.error(`❌ No batches found for item ${trimmedItemCode} in source store ${stockHdrs.fstoreNo}`);
       }
     } catch (error) {
-      console.error(`Error in GTI FIFO transfer: ${error.message}`);
+      console.error(`Error in GTI FEFO transfer: ${error.message}`);
     }
   };
 
@@ -4728,7 +4728,7 @@ function AddGti({ docData }) {
                               </div>
                             ) : (
                               <Badge variant="outline" className="text-xs">
-                                FIFO
+                                FEFO
                               </Badge>
                             )}
                           </TableCell>

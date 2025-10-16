@@ -114,9 +114,10 @@ const BatchSelectionDialog = memo(
     const handleBatchSelection = (batch, isSelected) => {
       if (isSelected) {
         setSelectedBatches((prev) => [...prev, batch]);
+        // For adjustments, set initial quantity to 0, let user enter desired quantity
         setBatchQuantities((prev) => ({
           ...prev,
-          [batch.batchNo]: Math.min(batch.availableQty, remainingQty),
+          [batch.batchNo]: 0,
         }));
       } else {
         setSelectedBatches((prev) =>
@@ -132,13 +133,29 @@ const BatchSelectionDialog = memo(
 
     const handleQuantityChange = (batchNo, quantity) => {
       const batch = batchBreakdown.find((b) => b.batchNo === batchNo);
-      const maxQty = Math.min(
-        batch.availableQty,
-        remainingQty + (batchQuantities[batchNo] || 0)
-      );
-      const validQty = Math.max(0, Math.min(quantity, maxQty));
-
-      setBatchQuantities((prev) => ({ ...prev, [batchNo]: validQty }));
+      if (!batch) return;
+      
+      // Calculate current total selected quantity (excluding this batch)
+      const currentTotal = selectedBatches.reduce(
+        (sum, b) => sum + (batchQuantities[b.batchNo] || 0),
+        0
+      ) + (noBatchSelected ? noBatchQuantity : 0);
+      
+      // Calculate remaining quantity available for this batch
+      const remainingForThisBatch = transferQty - currentTotal + (batchQuantities[batchNo] || 0);
+      
+      // For adjustments, allow negative quantities
+      if (transferQty < 0) {
+        // For negative adjustments, allow quantity between remaining and 0
+        const minQty = Math.min(remainingForThisBatch, 0);
+        const validQty = Math.max(minQty, quantity);
+        setBatchQuantities((prev) => ({ ...prev, [batchNo]: validQty }));
+      } else {
+        // For positive adjustments, allow quantity between 0 and remaining
+        const maxQty = Math.max(0, remainingForThisBatch);
+        const validQty = Math.max(0, Math.min(quantity, maxQty));
+        setBatchQuantities((prev) => ({ ...prev, [batchNo]: validQty }));
+      }
     };
 
     const handleNoBatchSelection = (isSelected) => {
@@ -146,22 +163,33 @@ const BatchSelectionDialog = memo(
       if (!isSelected) {
         setNoBatchQuantity(0);
       } else {
-        // Set initial quantity to remaining quantity or available No Batch quantity
-        const noBatchItem = batchBreakdown.find((b) => b.batchNo === "");
-        const maxNoBatchQty = noBatchItem
-          ? Math.min(noBatchItem.availableQty, remainingQty)
-          : 0;
-        setNoBatchQuantity(Math.min(maxNoBatchQty, remainingQty));
+        // For adjustments, set initial quantity to 0, let user enter desired quantity
+        setNoBatchQuantity(0);
       }
     };
 
     const handleNoBatchQuantityChange = (quantity) => {
-      const noBatchItem = batchBreakdown.find((b) => b.batchNo === "");
-      const maxQty = noBatchItem
-        ? Math.min(noBatchItem.availableQty, remainingQty + noBatchQuantity)
-        : 0;
-      const validQty = Math.max(0, Math.min(quantity, maxQty));
-      setNoBatchQuantity(validQty);
+      // Calculate current total selected quantity (excluding current No Batch quantity)
+      const currentTotal = selectedBatches.reduce(
+        (sum, b) => sum + (batchQuantities[b.batchNo] || 0),
+        0
+      );
+      
+      // Calculate remaining quantity available for No Batch
+      const remainingForNoBatch = transferQty - currentTotal;
+      
+      // For adjustments, allow negative quantities
+      if (transferQty < 0) {
+        // For negative adjustments, allow quantity between remaining and 0
+        const minQty = Math.min(remainingForNoBatch, 0);
+        const validQty = Math.max(minQty, quantity);
+        setNoBatchQuantity(validQty);
+      } else {
+        // For positive adjustments, allow quantity between 0 and remaining
+        const maxQty = Math.max(0, remainingForNoBatch);
+        const validQty = Math.max(0, Math.min(quantity, maxQty));
+        setNoBatchQuantity(validQty);
+      }
     };
 
     const handleSubmit = () => {
@@ -170,31 +198,37 @@ const BatchSelectionDialog = memo(
         return;
       }
 
-      // Validate that selected quantity matches the required transfer quantity (use absolute value for adjustments)
-      if (totalSelectedQty !== Math.abs(transferQty)) {
-        toast.error(`Selected quantity (${totalSelectedQty}) must match the required quantity (${Math.abs(transferQty)}). Please adjust your selection.`);
+      // Validate that selected quantity matches the required transfer quantity
+      // For adjustments, we need to match the exact transfer quantity (can be positive or negative)
+      if (totalSelectedQty !== transferQty) {
+        toast.error(`Selected quantity (${totalSelectedQty}) must match the required quantity (${transferQty}). Please adjust your selection.`);
         return;
       }
 
+      // Filter out batches with 0 quantity
+      const batchesWithQuantity = selectedBatches.filter(
+        (batch) => (batchQuantities[batch.batchNo] || 0) !== 0
+      );
+
       // Create combined batch data
       const combinedBatchData = {
-        batchNo: selectedBatches.map((b) => b.batchNo).join(", "),
-        expDate: selectedBatches
+        batchNo: batchesWithQuantity.map((b) => b.batchNo).join(", "),
+        expDate: batchesWithQuantity
           .map((b) => b.expDate)
           .filter(Boolean)
           .join(", "),
-        availableQty: selectedBatches.reduce(
+        availableQty: batchesWithQuantity.reduce(
           (sum, batch) => sum + (batchQuantities[batch.batchNo] || 0),
           0
         ),
-        noBatchQty: noBatchSelected ? noBatchQuantity : 0,
-        selectedBatches: selectedBatches.map((batch) => ({
+        noBatchQty: (noBatchSelected && noBatchQuantity !== 0) ? noBatchQuantity : 0,
+        selectedBatches: batchesWithQuantity.map((batch) => ({
           batchNo: batch.batchNo,
           expDate: batch.expDate,
           quantity: batchQuantities[batch.batchNo],
         })),
       };
-
+console.log(combinedBatchData,'combinedBatchData');
       onBatchSelectionSubmit(combinedBatchData);
     };
 
@@ -270,10 +304,13 @@ const BatchSelectionDialog = memo(
                           (b) => b.batchNo === batch.batchNo
                         );
                         const selectedQty = batchQuantities[batch.batchNo] || 0;
-                        const maxSelectableQty = Math.min(
-                          batch.availableQty,
-                          remainingQty + selectedQty
-                        );
+                        // Calculate remaining quantity available for this batch
+                        const currentTotal = selectedBatches.reduce(
+                          (sum, b) => sum + (batchQuantities[b.batchNo] || 0),
+                          0
+                        ) + (noBatchSelected ? noBatchQuantity : 0);
+                        const remainingForThisBatch = Math.abs(transferQty) - currentTotal + selectedQty;
+                        const maxSelectableQty = Math.max(0, remainingForThisBatch);
 
                         return (
                           <tr
@@ -300,11 +337,7 @@ const BatchSelectionDialog = memo(
                                     );
                                   }
                                 }}
-                                disabled={
-                                  batch.batchNo !== "" &&
-                                  !isSelected &&
-                                  maxSelectableQty <= 0
-                                }
+                                disabled={false}
                                 className="w-4 h-4"
                               />
                             </td>
@@ -332,11 +365,8 @@ const BatchSelectionDialog = memo(
                                 noBatchSelected ? (
                                   <Input
                                     type="number"
-                                    min="0"
-                                    max={Math.min(
-                                      batch.availableQty,
-                                      remainingQty + noBatchQuantity
-                                    )}
+                                    min={transferQty < 0 ? -Math.abs(transferQty) : 0}
+                                    max={transferQty > 0 ? Math.abs(transferQty) : 0}
                                     value={noBatchQuantity}
                                     onChange={(e) =>
                                       handleNoBatchQuantityChange(
@@ -351,8 +381,8 @@ const BatchSelectionDialog = memo(
                               ) : isSelected ? (
                                 <Input
                                   type="number"
-                                  min="0"
-                                  max={maxSelectableQty}
+                                  min={transferQty < 0 ? -maxSelectableQty : 0}
+                                  max={transferQty > 0 ? maxSelectableQty : 0}
                                   value={selectedQty}
                                   onChange={(e) =>
                                     handleQuantityChange(
@@ -448,8 +478,8 @@ const BatchSelectionDialog = memo(
               disabled={totalSelectedQty === 0}
               className="bg-green-600 hover:bg-green-700"
             >
-              Confirm Selection ({totalSelectedQty}/{Math.abs(transferQty)})
-              {remainingQty > 0 && ` (${remainingQty} remaining)`}
+              Confirm Selection ({totalSelectedQty}/{transferQty})
+              {remainingQty !== 0 && ` (${remainingQty} remaining)`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -617,8 +647,8 @@ const EditDialog = memo(
                           </>
                         ) : (
                           <>
-                            <strong>FIFO Mode:</strong> This item uses automatic
-                            FIFO (First In, First Out) batch selection.
+                            <strong>FEFO Mode:</strong> This item uses automatic
+                            FEFO (First Expired, First Out) batch selection.
                             {getConfigValue("ManualBatchSelection") ===
                               true && (
                               <>
@@ -1454,7 +1484,7 @@ function AddAdj({ docData }) {
           }
           return {
             ...item,
-            transferType: 'fifo',
+            transferType: 'fefo',
             selectedBatches: null
           };
         })
@@ -1844,18 +1874,8 @@ function AddAdj({ docData }) {
         return;
       }
 
-      // Check if there are actual batches with batch numbers available
-      const actualBatches = response.filter(
-        (batch) =>
-          batch.batchNo && batch.batchNo.trim() !== "" && Number(batch.qty) > 0
-      );
-
-      if (actualBatches.length === 0) {
-        toast.error(
-          "No batches with batch numbers available for this item. Only 'No Batch' items exist."
-        );
-        return;
-      }
+      // Allow batch selection modal to open even if only "No Batch" items exist
+      // This enables users to select "No Batch" quantities for adjustments
 
       // Process batch data for the modal
       const batchBreakdown = response.map((batch) => ({
@@ -1875,7 +1895,10 @@ function AddAdj({ docData }) {
 
       // Generate scenario message
       let scenarioMessage = "";
-      if (adjustmentQty <= totalBatchQty) {
+      if (totalBatchQty === 0 && noBatchQty > 0) {
+        // Only "No Batch" items available
+        scenarioMessage = `Only "No Batch" items are available for this item. Adjustment quantity (${adjustmentQty}) can be fulfilled from "No Batch" items (${noBatchQty} available).`;
+      } else if (adjustmentQty <= totalBatchQty) {
         scenarioMessage = `Adjustment quantity (${adjustmentQty}) can be fulfilled entirely from batches with batch numbers.`;
       } else if (adjustmentQty <= totalBatchQty + noBatchQty) {
         scenarioMessage = `Adjustment quantity (${adjustmentQty}) requires both batch numbers (${totalBatchQty} available) and "No Batch" items (${noBatchQty} available).`;
@@ -1912,14 +1935,22 @@ function AddAdj({ docData }) {
     // Handle batch selection (including No Batch only scenario)
     if (
       (selectedBatchData.selectedBatches && selectedBatchData.selectedBatches.length > 0) ||
-      selectedBatchData.noBatchQty > 0
+      (selectedBatchData.noBatchQty && selectedBatchData.noBatchQty !== 0)
     ) {
       // Specific batches or No Batch selected
+      // For adjustments, preserve the sign of the adjustment quantity
+      const adjustmentQty = Number(editData?.Qty || 0);
+      console.log(editData,'editData')
+
+      console.log(adjustmentQty,'adjustmentQty')
+
+      const isNegativeAdjustment = adjustmentQty < 0;
+      
       const batchDetails = selectedBatchData.selectedBatches ? 
         selectedBatchData.selectedBatches.map((batch) => ({
           batchNo: batch.batchNo,
           expDate: batch.expDate,
-          quantity: batch.quantity,
+          quantity: isNegativeAdjustment ? -Math.abs(batch.quantity) : Math.abs(batch.quantity),
         })) : [];
 
       const totalBatchQty = batchDetails.reduce(
@@ -1927,6 +1958,12 @@ function AddAdj({ docData }) {
         0
       );
       const noBatchAdjustmentQty = selectedBatchData.noBatchQty || 0;
+      
+      console.log(`🔍 Batch selection submit - No Batch calculation:`, {
+        selectedBatchDataNoBatchQty: selectedBatchData.noBatchQty,
+        isNegativeAdjustment: isNegativeAdjustment,
+        noBatchAdjustmentQty: noBatchAdjustmentQty
+      });
 
       // Update the stock item to show that specific batches are selected
       setStockList((prev) =>
@@ -1947,10 +1984,19 @@ function AddAdj({ docData }) {
             : stockItem
         )
       );
+      
+      console.log(`🔍 Updated stock item with selectedBatches:`, {
+        itemcode: editData.stockCode,
+        selectedBatches: {
+          batchDetails: batchDetails,
+          noBatchTransferQty: noBatchAdjustmentQty,
+          batchTransferQty: totalBatchQty
+        }
+      });
 
-      const selectionType = totalBatchQty > 0 && noBatchAdjustmentQty > 0 ? 
+      const selectionType = totalBatchQty !== 0 && noBatchAdjustmentQty !== 0 ? 
         "Specific batches + No Batch" : 
-        totalBatchQty > 0 ? 
+        totalBatchQty !== 0 ? 
         "Specific batches" : 
         "No Batch only";
       
@@ -1958,21 +2004,21 @@ function AddAdj({ docData }) {
         `${selectionType} selection saved for ${editData.stockCode}. Click + to add to cart.`
       );
     } else {
-      // No specific batches or No Batch selected, use FIFO
+      // No specific batches or No Batch selected, use FEFO
       setStockList((prev) =>
         prev.map((stockItem) =>
           stockItem.stockCode === editData.stockCode
             ? {
                 ...stockItem,
                 selectedBatches: null,
-                transferType: "fifo",
+                transferType: "fefo",
               }
             : stockItem
         )
       );
 
       toast.success(
-        `FIFO mode selected for ${editData.stockCode}. Click + to add to cart.`
+        `FEFO mode selected for ${editData.stockCode}. Click + to add to cart.`
       );
     }
 
@@ -1986,13 +2032,13 @@ function AddAdj({ docData }) {
           ? {
               ...stockItem,
               selectedBatches: null,
-              transferType: "fifo",
+              transferType: "fefo",
             }
           : stockItem
       )
     );
     toast.success(
-      `Batch selection cleared for ${item.stockCode}. Will use FIFO mode.`
+      `Batch selection cleared for ${item.stockCode}. Will use FEFO mode.`
     );
   };
 
@@ -2001,6 +2047,12 @@ function AddAdj({ docData }) {
   const [previewItem, setPreviewItem] = useState(null);
 
   const showAdjustmentPreview = (item) => {
+    console.log(`🔍 Preview data for ${item.itemcode}:`, {
+      selectedBatches: item.selectedBatches,
+      batchDetails: item.selectedBatches?.batchDetails,
+      noBatchTransferQty: item.selectedBatches?.noBatchTransferQty,
+      transferType: item.transferType
+    });
     setPreviewItem(item);
     setShowPreviewModal(true);
   };
@@ -2035,7 +2087,7 @@ function AddAdj({ docData }) {
                         <strong>Adjustment Type:</strong>{" "}
                         {previewItem.transferType === "specific"
                           ? "Specific Batches"
-                          : "FIFO"}
+                          : "FEFO"}
                       </p>
                       <p>
                         <strong>Store:</strong> {userDetails.siteName}
@@ -2086,8 +2138,15 @@ function AddAdj({ docData }) {
                               </tr>
                             )
                           )}
-                          {previewItem.selectedBatches.noBatchTransferQty >
-                            0 && (
+                          {(() => {
+                            const noBatchQty = Number(previewItem.selectedBatches?.noBatchTransferQty || 0);
+                            console.log(`🔍 Preview modal - No Batch check:`, {
+                              noBatchTransferQty: previewItem.selectedBatches?.noBatchTransferQty,
+                              noBatchQty: noBatchQty,
+                              shouldShow: noBatchQty !== 0
+                            });
+                            return noBatchQty !== 0; // Changed from > 0 to !== 0 for negative adjustments
+                          })() && (
                             <tr className="border-t bg-gray-50">
                               <td className="p-2 font-medium text-gray-600">
                                 No Batch
@@ -2104,15 +2163,15 @@ function AddAdj({ docData }) {
                   </div>
                 )}
 
-              {/* FIFO Info */}
-              {previewItem.transferType === "fifo" && (
+              {/* FEFO Info */}
+              {previewItem.transferType === "fefo" && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
                   <div className="flex items-start space-x-2">
                     <Info className="h-4 w-4 text-yellow-600 mt-0.5" />
                     <div className="text-sm text-yellow-800">
-                      <p className="font-medium">FIFO Adjustment</p>
+                      <p className="font-medium">FEFO Adjustment</p>
                       <p className="text-xs mt-1">
-                        Items will be adjusted using FIFO (First In, First Out)
+                        Items will be adjusted using FEFO (First Expired, First Out)
                         method based on expiry dates. The system will
                         automatically select batches with the earliest expiry
                         dates first.
@@ -2161,7 +2220,100 @@ function AddAdj({ docData }) {
     toast.success("Item removed from cart");
   };
 
-  // Helper function to create Stktrnbatches records
+  // Helper function to calculate default expiry date
+  const calculateDefaultExpiryDate = () => {
+    // Return a default expiry date (e.g., 1 year from now)
+    const defaultDate = new Date();
+    defaultDate.setFullYear(defaultDate.getFullYear() + 1);
+    return defaultDate.toISOString().split('T')[0];
+  };
+
+  // Helper function to get processed batch details
+  const getProcessedBatchDetails = (processedItem) => {
+    let batchDetails = [];
+
+    if (processedItem?.transferType === "specific") {
+      // Specific batch transfer - handle both specific batches and No Batch only scenarios
+      batchDetails = processedItem.selectedBatches?.batchDetails || [];
+      
+      console.log(`🔍 getProcessedBatchDetails - processedItem structure:`, {
+        transferType: processedItem.transferType,
+        selectedBatches: processedItem.selectedBatches,
+        ordMemo3: processedItem.ordMemo3,
+        hasSelectedBatches: !!processedItem.selectedBatches,
+        selectedBatchesBatchDetails: processedItem.selectedBatches?.batchDetails,
+        selectedBatchesNoBatchTransferQty: processedItem.selectedBatches?.noBatchTransferQty
+      });
+      
+      // Add No Batch record if noBatchTransferQty !== 0 (for both positive and negative adjustments)
+      // Check both possible locations for noBatchTransferQty
+      const noBatchTransferQty = processedItem.selectedBatches?.noBatchTransferQty || 
+                                 processedItem.ordMemo3 || 
+                                 0;
+      
+      if (Number(noBatchTransferQty) !== 0) {
+        // Check if No Batch entry already exists in batchDetails
+        const hasNoBatchEntry = batchDetails.some(batch => batch.batchNo === "");
+        
+        if (!hasNoBatchEntry) {
+          batchDetails.push({
+            batchNo: "", // Use empty string for ItemBatches API
+            quantity: Number(noBatchTransferQty),
+            expDate: null,
+            batchCost: 0,
+          });
+          console.log(`🔍 Added No Batch entry to batchDetails:`, {
+            noBatchTransferQty: noBatchTransferQty,
+            batchDetails: batchDetails
+          });
+        } else {
+          console.log(`🔍 No Batch entry already exists in batchDetails, skipping duplicate:`, {
+            noBatchTransferQty: noBatchTransferQty,
+            batchDetails: batchDetails
+          });
+        }
+      } else {
+        console.log(`🔍 No Batch not added - noBatchTransferQty is 0 or falsy:`, noBatchTransferQty);
+      }
+    } else if (processedItem?.transferType === "fefo" && processedItem?.fefoBatches?.length > 0) {
+      // FEFO transfer
+      batchDetails = processedItem.fefoBatches;
+      console.log(`🔍 getProcessedBatchDetails - FEFO batches found:`, {
+        itemcode: processedItem.itemcode,
+        transferType: processedItem.transferType,
+        fefoBatchesLength: processedItem.fefoBatches?.length,
+        fefoBatches: processedItem.fefoBatches
+      });
+    } else if (processedItem?.docBatchNo) {
+      // Single batch (Adjustment specific) - fallback for legacy data
+      batchDetails = [{
+        batchNo: processedItem.docBatchNo,
+        quantity: processedItem.docQty,
+        expDate: processedItem.docExpdate,
+        batchCost: processedItem.itemprice
+      }];
+    } else {
+      // No batch details found
+      console.log(`🔍 getProcessedBatchDetails - No batch details found for item:`, {
+        itemcode: processedItem?.itemcode,
+        transferType: processedItem?.transferType,
+        hasFefoBatches: !!processedItem?.fefoBatches,
+        fefoBatchesLength: processedItem?.fefoBatches?.length || 0,
+        hasSelectedBatches: !!processedItem?.selectedBatches,
+        hasDocBatchNo: !!processedItem?.docBatchNo
+      });
+    }
+
+    console.log(`🔍 getProcessedBatchDetails - Final result:`, {
+      itemcode: processedItem?.itemcode,
+      batchDetailsLength: batchDetails.length,
+      batchDetails: batchDetails
+    });
+
+    return batchDetails;
+  };
+
+  // Helper function to create Stktrnbatches records and update ItemBatches in one pass
   const createStktrnbatchesRecords = async (
     stktrnsRecords,
     processedDetails,
@@ -2175,6 +2327,13 @@ function AddAdj({ docData }) {
       for (let i = 0; i < stktrnsRecords.length; i++) {
         const stktrnRecord = stktrnsRecords[i];
         const processedItem = processedDetails[i];
+        const trimmedItemCode = stktrnRecord.itemcode.replace(/0000$/, "");
+
+        console.log(`🔍 Processing item ${i + 1}/${stktrnsRecords.length}:`, {
+          itemCode: trimmedItemCode,
+          stktrnId: stktrnRecord.id,
+          transferType: processedItem?.transferType
+        });
 
         if (!stktrnRecord.id) {
           console.warn(
@@ -2183,37 +2342,26 @@ function AddAdj({ docData }) {
           continue;
         }
 
-        let batchDetails = [];
+        // Get batch details using the helper function
+        const batchDetails = getProcessedBatchDetails(processedItem);
 
-        // Get batch details based on transfer type
-        if (
-          processedItem?.transferType === "specific" &&
-          processedItem?.selectedBatches?.batchDetails?.length > 0
-        ) {
-          // Specific batch transfer - NEW: Use selectedBatches from new flow
-          batchDetails = processedItem.selectedBatches.batchDetails;
-        } else if (
-          processedItem?.transferType === "fifo" &&
-          processedItem?.fifoBatches?.length > 0
-        ) {
-          // FIFO transfer
-          batchDetails = processedItem.fifoBatches;
-        } else if (processedItem?.docBatchNo) {
-          // Single batch (Adjustment specific) - fallback for legacy data
-          batchDetails = [
-            {
-              batchNo: processedItem.docBatchNo,
-              quantity: processedItem.docQty,
-              expDate: processedItem.docExpdate,
-              batchCost: processedItem.docPrice,
-            },
-          ];
-        }
+        // Debug logging
+        console.log(`🔍 Processing item ${processedItem?.itemcode}:`, {
+          transferType: processedItem?.transferType,
+          hasSelectedBatches: !!processedItem?.selectedBatches,
+          selectedBatchesDetails: processedItem?.selectedBatches?.batchDetails,
+          hasFefoBatches: !!processedItem?.fefoBatches,
+          fefoBatches: processedItem?.fefoBatches,
+          docBatchNo: processedItem?.docBatchNo,
+          docQty: processedItem?.docQty,
+          finalBatchDetails: batchDetails
+        });
 
-        // Create Stktrnbatches records for each batch
+        // Process each batch for both Stktrnbatches creation and ItemBatches update
         for (const batch of batchDetails) {
+          // 1. Create Stktrnbatches record
           const stktrnbatchesPayload = {
-            batchNo: batch.batchNo || "", // Empty string for "No Batch"
+            batchNo: batch.batchNo || "No Batch", // Empty string for "No Batch"
             stkTrnId: stktrnRecord.id,
             batchQty: batch.quantity, // Can be positive or negative for adjustments
           };
@@ -2233,6 +2381,108 @@ function AddAdj({ docData }) {
               error
             );
           }
+
+          // 2. Update ItemBatches quantity (in the same loop to avoid duplicates)
+          console.log(`🔍 Processing batch for ItemBatches update:`, {
+            itemCode: trimmedItemCode,
+            batchNo: batch.batchNo,
+            quantity: batch.quantity,
+            batchNoType: typeof batch.batchNo,
+            batchNoLength: batch.batchNo ? batch.batchNo.length : 'null/undefined'
+          });
+
+          // Check if this specific batch already exists
+          const batchCheckFilter = {
+            where: {
+              and: [
+                { itemCode: trimmedItemCode },
+                { siteCode: userDetails.siteCode },
+                { uom: processedItem.docUom },
+                { batchNo: batch.batchNo },
+              ],
+            },
+          };
+
+          console.log(`🔍 Batch check filter:`, batchCheckFilter);
+          console.log(`🔍 About to check if batch exists for:`, {
+            itemCode: trimmedItemCode,
+            batchNo: batch.batchNo,
+            batchNoType: typeof batch.batchNo,
+            batchNoValue: JSON.stringify(batch.batchNo)
+          });
+
+          try {
+            const existingBatchCheck = await apiService.get(
+              `ItemBatches?filter=${encodeURIComponent(
+                JSON.stringify(batchCheckFilter)
+              )}`
+            );
+
+            console.log(`🔍 Existing batch check result:`, existingBatchCheck);
+            console.log(`🔍 Batch existence check completed for batch:`, batch.batchNo || "No Batch");
+
+            const batchExists = existingBatchCheck && existingBatchCheck.length > 0;
+
+            console.log(`🔍 Batch exists check:`, {
+              batchNo: batch.batchNo,
+              batchExists: batchExists,
+              existingBatchCount: existingBatchCheck ? existingBatchCheck.length : 0
+            });
+
+            if (batchExists) {
+              // For existing batches, use updateqty
+              console.log(`✅ Updating existing batch: ${batch.batchNo || 'No Batch'}`);
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: userDetails.siteCode,
+                uom: processedItem.docUom,
+                qty: Number(batch.quantity),
+                batchcost: 0,
+                batchno: batch.batchNo,
+                ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                  expDate: batch.expDate || calculateDefaultExpiryDate(),
+                }),
+              };
+
+              console.log(`🔍 Batch update payload:`, batchUpdate);
+
+              await apiService
+                .post("ItemBatches/updateqty", batchUpdate)
+                .then(() => {
+                  console.log(`✅ Successfully updated batch: ${batch.batchNo || 'No Batch'}`);
+                })
+                .catch(async (err) => {
+                  console.error(`❌ Error updating batch ${batch.batchNo || 'No Batch'}:`, err);
+                });
+            } else {
+              // For new batches, create a new batch record
+              console.log(`🆕 Creating new batch: ${batch.batchNo || 'No Batch'}`);
+              const batchUpdate = {
+                itemCode: trimmedItemCode,
+                siteCode: userDetails.siteCode,
+                uom: processedItem.docUom,
+                qty: Number(batch.quantity),
+                batchCost: Number(batch.batchCost),
+                batchNo: batch.batchNo,
+                ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                  expDate: batch.expDate || calculateDefaultExpiryDate(),
+                }),
+              };
+
+              console.log(`🔍 Batch create payload:`, batchUpdate);
+
+              await apiService
+                .post(`ItemBatches`, batchUpdate)
+                .then(() => {
+                  console.log(`✅ Successfully created batch: ${batch.batchNo || 'No Batch'}`);
+                })
+                .catch(async (err) => {
+                  console.error(`❌ Error creating batch ${batch.batchNo || 'No Batch'}:`, err);
+                });
+            }
+          } catch (err) {
+            console.error(`Error processing batch ${batch.batchNo}:`, err);
+          }
         }
       }
     } catch (error) {
@@ -2240,8 +2490,43 @@ function AddAdj({ docData }) {
     }
   };
 
+  // Helper function to update ItemBatches for non-batch items
+  const updateItemBatchesForNonBatchItems = async (stktrnsRecords) => {
+    if (getConfigValue('BATCH_NO') === "Yes") {
+      return; // Skip if batch functionality is enabled (handled in createStktrnbatchesRecords)
+    }
+
+    try {
+      for (const d of stktrnsRecords) {
+        const trimmedItemCode = d.itemcode.replace(/0000$/, "");
+        
+        // Without batch functionality, don't include batch-related fields
+        const batchUpdate = {
+          itemcode: trimmedItemCode,
+          sitecode: userDetails.siteCode,
+          uom: d.itemUom,
+          qty: Number(d.trnQty),
+          batchcost: 0,
+        };
+
+        await apiService
+          .post("ItemBatches/updateqty", batchUpdate)
+          .catch(async (err) => {
+            console.error(`Error updating item without batch:`, err);
+          });
+      }
+    } catch (error) {
+      console.error("Error in updateItemBatchesForNonBatchItems:", error);
+    }
+  };
+
   const createTransactionObject = (item, docNo, storeNo, lineNo) => {
     console.log(item, "trafr object");
+    console.log(`🔍 Creating transaction object for ${item.itemcode}:`, {
+      itemprice: item.itemprice,
+      docPrice: item.docPrice,
+      itemBatchCost: 0
+    });
     const today = new Date();
     const timeStr =
       ("0" + today.getHours()).slice(-2) +
@@ -2279,18 +2564,27 @@ function AddAdj({ docData }) {
       movType: "ADJ",
       itemBatch:
         getConfigValue("BATCH_NO") === "Yes"
-          ? item?.transferType === "specific" &&
-            item?.selectedBatches?.batchDetails?.length > 0
-            ? item.selectedBatches.batchDetails
-                .map((batch) => batch.batchNo)
-                .join(",")
-            : item?.transferType === "fifo" && item?.fifoBatches?.length > 0
-            ? item.fifoBatches
-                .map((batch) => batch.batchNo || "No Batch")
-                .join(",") // Actual FIFO batch numbers
-            : item?.docBatchNo || null
+          ? (() => {
+              // Use the same logic as getProcessedBatchDetails to ensure consistency
+              const batchDetails = getProcessedBatchDetails(item);
+              
+              // Extract batch numbers from the processed batch details
+              const batchNumbers = batchDetails.map((batch) => {
+                // Convert empty string to "Unbatched" for display
+                return batch.batchNo === "" ? "Unbatched" : batch.batchNo;
+              });
+              
+              const result = batchNumbers.join(",");
+              console.log(`🔍 itemBatch construction for ${item.itemcode}:`, {
+                batchDetails: batchDetails,
+                batchNumbers: batchNumbers,
+                result: result
+              });
+              
+              return result;
+            })()
           : null,
-      itemBatchCost: item.docPrice,
+      itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
       docExpdate:
@@ -2316,9 +2610,9 @@ function AddAdj({ docData }) {
     );
   };
 
-  // Helper function to pre-calculate FIFO batch selection
-  const calculateFifoBatches = async (item) => {
-    if (item?.transferType !== "fifo" || getConfigValue("BATCH_NO") !== "Yes") {
+  // Helper function to pre-calculate FEFO batch selection
+  const calculateFefoBatches = async (item) => {
+    if (item?.transferType !== "fefo" || getConfigValue("BATCH_NO") !== "Yes") {
       return item;
     }
 
@@ -2347,60 +2641,103 @@ function AddAdj({ docData }) {
           (batch) => batch.batchNo && batch.batchNo.trim() !== ""
         );
 
-        // Sort specific batches by expiry date (FIFO)
+        // Sort specific batches by expiry date (FEFO)
         const sortedBatches = specificBatches.sort(
           (a, b) =>
             new Date(a.expDate || "9999-12-31") -
             new Date(b.expDate || "9999-12-31")
         );
 
-        let remainingQty = Math.abs(Number(item.docQty)); // Use absolute value for adjustments
-        const fifoBatches = [];
+        const adjustmentQty = Number(item.docQty);
+        const fefoBatches = [];
+        const isNegativeAdjustment = adjustmentQty < 0;
 
-        // Calculate which batches will be used for FIFO adjustment
-        for (const batch of sortedBatches) {
-          if (remainingQty <= 0) break;
-
-          const batchQty = Math.min(remainingQty, Number(batch.qty));
-          fifoBatches.push({
-            batchNo: batch.batchNo,
-            quantity: batchQty,
-            expDate: batch.expDate,
-            batchCost: batch.batchCost,
-          });
-
-          remainingQty -= batchQty;
-        }
-
-        // If still need more quantity, take from "No Batch" records
-        if (remainingQty > 0) {
-          const noBatchRecords = allBatches.filter(
-            (batch) => !batch.batchNo || batch.batchNo.trim() === ""
-          );
-
-          for (const noBatch of noBatchRecords) {
+        if (isNegativeAdjustment) {
+          // For negative adjustments: Reduce from earliest expiry batches first (FEFO)
+          let remainingQty = Math.abs(adjustmentQty);
+          
+          // Calculate which batches will be used for FEFO reduction
+          for (const batch of sortedBatches) {
             if (remainingQty <= 0) break;
 
-            const batchQty = Math.min(remainingQty, Number(noBatch.qty));
-            fifoBatches.push({
-              batchNo: "", // Empty string for "No Batch"
-              quantity: batchQty,
-              expDate: noBatch.expDate,
-              batchCost: noBatch.batchCost,
+            const batchQty = Math.min(remainingQty, Number(batch.qty));
+            fefoBatches.push({
+              batchNo: batch.batchNo,
+              quantity: -batchQty, // Negative for reduction
+              expDate: batch.expDate,
+              batchCost: batch.batchCost,
             });
 
             remainingQty -= batchQty;
           }
+
+          // If still need more quantity, take from "No Batch" records
+          if (remainingQty > 0) {
+            const noBatchRecords = allBatches.filter(
+              (batch) => !batch.batchNo || batch.batchNo.trim() === ""
+            );
+
+            for (const noBatch of noBatchRecords) {
+              if (remainingQty <= 0) break;
+
+              const batchQty = Math.min(remainingQty, Number(noBatch.qty));
+              fefoBatches.push({
+                batchNo: "", // Use empty string for ItemBatches API
+                quantity: -batchQty, // Negative for reduction
+                expDate: noBatch.expDate,
+                batchCost: noBatch.batchCost,
+              });
+
+              remainingQty -= batchQty;
+            }
+          }
+        } else {
+          // For positive adjustments: Add to nearest expiry batch (earliest expiry first)
+          const positiveAdjustmentQty = Math.abs(adjustmentQty);
+          
+          // Find the batch with the earliest expiry date to add the stock
+          if (sortedBatches.length > 0) {
+            // Add to the batch with earliest expiry date
+            const earliestBatch = sortedBatches[0];
+            fefoBatches.push({
+              batchNo: earliestBatch.batchNo,
+              quantity: positiveAdjustmentQty, // Positive for addition
+              expDate: earliestBatch.expDate,
+              batchCost: earliestBatch.batchCost,
+            });
+          } else {
+            // If no specific batches exist, add to No Batch
+            const noBatchRecords = allBatches.filter(
+              (batch) => !batch.batchNo || batch.batchNo.trim() === ""
+            );
+            
+            if (noBatchRecords.length > 0) {
+              fefoBatches.push({
+                batchNo: "", // Use empty string for ItemBatches API
+                quantity: positiveAdjustmentQty, // Positive for addition
+                expDate: noBatchRecords[0].expDate,
+                batchCost: noBatchRecords[0].batchCost,
+              });
+            } else {
+              // If no batches exist at all, create a No Batch entry
+              fefoBatches.push({
+                batchNo: "", // Use empty string for ItemBatches API
+                quantity: positiveAdjustmentQty, // Positive for addition
+                expDate: null,
+                batchCost: 0,
+              });
+            }
+          }
         }
 
-        // Update the item with FIFO batch details
+        // Update the item with FEFO batch details
         return {
           ...item,
-          fifoBatches: fifoBatches,
+          fefoBatches: fefoBatches,
         };
       }
     } catch (error) {
-      console.error("Error calculating FIFO batches:", error);
+      console.error("Error calculating FEFO batches:", error);
     }
 
     return item;
@@ -2447,7 +2784,7 @@ function AddAdj({ docData }) {
       recQty5: 0,
     };
     let ordMemoFields = {
-      ordMemo1: "fifo",
+      ordMemo1: "fefo",
       ordMemo2: "",
       ordMemo3: "0",
       ordMemo4: "",
@@ -2483,6 +2820,7 @@ function AddAdj({ docData }) {
       docFocqty: 0,
       docTtlqty: Number(item.Qty),
       docPrice: Number(item.Price),
+      itemprice: Number(item.Cost) || 0, // Use item.Cost for consistency with other modules
       docPdisc: 0,
       docDisc: 0,
       recQty1: 0,
@@ -2511,11 +2849,7 @@ function AddAdj({ docData }) {
         transferType: "specific",
       }),
       ...(!hasSpecificBatches && {
-        transferType: "fifo",
-        // Calculate FIFO batches for non-specific selections
-        ...(getConfigValue("BATCH_NO") === "Yes" && {
-          fifoBatches: item.fifoBatches || [],
-        }),
+        transferType: "fefo",
       }),
       // Store memo fields for batch tracking
       ...ordMemoFields,
@@ -2582,7 +2916,21 @@ function AddAdj({ docData }) {
         }
 
         const docNo = urlDocNo || stockHdrs.docNo;
-        const details = cartData;
+        let details = cartData;
+
+        // Calculate FEFO batches for FEFO items before processing (for posted docs too)
+        if (getConfigValue("BATCH_NO") === "Yes") {
+          details = await Promise.all(
+            details.map(async (item) => {
+              if (item.transferType === "fefo") {
+                console.log(`🔍 Calculating FEFO batches for posted item: ${item.itemcode}`);
+                return await calculateFefoBatches(item);
+              }
+              return item;
+            })
+          );
+          console.log(`🔍 FEFO batches calculated for posted ${details.filter(d => d.transferType === "fefo").length} items`);
+        }
 
         // Calculate new totals based on updated details for posted docs
         const newTotals = calculateTotals(details);
@@ -2670,6 +3018,29 @@ function AddAdj({ docData }) {
       let hdr = stockHdrs;
       let details = cartData;
 
+      // Calculate FEFO batches for FEFO items before processing
+      if (getConfigValue("BATCH_NO") === "Yes") {
+        console.log(`🔍 Starting FEFO calculation. Total items: ${details.length}`);
+        console.log(`🔍 Items with transferType:`, details.map(d => ({ itemcode: d.itemcode, transferType: d.transferType })));
+        
+        details = await Promise.all(
+          details.map(async (item) => {
+            if (item.transferType === "fefo") {
+              console.log(`🔍 Calculating FEFO batches for item: ${item.itemcode}`);
+              const result = await calculateFefoBatches(item);
+              console.log(`🔍 FEFO result for ${item.itemcode}:`, {
+                hasFefoBatches: !!result.fefoBatches,
+                fefoBatchesLength: result.fefoBatches?.length || 0,
+                fefoBatches: result.fefoBatches
+              });
+              return result;
+            }
+            return item;
+          })
+        );
+        console.log(`🔍 FEFO batches calculated for ${details.filter(d => d.transferType === "fefo").length} items`);
+      }
+
       // Get new docNo for both new creations and direct posts
       if ((type === "save" || type === "post") && !urlDocNo) {
         const result = await getDocNo();
@@ -2679,7 +3050,8 @@ function AddAdj({ docData }) {
 
         // Update states with new docNo
         hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
-        details = cartData.map((item, index) => ({
+        // Preserve the FEFO-calculated details and only update docNo and id
+        details = details.map((item, index) => ({
           ...item,
           docNo,
           id: index + 1, // Use sequential index + 1 for new items
@@ -2816,7 +3188,16 @@ function AddAdj({ docData }) {
               d.trnBalcst = (
                 Number(on.trnBalcst || 0) + Number(d.trnAmt)
               ).toString();
-              d.itemBatchCost = (d.itemBatchCost || 0).toString();
+              
+              // Debug logging for itemBatchCost
+              console.log(`🔍 ItemOnQties for ${d.itemcode}:`, {
+                batchCost: on.batchCost,
+                trnBalqty: on.trnBalqty,
+                trnBalcst: on.trnBalcst
+              });
+              
+              d.itemBatchCost = (on.batchCost || 0).toString();
+              console.log(`✅ Set itemBatchCost to: ${d.itemBatchCost} for ${d.itemcode}`);
             } else {
               const errorLog = {
                 trnDocNo: docNo,
@@ -2853,7 +3234,11 @@ function AddAdj({ docData }) {
             }
 
             // Create Stktrnbatches records for each batch (AFTER Stktrns are posted)
+            // Pass the cart data (details) which contains the batch information
             await createStktrnbatchesRecords(stktrns, details, "adjustment");
+
+            // Update ItemBatches for non-batch items (when batch functionality is disabled)
+            await updateItemBatchesForNonBatchItems(stktrns);
 
             // 9) Per-item log and (optional) BatchSNO GET
             for (const d of stktrns) {
@@ -2880,267 +3265,6 @@ function AddAdj({ docData }) {
             // await apiService.post("Inventorylogs", existsLog);
           }
 
-          // 10) Update ItemBatches quantity - ALWAYS execute regardless of Stktrns existence
-          console.log(
-            "Starting ItemBatches updates for",
-            stktrns.length,
-            "items"
-          );
-          for (const d of stktrns) {
-            if (getConfigValue("BATCH_SNO") === "Yes") {
-              const params = new URLSearchParams({
-                docNo: d.trnDocno,
-                itemCode: d.itemcode,
-                uom: d.itemUom,
-                itemsiteCode: d.storeNo,
-                Qty: d.trnQty,
-                ExpDate: d?.docExpdate ? d?.docExpdate : null,
-                batchCost: Number(d.itemBatchCost),
-              });
-
-              const payload = {
-                itemCode: d.itemcode?.replace(/0000$/, ""), // Remove 0000 suffix if present
-                siteCode: d.storeNo,
-                batchSNo: d.itemBatch, // or d.batchSNo if that's the correct field
-                DocNo: d.trnDocno,
-                DocOutNo: "", // Set this if you have an outbound doc number, else leave as empty string
-                uom: d.itemUom,
-                availability: true, // or set based on your logic
-                expDate: d.docExpdate
-                  ? new Date(d.docExpdate).toISOString()
-                  : null,
-                batchCost: Number(d.itemBatchCost) || 0,
-              };
-
-              try {
-                await apiService1.get(
-                  `api/postItemBatchSno?${params.toString()}`
-                );
-                // await apiService.post(`ItemBatchSnos`, payload);
-              } catch (err) {
-                const errorLog = {
-                  trnDocNo: d.trnDocno,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `api/postItemBatchSno error: ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // Optionally log the error
-                // await apiService.post("Inventorylogs", errorLog);
-              }
-            }
-
-            const trimmedItemCode = d.itemcode.replace(/0000$/, "");
-            let batchUpdate;
-
-            const batchFilter = {
-              itemCode: trimmedItemCode,
-              siteCode: userDetails.siteCode,
-              uom: d.itemUom,
-              batchNo: d.itemBatch,
-            };
-
-            const fil = {
-              where: {
-                and: [
-                  { itemCode: trimmedItemCode },
-                  { siteCode: userDetails.siteCode },
-                  { uom: d.itemUom },
-                  { batchNo: d.itemBatch },
-                ],
-              },
-            };
-
-            if (getConfigValue("BATCH_NO") === "Yes") {
-              // For ADJ, we need to handle batch adjustments properly
-              // Check if this is a specific batch selection or FIFO
-              const cartItem = cartData.find(
-                (item) =>
-                  item.itemcode === trimmedItemCode && item.docUom === d.itemUom
-              );
-
-              if (
-                cartItem &&
-                cartItem.transferType === "specific" &&
-                cartItem.selectedBatches
-              ) {
-                // Specific batch selection - process each selected batch individually
-                console.log(
-                  `🔄 Processing specific batch adjustment for ${trimmedItemCode}`
-                );
-
-                // Determine if this is a negative adjustment
-                const isNegativeAdjustment = Number(d.trnQty) < 0;
-                const adjustmentSign = isNegativeAdjustment ? -1 : 1;
-
-                // Process individual batches from the selection
-                if (
-                  cartItem.selectedBatches.batchDetails &&
-                  cartItem.selectedBatches.batchDetails.length > 0
-                ) {
-                  for (const batchDetail of cartItem.selectedBatches
-                    .batchDetails) {
-                    if (batchDetail.quantity > 0) {
-                      batchUpdate = {
-                        itemcode: trimmedItemCode,
-                        sitecode: userDetails.siteCode,
-                        uom: d.itemUom,
-                        qty: Number(batchDetail.quantity) * adjustmentSign, // Apply sign based on adjustment type
-                        // batchcost: Number(d.trnCost),
-                        batchcost: 0,
-                        batchno: batchDetail.batchNo,
-                        expDate: batchDetail.expDate || null,
-                      };
-
-                      await apiService
-                        .post("ItemBatches/updateqty", batchUpdate)
-                        .catch(async (err) => {
-                          const errorLog = {
-                            trnDocNo: docNo,
-                            itemCode: d.itemcode,
-                            loginUser: userDetails.username,
-                            siteCode: userDetails.siteCode,
-                            logMsg: `ItemBatches/updateqty specific batch error: ${err.message}`,
-                            createdDate: new Date().toISOString().split("T")[0],
-                          };
-                        });
-                    }
-                  }
-                }
-
-                // Process "No Batch" quantity if any
-                if (cartItem.selectedBatches.noBatchTransferQty > 0) {
-                  batchUpdate = {
-                    itemcode: trimmedItemCode,
-                    sitecode: userDetails.siteCode,
-                    uom: d.itemUom,
-                    qty: Number(cartItem.selectedBatches.noBatchTransferQty) * adjustmentSign, // Apply sign based on adjustment type
-                    // batchcost: Number(d.trnCost),
-                    batchcost: 0,
-                    batchno: "", // Empty string for "No Batch"
-                  };
-
-                  await apiService
-                    .post("ItemBatches/updateqty", batchUpdate)
-                    .catch(async (err) => {
-                      const errorLog = {
-                        trnDocNo: docNo,
-                        itemCode: d.itemcode,
-                        loginUser: userDetails.username,
-                        siteCode: userDetails.siteCode,
-                        logMsg: `ItemBatches/updateqty no batch error: ${err.message}`,
-                        createdDate: new Date().toISOString().split("T")[0],
-                      };
-                    });
-                }
-              } else {
-                // FIFO adjustment - find existing batches and adjust quantities
-                console.log(
-                  `🔄 Processing FIFO batch adjustment for ${trimmedItemCode}`
-                );
-
-                // Find existing batches for this item
-                const batchFilter = {
-                  where: {
-                    and: [
-                      { itemCode: trimmedItemCode },
-                      { siteCode: userDetails.siteCode },
-                      { uom: d.itemUom },
-                      { qty: { gt: 0 } }, // Only batches with available quantity
-                    ],
-                  },
-                };
-
-                try {
-                  const existingBatches = await apiService.get(
-                    `ItemBatches?filter=${encodeURIComponent(
-                      JSON.stringify(batchFilter)
-                    )}`
-                  );
-
-                  if (existingBatches && existingBatches.length > 0) {
-                    // Sort by expiry date (FIFO) - earliest expiry first
-                    const sortedBatches = existingBatches.sort((a, b) => {
-                      if (!a.expDate && !b.expDate) return 0;
-                      if (!a.expDate) return 1;
-                      if (!b.expDate) return -1;
-                      return new Date(a.expDate) - new Date(b.expDate);
-                    });
-
-                    let remainingQty = Math.abs(Number(d.trnQty)); // Convert to positive for processing
-                    const isNegativeAdjustment = Number(d.trnQty) < 0;
-
-                    // Process batches in FIFO order
-                    for (const batch of sortedBatches) {
-                      if (remainingQty <= 0) break;
-
-                      const batchQty = Math.min(
-                        remainingQty,
-                        Number(batch.qty)
-                      );
-
-                      // Apply the correct sign based on whether this is a positive or negative adjustment
-                      const signedBatchQty = isNegativeAdjustment ? -batchQty : batchQty;
-
-                      batchUpdate = {
-                        itemcode: trimmedItemCode,
-                        sitecode: userDetails.siteCode,
-                        uom: d.itemUom,
-                        qty: signedBatchQty, // Use the calculated batch quantity with correct sign
-                        batchcost: Number(d.trnCost),
-                        batchno: batch.batchNo,
-                      };
-
-                      await apiService
-                        .post("ItemBatches/updateqty", batchUpdate)
-                        .catch(async (err) => {
-                          const errorLog = {
-                            trnDocNo: docNo,
-                            itemCode: d.itemcode,
-                            loginUser: userDetails.username,
-                            siteCode: userDetails.siteCode,
-                            logMsg: `ItemBatches/updateqty FIFO error: ${err.message}`,
-                            createdDate: new Date().toISOString().split("T")[0],
-                          };
-                        });
-
-                      remainingQty -= batchQty;
-                    }
-                  } else {
-                    console.warn(
-                      `⚠️ No existing batches found for item ${trimmedItemCode} in store ${userDetails.siteCode}`
-                    );
-                  }
-                } catch (error) {
-                  console.error(
-                    `Error fetching batches for FIFO adjustment: ${error.message}`
-                  );
-                }
-              }
-            } else {
-              batchUpdate = {
-                itemcode: trimmedItemCode,
-                sitecode: userDetails.siteCode,
-                uom: d.itemUom,
-                qty: Number(d.trnQty),
-                batchcost: Number(d.trnCost),
-              };
-
-              await apiService
-                .post("ItemBatches/updateqty", batchUpdate)
-                .catch(async (err) => {
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty error: ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                });
-            }
-          }
 
           // 11) Final header status update to 7 - Only after all operations are complete
           await apiService.post(
@@ -3330,7 +3454,7 @@ function AddAdj({ docData }) {
                     Number(currentBalance.trnBalcst) + Number(item.docAmt);
                 }
 
-                itemBatchCost = (item.batchCost || item.docPrice).toString();
+                itemBatchCost = (item.batchCost || item.itemprice).toString();
               } else {
                 console.log(
                   `🔍 No ItemOnQties records found for item ${item.itemcode}`
@@ -4073,7 +4197,7 @@ function AddAdj({ docData }) {
                               </div>
                             ) : (
                               <Badge variant="outline" className="text-xs">
-                                FIFO
+                                FEFO
                               </Badge>
                             )}
                           </TableCell>

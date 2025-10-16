@@ -1204,13 +1204,109 @@ function AddGrn({ docData }) {
     }
   };
 
+  // Helper function to reconstruct batch state from stored database fields
+  const reconstructBatchState = async (cartItem) => {
+    if (cartItem.ordMemo1 === "specific" && cartItem.ordMemo2) {
+      try {
+        // Parse batch breakdown from ordMemo2 with validation
+        const batchBreakdown = cartItem.ordMemo2.split(",").map((batch) => {
+          const [batchNo, quantity] = batch.split(":");
+          const parsedQuantity = Number(quantity);
+          
+          // Validate batch data
+          if (!batchNo || isNaN(parsedQuantity) || parsedQuantity <= 0) {
+            console.warn(`Invalid batch data: ${batch}`, { batchNo, quantity: parsedQuantity });
+            return null;
+          }
+          
+          return { batchNo, quantity: parsedQuantity };
+        }).filter(Boolean); // Remove invalid entries
+
+        // Check if we have valid batch data
+        if (batchBreakdown.length === 0) {
+          console.warn("No valid batch data found in ordMemo2:", cartItem.ordMemo2);
+          return null;
+        }
+
+        // Fetch ItemBatches data to get fresh expiry dates
+        const itemBatchesFilter = {
+          where: {
+            and: [
+              { itemCode: cartItem.itemcode },
+              { siteCode: userDetails.siteCode },
+              { uom: cartItem.docUom },
+              { or: batchBreakdown.map((b) => ({ batchNo: b.batchNo })) },
+            ],
+          },
+        };
+
+        const itemBatchesResponse = await apiService.get(
+          `ItemBatches?filter=${encodeURIComponent(
+            JSON.stringify(itemBatchesFilter)
+          )}`
+        ).catch((error) => {
+          console.error("Failed to fetch ItemBatches during reconstruction:", error);
+          // Return empty array to continue with available data
+          return [];
+        });
+
+        // Map batch data with fresh expiry dates from API
+        const enrichedBatchDetails = batchBreakdown.map((batch) => {
+          const apiBatch = itemBatchesResponse.find(
+            (api) => api.batchNo === batch.batchNo
+          );
+          return {
+            batchNo: batch.batchNo,
+            quantity: batch.quantity,
+            expDate: apiBatch?.expDate || null,
+            batchCost: apiBatch?.batchCost || 0,
+          };
+        });
+
+        // Return reconstructed batch details
+        return {
+          batchNo: enrichedBatchDetails.map((b) => b.batchNo).join(", "),
+          expDate: enrichedBatchDetails
+            .map((b) => b.expDate)
+            .filter(Boolean)
+            .join(", "),
+          totalQty: enrichedBatchDetails.reduce((sum, b) => sum + b.quantity, 0),
+          batchDetails: enrichedBatchDetails,
+        };
+      } catch (error) {
+        console.error("Error reconstructing batch state:", error);
+        toast.error("Failed to load batch information.");
+        return null;
+      }
+    }
+
+    return null; // No batch data stored
+  };
+
   const getStockHdrDetails = async (filter) => {
     try {
       const response = await apiService.get(
         `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
       );
-      setCartItems(response);
-      setCartData(response);
+
+      // Reconstruct batch state for each item
+      const reconstructedItems = await Promise.all(
+        response.map(async (item) => {
+          const batchState = await reconstructBatchState(item);
+          if (batchState) {
+            return {
+              ...item,
+              batchDetails: {
+                individualBatches: batchState.batchDetails,
+              },
+            };
+          }
+          return item;
+        })
+      );
+
+      setCartItems(reconstructedItems);
+      setCartData(reconstructedItems);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
@@ -1440,12 +1536,31 @@ function AddGrn({ docData }) {
 
       console.log(updatedEditData, "updatedEditData");
 
+      // Prepare ordMemo fields if batch is set
+      let ordMemoFields = {
+        ordMemo1: "",
+        ordMemo2: "",
+        ordMemo3: "0",
+        ordMemo4: "",
+      };
+
+      if (getConfigValue('BATCH_NO') === "Yes" && updatedEditData.docBatchNo) {
+        // Store batch info in ordMemo fields for persistence
+        ordMemoFields.ordMemo1 = "specific";
+        ordMemoFields.ordMemo2 = `${updatedEditData.docBatchNo}:${updatedEditData.docQty}`;
+        ordMemoFields.ordMemo3 = "0"; // No "No Batch" qty in GRN
+        ordMemoFields.ordMemo4 = updatedEditData.docExpdate ? 
+          `${updatedEditData.docExpdate}:${updatedEditData.docQty}` : "";
+      }
+
       const updatedItem = {
         ...updatedEditData,
         docQty: Number(updatedEditData.docQty),
         docPrice: Number(updatedEditData.docPrice),
         docAmt:
           Number(updatedEditData.docQty) * Number(updatedEditData.docPrice),
+        // Add ordMemo fields for batch persistence
+        ...ordMemoFields,
       };
 
       setCartData((prev) =>
@@ -1564,50 +1679,6 @@ function AddGrn({ docData }) {
       amount,
     });
 
-    // Only set docExpdate if batch functionality is enabled
-    // let docExpdate = null;
-    // if (getConfigValue('BATCH_NO') === "Yes") {
-    //   // Convert batchexpirydate to ISO 8601 format for storage
-    //   if (item.batchexpirydate) {
-    //     try {
-    //       // Handle different date formats and convert to ISO 8601
-    //       let date;
-    //       if (typeof item.batchexpirydate === "string") {
-    //         // Handle "DD/MM/YYYY HH:MM:SS AM/PM" format
-    //         if (item.batchexpirydate.includes("/")) {
-    //           const parts = item.batchexpirydate.split(" ")[0].split("/");
-    //           if (parts.length === 3) {
-    //             const day = parseInt(parts[0]);
-    //             const month = parseInt(parts[1]) - 1; // Month is 0-indexed
-    //             const year = parseInt(parts[2]);
-    //             date = new Date(year, month, day);
-    //           }
-    //         } else {
-    //           // Handle ISO format or other standard formats
-    //           date = new Date(item.batchexpirydate);
-    //         }
-    //       } else {
-    //         date = new Date(item.batchexpirydate);
-    //       }
-
-    //       if (!isNaN(date.getTime())) {
-    //         // Format as ISO 8601: YYYY-MM-DD HH:MM:SS
-    //         const year = date.getFullYear();
-    //         const month = (date.getMonth() + 1).toString().padStart(2, "0");
-    //         const day = date.getDate().toString().padStart(2, "0");
-    //         const hours = date.getHours().toString().padStart(2, "0");
-    //         const minutes = date.getMinutes().toString().padStart(2, "0");
-    //         const seconds = date.getSeconds().toString().padStart(2, "0");
-
-    //         docExpdate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    //       }
-    //     } catch (error) {
-    //       console.error("Error converting expiry date:", error);
-    //       docExpdate = null;
-    //     }
-    //   }
-    // }
-
     const newCartItem = {
       id: cartData.length + 1,
       // docId: cartData.length + 1,
@@ -1640,7 +1711,7 @@ function AddGrn({ docData }) {
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
       itemRemark: item?.itemRemark || null,
-      itemprice: Number(item.Cost) || Number(item.Price) || 0,
+      itemprice: Number(item.Cost) || 0,
       // Only set docBatchNo if batch functionality is enabled
       // docBatchNo: getConfigValue('BATCH_NO') === "Yes" ? (item.batchno || null) : null,
       docBatchNo: "",
@@ -1649,13 +1720,20 @@ function AddGrn({ docData }) {
         getConfigValue('BATCH_NO') === "Yes" ? !!item.batchno : false,
 
       docMdisc: 0,
-      recTtl: 0,
+      recTtl: Number(item.Qty),
+      // Initialize ordMemo fields (will be populated when batch is edited)
+      ordMemo1: "",
+      ordMemo2: "",
+      ordMemo3: "0",
+      ordMemo4: "",
     };
-    // console.log(item.itemUom,cartData[0].docUom)
 
+    // Modified duplicate detection logic to allow same item with different batches
     const existingItemIndex = cartData.findIndex(
       (cartItem) =>
-        cartItem.itemcode === item.stockCode && cartItem.docUom === item.itemUom
+        cartItem.itemcode === item.stockCode && 
+        cartItem.docUom === item.itemUom &&
+        cartItem.docBatchNo === newCartItem.docBatchNo // Add batch comparison
     );
 
     if (existingItemIndex !== -1) {
@@ -1665,6 +1743,153 @@ function AddGrn({ docData }) {
     }
 
     addItemToCart(newCartItem, index);
+  };
+
+  // Helper function to group cart items by itemcode+uom and combine multiple batches
+  const groupCartItemsByItem = (cartItems) => {
+    const grouped = new Map();
+    
+    cartItems.forEach(item => {
+      const key = `${item.itemcode}-${item.docUom}`;
+      
+      if (!grouped.has(key)) {
+        // Initialize with first item's values
+        grouped.set(key, {
+          ...item,
+          docQty: item.docQty, // Start with first item's quantity
+          docAmt: item.docAmt, // Start with first item's amount
+          batchDetails: {
+            individualBatches: []
+          }
+        });
+      }
+      
+      const groupedItem = grouped.get(key);
+      
+      // Add batch information if batch functionality is enabled
+      if (getConfigValue('BATCH_NO') === "Yes" && item.docBatchNo) {
+        groupedItem.batchDetails.individualBatches.push({
+          batchNo: item.docBatchNo,
+          quantity: item.docQty,
+          expDate: item.docExpdate,
+          batchCost: item.itemprice
+        });
+      }
+      
+      // Only accumulate if this is not the first item (already initialized above)
+      if (groupedItem.batchDetails.individualBatches.length > 1) {
+        groupedItem.docQty += item.docQty;
+        groupedItem.docAmt += item.docAmt;
+      }
+    });
+    
+    return Array.from(grouped.values());
+  };
+
+  // Helper function to update ItemBatches for multiple batches
+  const updateItemBatchesForMultipleBatches = async (stktrnsRecords, groupedDetails, docNo) => {
+    for (let i = 0; i < stktrnsRecords.length; i++) {
+      const d = stktrnsRecords[i];
+      const processedItem = groupedDetails[i];
+      const trimmedItemCode = d.itemcode.replace(/0000$/, "");
+
+      if (getConfigValue('BATCH_NO') === "Yes") {
+        // Get batch details from the grouped item
+        let batchDetails = [];
+        if (processedItem?.batchDetails?.individualBatches?.length > 0) {
+          batchDetails = processedItem.batchDetails.individualBatches;
+        } else if (processedItem?.docBatchNo) {
+          batchDetails = [{
+            batchNo: processedItem.docBatchNo,
+            quantity: processedItem.docQty,
+            expDate: processedItem.docExpdate,
+            batchCost: processedItem.itemprice
+          }];
+        }
+
+        // Process each batch separately
+        for (const batch of batchDetails) {
+          // Check if this specific batch already exists
+          const batchCheckFilter = {
+            where: {
+              and: [
+                { itemCode: trimmedItemCode },
+                { siteCode: userDetails.siteCode },
+                { uom: d.itemUom },
+                { batchNo: batch.batchNo },
+              ],
+            },
+          };
+
+          try {
+            const existingBatchCheck = await apiService.get(
+              `ItemBatches?filter=${encodeURIComponent(
+                JSON.stringify(batchCheckFilter)
+              )}`
+            );
+
+            const batchExists = existingBatchCheck && existingBatchCheck.length > 0;
+
+            if (batchExists) {
+              // For existing batches, use updateqty
+              const batchUpdate = {
+                itemcode: trimmedItemCode,
+                sitecode: userDetails.siteCode,
+                uom: d.itemUom,
+                qty: Number(batch.quantity),
+                batchcost: 0,
+                batchno: batch.batchNo,
+                ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                  expDate: batch.expDate || calculateDefaultExpiryDate(),
+                }),
+              };
+
+              await apiService
+                .post("ItemBatches/updateqty", batchUpdate)
+                .catch(async (err) => {
+                  console.error(`Error updating batch ${batch.batchNo}:`, err);
+                });
+            } else {
+              // For new batches, create a new batch record
+              const batchUpdate = {
+                itemCode: trimmedItemCode,
+                siteCode: userDetails.siteCode,
+                uom: d.itemUom,
+                qty: Number(batch.quantity),
+                batchCost: Number(batch.batchCost),
+                batchNo: batch.batchNo,
+                ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
+                  expDate: batch.expDate || calculateDefaultExpiryDate(),
+                }),
+              };
+
+              await apiService
+                .post(`ItemBatches`, batchUpdate)
+                .catch(async (err) => {
+                  console.error(`Error creating batch ${batch.batchNo}:`, err);
+                });
+            }
+          } catch (err) {
+            console.error(`Error processing batch ${batch.batchNo}:`, err);
+          }
+        }
+      } else {
+        // Without batch functionality, don't include batch-related fields
+        const batchUpdate = {
+          itemcode: trimmedItemCode,
+          sitecode: userDetails.siteCode,
+          uom: d.itemUom,
+          qty: Number(d.trnQty),
+          batchcost: 0,
+        };
+
+        await apiService
+          .post("ItemBatches/updateqty", batchUpdate)
+          .catch(async (err) => {
+            console.error(`Error updating item without batch:`, err);
+          });
+      }
+    }
   };
 
   // Helper function to create Stktrnbatches records
@@ -1685,13 +1910,10 @@ function AddGrn({ docData }) {
 
         let batchDetails = [];
 
-        // Get batch details based on transfer type
-        if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
-          // Specific batch transfer
+        // Get batch details based on item structure
+        if (processedItem?.batchDetails?.individualBatches?.length > 0) {
+          // Multiple batches (GRN with multiple batches)
           batchDetails = processedItem.batchDetails.individualBatches;
-        } else if (processedItem?.transferType === "fifo" && processedItem?.fifoBatches?.length > 0) {
-          // FIFO transfer
-          batchDetails = processedItem.fifoBatches;
         } else if (processedItem?.docBatchNo) {
           // Single batch (GRN specific)
           batchDetails = [{
@@ -1705,7 +1927,7 @@ function AddGrn({ docData }) {
         // Create Stktrnbatches records for each batch
         for (const batch of batchDetails) {
           const stktrnbatchesPayload = {
-            batchNo: batch.batchNo || "", // Empty string for "No Batch"
+            batchNo: batch.batchNo || "No Batch", // Use "No Batch" string for Stktrnbatches API
             stkTrnId: stktrnRecord.id,
             batchQty: batch.quantity // Positive for GRN (receiving stock)
           };
@@ -1758,8 +1980,13 @@ function AddGrn({ docData }) {
       itemUom: item.docUom,
       movType: "GRN",
       // Only set itemBatch if batch functionality is enabled
+      // Store comma-separated batch numbers if multiple batches, otherwise single batch
       itemBatch:
-        getConfigValue('BATCH_NO') === "Yes" ? item?.docBatchNo : null,
+        getConfigValue('BATCH_NO') === "Yes" ? 
+          (item?.batchDetails?.individualBatches?.length > 0 ?
+            item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',') :
+            item?.docBatchNo || null
+          ) : null,
       itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
@@ -2452,13 +2679,28 @@ function AddGrn({ docData }) {
         let batchId;
         console.log(details, "details");
 
-        const stktrns = details.map((item) =>
+        // Group cart items by itemcode+uom to combine multiple batches
+        const groupedDetails = groupCartItemsByItem(details);
+        console.log("Grouped details:", groupedDetails);
+
+        // Create STKTRN records - one per unique item (not per batch)
+        // Batch details are tracked in Stktrnbatches table
+        const stktrns = groupedDetails.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
         console.log(stktrns, "stktrns");
 
         // 6) Loop through each line to fetch ItemOnQties and update trnBal* fields in Details
-        const itemRequests = stktrns.map((d) => {
+        // Group by itemcode+uom to fetch balance only once per unique item
+        const uniqueItems = new Map();
+        stktrns.forEach((d) => {
+          const key = `${d.itemcode}-${d.itemUom}`;
+          if (!uniqueItems.has(key)) {
+            uniqueItems.set(key, d);
+          }
+        });
+
+        const itemRequests = Array.from(uniqueItems.values()).map((d) => {
           const filter = {
             where: {
               and: [
@@ -2480,7 +2722,11 @@ function AddGrn({ docData }) {
 
         const results = await Promise.all(itemRequests);
 
+        // Build a map of current balances by itemcode+uom
+        const balanceMap = new Map();
         for (const { resp, d, error } of results) {
+          const key = `${d.itemcode}-${d.itemUom}`;
+          
           if (error) {
             const errorLog = {
               trnDocNo: docNo,
@@ -2490,19 +2736,17 @@ function AddGrn({ docData }) {
               createdDate: new Date().toISOString().split("T")[0],
             };
             // await apiService.post("Inventorylogs", errorLog);
+            balanceMap.set(key, { qty: 0, cost: 0 });
             continue;
           }
 
           if (resp.length) {
             const on = resp[0];
-            d.trnBalqty = (
-              Number(d.trnBalqty || 0) + Number(on.trnBalqty || 0)
-            ).toString();
-            d.trnBalcst = (
-              Number(d.trnBalcst || 0) + Number(on.trnBalcst || 0)
-            ).toString();
-            // d.itemBatchCost = (on.batchCost || 0).toString();
-            d.itemBatchCost = (d.itemBatchCost || 0).toString();
+            balanceMap.set(key, {
+              qty: Number(on.trnBalqty || 0),
+              cost: Number(on.trnBalcst || 0),
+              batchCost: Number(on.batchCost || 0)
+            });
           } else {
             const errorLog = {
               trnDocNo: docNo,
@@ -2512,7 +2756,22 @@ function AddGrn({ docData }) {
               createdDate: new Date().toISOString().split("T")[0],
             };
             // await apiService.post("Inventorylogs", errorLog);
+            balanceMap.set(key, { qty: 0, cost: 0 });
           }
+        }
+
+        // Update each STKTRN record with running balance
+        // Simple calculation: current balance + transaction quantity
+        for (let i = 0; i < stktrns.length; i++) {
+          const d = stktrns[i];
+          const key = `${d.itemcode}-${d.itemUom}`;
+          const balance = balanceMap.get(key) || { qty: 0, cost: 0, batchCost: 0 };
+          
+          d.trnBalqty = (Number(d.trnQty) + Number(balance.qty)).toString();
+          d.trnBalcst = (Number(d.trnAmt) + Number(balance.cost)).toString();
+          d.itemBatchCost = (d.itemBatchCost || balance.batchCost || 0).toString();
+          
+          console.log(`✅ Balance calculated for ${d.itemcode}: Qty ${d.trnQty} + Current ${balance.qty} = Running Balance: ${d.trnBalqty}`);
         }
         // 7) Check existing stktrns
         const chkFilter = {
@@ -2541,7 +2800,8 @@ function AddGrn({ docData }) {
           }
 
           // Create Stktrnbatches records for each batch (AFTER Stktrns are posted)
-          await createStktrnbatchesRecords(stktrns, details, "grn");
+          // Pass grouped details - createStktrnbatchesRecords handles batch extraction
+          await createStktrnbatchesRecords(stktrns, groupedDetails, "grn");
 
           // 9) Per-item log and (optional) BatchSNO GET
           for (const d of stktrns) {
@@ -2562,312 +2822,8 @@ function AddGrn({ docData }) {
             // await apiService.post("Inventorylogs", insertLog);
           }
 
-          // 10) Update ItemBatches quantity
-          for (const d of stktrns) {
-            // const batchUpdate = {
-            //   itemcode: d.itemcode, // Add 0000 suffix for inventory
-            //   sitecode: userDetails.siteCode,
-            //   uom: d.itemUom,
-            //   qty: Number(d.trnQty),
-            //   batchcost: Number(d.trnCost),
-            //   batchNo:d.itemBatch
-            // };
-
-            if (getConfigValue('BATCH_SNO') === "Yes") {
-              const params = new URLSearchParams({
-                docNo: d.trnDocno,
-                itemCode: d.itemcode,
-                uom: d.itemUom,
-                itemsiteCode: d.storeNo,
-                Qty: d.trnQty,
-                ExpDate: d?.docExpdate ? d?.docExpdate : null,
-                // batchNo:d.itemBatch,
-                // batchSNo: d.itemBatch,
-                // itemsiteCode: userDetails.siteCode,
-                batchCost: Number(d.itemBatchCost),
-
-                // Make sure it's in correct format (e.g., "yyyy-MM-dd")
-              });
-
-              const payload = {
-                itemCode: d.itemcode?.replace(/0000$/, ""), // Remove 0000 suffix if present
-                siteCode: d.storeNo,
-                batchSNo: d.itemBatch, // or d.batchSNo if that's the correct field
-                DocNo: d.trnDocno,
-                DocOutNo: "", // Set this if you have an outbound doc number, else leave as empty string
-                uom: d.itemUom,
-                availability: true, // or set based on your logic
-                expDate: d.docExpdate
-                  ? new Date(d.docExpdate).toISOString()
-                  : null,
-                batchCost: Number(d.trnCost) || 0,
-              };
-
-              try {
-                await apiService1.get(
-                  `api/postItemBatchSno?${params.toString()}`
-                );
-                // await apiService.post(`ItemBatchSnos`, payload);
-              } catch (err) {
-                const errorLog = {
-                  trnDocNo: d.trnDocno,
-                  itemCode: d.itemcode,
-                  loginUser: userDetails.username,
-                  siteCode: userDetails.siteCode,
-                  logMsg: `api/postItemBatchSno error: ${err.message}`,
-                  createdDate: new Date().toISOString().split("T")[0],
-                };
-                // Optionally log the error
-                // await apiService.post("Inventorylogs", errorLog);
-              }
-            }
-
-            const trimmedItemCode = d.itemcode.replace(/0000$/, "");
-            let batchUpdate;
-
-            const batchFilter = {
-              itemCode: trimmedItemCode,
-              siteCode: userDetails.siteCode,
-              uom: d.itemUom,
-              batchNo: d.itemBatch,
-            };
-            // const fil={
-            //   where:
-            //   {
-            //     itemCode: trimmedItemCode,
-            //     siteCode: userDetails.siteCode,
-            //     uom: d.itemUom,
-            //     batchNo: d.itemBatch
-
-            //   }
-
-            // }
-
-            const fil = {
-              where: {
-                and: [
-                  { itemCode: trimmedItemCode },
-                  { siteCode: userDetails.siteCode },
-                  { uom: d.itemUom },
-                  { batchNo: d.itemBatch },
-                ],
-              },
-            };
-
-            if (getConfigValue('BATCH_NO') === "Yes" && d.itemBatch!==null) {
-              // Check if this is a save->post scenario (urlDocNo exists) or direct post
-              if (urlDocNo) {
-                // SAVE -> POST: useExistingBatch flag is lost, check database
-                const batchCheckFilter = {
-                  where: {
-                    and: [
-                      { itemCode: trimmedItemCode },
-                      { siteCode: userDetails.siteCode },
-                      { uom: d.itemUom },
-                      { batchNo: d.itemBatch },
-                    ],
-                  },
-                };
-
-                try {
-                  const existingBatchCheck = await apiService.get(
-                    `ItemBatches?filter=${encodeURIComponent(
-                      JSON.stringify(batchCheckFilter)
-                    )}`
-                  );
-
-                  const batchExists = existingBatchCheck && existingBatchCheck.length > 0;
-
-                  if (batchExists) {
-                    // For existing batches, use updateqty
-                    batchUpdate = {
-                      itemcode: trimmedItemCode,
-                      sitecode: userDetails.siteCode,
-                      uom: d.itemUom,
-                      qty: Number(d.trnQty),
-                      batchcost: 0,
-                      // Only include batch number if batch functionality is enabled
-                      ...(getConfigValue('BATCH_NO') === "Yes" && {
-                        batchno: d.itemBatch,
-                      }),
-                      // Only include expiry date if expiry date functionality is enabled
-                      ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                        expDate: d.docExpdate || calculateDefaultExpiryDate(),
-                      }),
-                    };
-
-                    await apiService
-                      .post("ItemBatches/updateqty", batchUpdate)
-                      .catch(async (err) => {
-                        // Log qty update error
-                        const errorLog = {
-                          trnDocNo: docNo,
-                          itemCode: d.itemcode,
-                          loginUser: userDetails.username,
-                          siteCode: userDetails.siteCode,
-                          logMsg: `ItemBatches/updateqty ${err.message}`,
-                          createdDate: new Date().toISOString().split("T")[0],
-                        };
-                        // await apiService.post("Inventorylogs", errorLog);
-                      });
-                  } else {
-                    // For new batches, create a new batch record
-                    batchUpdate = {
-                      itemCode: trimmedItemCode,
-                      siteCode: userDetails.siteCode,
-                      uom: d.itemUom,
-                      qty: Number(d.trnQty),
-                      batchCost: Number(d.itemBatchCost),
-                      // Only include batch number if batch functionality is enabled
-                      ...(getConfigValue('BATCH_NO') === "Yes" && {
-                        batchNo: d.itemBatch,
-                      }),
-                      // Only include expiry date if expiry date functionality is enabled
-                      ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                        expDate: d.docExpdate || calculateDefaultExpiryDate(),
-                      }),
-                    };
-
-                    await apiService
-                      .post(`ItemBatches`, batchUpdate)
-                      .catch(async (err) => {
-                        const errorLog = {
-                          trnDocNo: docNo,
-                          itemCode: d.itemcode,
-                          loginUser: userDetails.username,
-                          siteCode: userDetails.siteCode,
-                          logMsg: `ItemBatches/create error: ${err.message}`,
-                          createdDate: new Date().toISOString().split("T")[0],
-                        };
-                      });
-                  }
-                } catch (error) {
-                  console.error(
-                    `Error checking existing batch for item ${d.itemcode}:`,
-                    error
-                  );
-                  // Fallback to creating new batch if check fails
-                  batchUpdate = {
-                    itemCode: trimmedItemCode,
-                    siteCode: userDetails.siteCode,
-                    uom: d.itemUom,
-                    qty: Number(d.trnQty),
-                    batchCost: Number(d.itemBatchCost),
-                    ...(getConfigValue('BATCH_NO') === "Yes" && {
-                      batchNo: d.itemBatch,
-                    }),
-                    ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                      expDate: d.docExpdate || calculateDefaultExpiryDate(),
-                    }),
-                  };
-
-                  await apiService
-                    .post(`ItemBatches`, batchUpdate)
-                    .catch(async (err) => {
-                      const errorLog = {
-                        trnDocNo: docNo,
-                        itemCode: d.itemcode,
-                        loginUser: userDetails.username,
-                        siteCode: userDetails.siteCode,
-                        logMsg: `ItemBatches/create error (fallback): ${err.message}`,
-                        createdDate: new Date().toISOString().split("T")[0],
-                      };
-                    });
-                }
-              } else {
-                // DIRECT POST: useExistingBatch flag is available, use it
-                if (d.useExistingBatch) {
-                  // For existing batches, use updateqty
-                  batchUpdate = {
-                    itemcode: trimmedItemCode,
-                    sitecode: userDetails.siteCode,
-                    uom: d.itemUom,
-                    qty: Number(d.trnQty),
-                    batchcost: 0,
-                    // Only include batch number if batch functionality is enabled
-                    ...(getConfigValue('BATCH_NO') === "Yes" && {
-                      batchno: d.itemBatch,
-                    }),
-                    // Only include expiry date if expiry date functionality is enabled
-                    ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                      expDate: d.docExpdate || calculateDefaultExpiryDate(),
-                    }),
-                  };
-
-                  await apiService
-                    .post("ItemBatches/updateqty", batchUpdate)
-                    .catch(async (err) => {
-                      // Log qty update error
-                      const errorLog = {
-                        trnDocNo: docNo,
-                        itemCode: d.itemcode,
-                        loginUser: userDetails.username,
-                        siteCode: userDetails.siteCode,
-                        logMsg: `ItemBatches/updateqty ${err.message}`,
-                        createdDate: new Date().toISOString().split("T")[0],
-                      };
-                      // await apiService.post("Inventorylogs", errorLog);
-                    });
-                } else {
-                  // For new batches, create a new batch record
-                  batchUpdate = {
-                    itemCode: trimmedItemCode,
-                    siteCode: userDetails.siteCode,
-                    uom: d.itemUom,
-                    qty: Number(d.trnQty),
-                    batchCost: Number(d.itemBatchCost),
-                    // Only include batch number if batch functionality is enabled
-                    ...(getConfigValue('BATCH_NO') === "Yes" && {
-                      batchNo: d.itemBatch,
-                    }),
-                    // Only include expiry date if expiry date functionality is enabled
-                    ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                      expDate: d.docExpdate || calculateDefaultExpiryDate(),
-                    }),
-                  };
-
-                  await apiService
-                    .post(`ItemBatches`, batchUpdate)
-                    .catch(async (err) => {
-                      const errorLog = {
-                        trnDocNo: docNo,
-                        itemCode: d.itemcode,
-                        loginUser: userDetails.username,
-                        siteCode: userDetails.siteCode,
-                        logMsg: `ItemBatches/create error: ${err.message}`,
-                        createdDate: new Date().toISOString().split("T")[0],
-                      };
-                    });
-                }
-              }
-            } else {
-              // Without batch functionality, don't include batch-related fields
-              batchUpdate = {
-                itemcode: trimmedItemCode,
-                sitecode: userDetails.siteCode,
-                uom: d.itemUom,
-                qty: Number(d.trnQty),
-                batchcost: 0,
-                // No batch number or expiry date
-              };
-
-              await apiService
-                .post("ItemBatches/updateqty", batchUpdate)
-                // .post(`ItemBatches/update?where=${encodeURIComponent(JSON.stringify(batchFilter))}`, batchUpdate)
-                .catch(async (err) => {
-                  // Log qty update error
-                  const errorLog = {
-                    trnDocNo: docNo,
-                    itemCode: d.itemcode,
-                    loginUser: userDetails.username,
-                    siteCode: userDetails.siteCode,
-                    logMsg: `ItemBatches/updateqty ${err.message}`,
-                    createdDate: new Date().toISOString().split("T")[0],
-                  };
-                  // await apiService.post("Inventorylogs", errorLog);
-                });
-            }
-          }
+          // 10) Update ItemBatches quantity - Handle multiple batches separately
+          await updateItemBatchesForMultipleBatches(stktrns, groupedDetails, docNo);
         } else {
           // Existing stktrns → log
           const existsLog = {
@@ -2943,9 +2899,31 @@ function AddGrn({ docData }) {
   // Place this in the main AddGrn component, after other handler functions and before return
   const handleBatchEditSubmit = (fields) => {
     setCartData((prev) =>
-      prev.map((item, idx) =>
-        selectedRows.includes(idx) ? { ...item, ...fields } : item
-      )
+      prev.map((item, idx) => {
+        if (!selectedRows.includes(idx)) return item;
+
+        // Prepare ordMemo fields for batch persistence
+        let ordMemoFields = {
+          ordMemo1: "",
+          ordMemo2: "",
+          ordMemo3: "0",
+          ordMemo4: "",
+        };
+
+        if (getConfigValue('BATCH_NO') === "Yes" && fields.docBatchNo) {
+          ordMemoFields.ordMemo1 = "specific";
+          ordMemoFields.ordMemo2 = `${fields.docBatchNo}:${item.docQty}`;
+          ordMemoFields.ordMemo3 = "0";
+          ordMemoFields.ordMemo4 = fields.docExpdate ? 
+            `${fields.docExpdate}:${item.docQty}` : "";
+        }
+
+        return { 
+          ...item, 
+          ...fields,
+          ...ordMemoFields 
+        };
+      })
     );
     setShowEditDialog(false);
     setIsBatchEdit(false);
