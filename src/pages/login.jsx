@@ -18,6 +18,7 @@ import bslogo from "@/assets/companylogo.png";
 
 import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
+import { getConfigValue } from "@/utils/utils";
 import apiService1 from "@/services/apiService1";
 import axios from "axios";
 import VersionStamp from "@/components/VersionStamp";

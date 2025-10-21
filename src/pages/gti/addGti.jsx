@@ -2727,7 +2727,7 @@ function AddGti({ docData }) {
 
 
   const handleRowBatchSelection = async (item, index) => {
-    if (window?.APP_CONFIG?.BATCH_NO !== "Yes") {
+    if (getConfigValue("BATCH_NO") !== "Yes") {
       toast.error("Batch functionality is not enabled");
       return;
     }

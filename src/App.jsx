@@ -30,6 +30,10 @@ import UserAuthorization from "./pages/userAuthorization";
 import StockBalanceReport from "./pages/reports/stockBalanceReports";
 import StockBalance from "./pages/stockBalance";
 import StockMovementReport from "./pages/reports/stockMovementReports";
+import PurchaseOrder from "./pages/po/purchaseOrder";
+import AddPO from "./pages/po/addPo";
+import PurchaseRequisition from "./pages/pr/purchaseRequisition";
+import AddPR from "./pages/pr/addPr";
 
 function App() {
   return (
@@ -118,8 +122,19 @@ function App() {
                   <Route path="stock-balance" element={<StockBalanceReport />} />
                   <Route path="stock-movement" element={<StockMovementReport />} />
                   
+                  {/* Purchase Order Routes */}
+                  <Route path="purchase-order" element={<PurchaseOrder />} />
+                  <Route path="purchase-order/add" element={<AddPO />} />
+                  <Route path="purchase-order/details/:id" element={<AddPO />} />
+                  <Route path="purchase-order/edit/:id" element={<AddPO />} />
+                  
+                  {/* Purchase Requisition Routes */}
+                  <Route path="purchase-requisition" element={<PurchaseRequisition />} />
+                  <Route path="purchase-requisition/add" element={<AddPR />} />
+                  <Route path="purchase-requisition/details/:id" element={<AddPR />} />
+                  <Route path="purchase-requisition/edit/:id" element={<AddPR />} />
+                  
                   {/* Other Routes */}
-                  <Route path="purchase-order" element={<h1>Purchase Order</h1>} />
                   <Route path="sales-order" element={<h1>Sales Order</h1>} />
                   <Route path="stock-transfer" element={<h1>Stock Transfer</h1>} />
                   <Route path="settings" element={<UserAuthorization />} />

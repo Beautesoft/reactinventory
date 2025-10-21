@@ -41,6 +41,8 @@ import {
   FiBarChart2,
   FiTrendingUp,
   FiLayers,
+  FiShoppingCart,
+  FiShoppingBag,
 } from "react-icons/fi";
 
 import { NavMain } from "./nav-main";
@@ -193,6 +195,20 @@ export function AppSidebar() {
       },
     ].filter(item => hasAuthorization(item.title));
 
+    // Purchase Management items
+    const purchaseItems = [
+      {
+        title: "Purchase Order",
+        url: "/purchase-order",
+        icon: FiShoppingCart,
+      },
+      {
+        title: "Purchase Requisition",
+        url: "/purchase-requisition",
+        icon: FiShoppingBag,
+      },
+    ].filter(item => hasAuthorization(item.title));
+
     // Stock Take is always available for all users
     const alwaysAvailableItems = [
       // { title: "Stock Take", 
@@ -214,6 +230,13 @@ export function AppSidebar() {
         icon: Bot,
         items: [...stockControlItems, ...alwaysAvailableItems],
       }] : []),
+      // Show Purchase Management if user has at least one authorization
+      // ...(purchaseItems.length > 0 ? [{
+      //   title: "Purchase Management",
+      //   url: "#",
+      //   icon: FiShoppingCart,
+      //   items: purchaseItems,
+      // }] : []),
       // Only show Settings if user has isSettingEnabled = "Y"
       ...(userDetails?.isSettingEnabled === "Y" ? [{
         title: "Settings",

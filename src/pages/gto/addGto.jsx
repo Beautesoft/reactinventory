@@ -2396,7 +2396,7 @@ function AddGto({ docData }) {
                   );
                 } else {
                   // Regular FEFO batch transfer - handle source store (stktrns loop)
-                  await handleSourceFifoTransfer(
+                  await handleSourceFefoTransfer(
                     d,
                     trimmedItemCode,
                     cartItem?.docQty || d.trnQty
@@ -2439,15 +2439,15 @@ function AddGto({ docData }) {
           }
 
           // 3. Email Notification
-          if (window.APP_CONFIG.NOTIFICATION_MAIL_SEND === "Yes") {
+          if (getConfigValue("NOTIFICATION_MAIL_SEND") === "Yes") {
             const printList = await apiService.get(
               `Stkprintlists?filter={"where":{"docNo":"${docNo}"}}`
             );
 
             if (printList && printList.length > 0) {
               const emailData = {
-                to: window.APP_CONFIG.NOTIFICATION_MAIL1,
-                cc: window.APP_CONFIG.NOTIFICATION_MAIL2,
+                to: getConfigValue("NOTIFICATION_MAIL1"),
+                cc: getConfigValue("NOTIFICATION_MAIL2"),
                 subject: "NOTIFICATION FOR STOCK TRANSFER",
                 body: generateEmailBody(printList[0], details),
               };
@@ -3349,7 +3349,7 @@ function AddGto({ docData }) {
 
   // NEW: Batch management functions for GTO
   const handleRowBatchSelection = async (item, index) => {
-    if (window?.APP_CONFIG?.BATCH_NO !== "Yes") {
+    if (getConfigValue("BATCH_NO") !== "Yes") {
       toast.error("Batch functionality is not enabled");
       return;
     }
