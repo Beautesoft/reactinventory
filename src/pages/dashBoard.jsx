@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import { toast } from "sonner";
-import { format_Date } from "@/utils/utils";
+import { format_Date, getActiveCurrency, formatCurrency } from "@/utils/utils";
 
 function DashBoard() {
   const [loading, setLoading] = useState(true);
@@ -313,7 +313,7 @@ function DashBoard() {
                   <div>
                     <p className="font-medium text-sm">{transaction.trnDocno}</p>
                     <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {format_Date(transaction.trnDate)}</p>
-                    <p className="text-xs text-gray-400">Amount: ${transaction.trnAmt || 0}</p>
+                    <p className="text-xs text-gray-400">Amount: {getActiveCurrency()} {transaction.trnAmt || 0}</p>
                   </div>
                   <div className="text-right">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTrnTypeColor(transaction.trnType)}`}>
@@ -388,7 +388,7 @@ function DashBoard() {
                               {Number(item.quantity || 0).toLocaleString()} {item.uomDescription}
                             </td>
                             <td className="p-2 text-right text-xs font-medium text-green-600">
-                              ${((Number(item.quantity || 0) * (Number(item?.item_Price) || Number(item?.Price) || Number(item?.Cost) || 0))).toLocaleString()}
+                              {getActiveCurrency()} {((Number(item.quantity || 0) * (Number(item?.item_Price) || Number(item?.Price) || Number(item?.Cost) || 0))).toLocaleString()}
                             </td>
                             <td className="p-2 text-center">
                               <Button
@@ -450,7 +450,7 @@ function DashBoard() {
                       {item.quantity} {item.uomDescription}
                     </p>
                     <p className="text-xs text-gray-500">
-                      Value: ${item.value.toLocaleString()}
+                      Value: {getActiveCurrency()} {item.value.toLocaleString()}
                     </p>
                   </div>
                 </div>

@@ -573,6 +573,17 @@ function AddPO() {
     poDstate: "",
     poDcity: "",
     poDcountry: "",
+    // Additional fields from .NET backend
+    poCancelqty: 0,
+    poRecstatus: "",
+    poRecexpect: "",
+    poRecttl: 0,
+    syncGuid: "D6358EAD-46E0-406A-8118-7F2DE6C6A4B2",
+    syncClientindex: "",
+    syncLstupd: "",
+    syncClientindexstring: "",
+    poTime: moment().format("HH:mm:ss"),
+    reqNo: ""
   });
 
   const [cartData, setCartData] = useState([]);
@@ -722,6 +733,17 @@ function AddPO() {
           poDstate: po.poDstate,
           poDcity: po.poDcity,
           poDcountry: po.poDcountry,
+          // Additional fields from .NET backend
+          poCancelqty: po.poCancelqty || 0,
+          poRecstatus: po.poRecstatus || "",
+          poRecexpect: po.poRecexpect || "",
+          poRecttl: po.poRecttl || 0,
+          syncGuid: po.syncGuid || "",
+          syncClientindex: po.syncClientindex || "",
+          syncLstupd: po.syncLstupd || "",
+          syncClientindexstring: po.syncClientindexstring || "",
+          poTime: po.poTime || moment().format("HH:mm:ss"),
+          reqNo: po.reqNo || ""
         });
       }
 
@@ -1014,10 +1036,18 @@ function AddPO() {
       podRecqty: 0,
       podCancelqty: 0,
       podOutqty: qty,
+      podDate: moment().format("YYYY-MM-DD"),
+      podTime: moment().format("HH:mm:ss"),
+      syncGuid: "",
+      syncClientindex: "",
+      syncLstupd: "",
+      syncClientindexstring: "",
       brandcode: item.BrandCode,
       brandname: item.Brand,
       linenumber: cartData.length + 1,
       poststatus: "0",
+      poId: "", // Will be set when saving
+      RunningNo: "", // Will be set when saving
       docUom: item.docUom,
       docBatchNo: "",
       docExpdate: "",
@@ -1105,10 +1135,10 @@ function AddPO() {
 
   // Save PO
   const handleSave = async () => {
-      if (cartData.length === 0) {
-        toast.error("Please add at least one item");
-        return;
-      }
+    if (cartData.length === 0) {
+      toast.error("Please add at least one item");
+      return;
+    }
 
     setSaveLoading(true);
     try {
@@ -1116,18 +1146,17 @@ function AddPO() {
         // Update existing PO
         await poApi.updatePO(id, formData);
         
-        // Update line items
-        for (const item of cartData) {
-          if (item.poId) {
-            await poApi.updatePOLineItem(item.poId, item);
-          } else {
-            await poApi.createPO(formData, [item]);
-          }
-        }
+        // Update line items using the new method
+        await poApi.updatePOLineItems(cartData);
         toast.success("Purchase Order updated successfully");
       } else {
-        // Create new PO
+        // Create new PO (this will handle control number generation internally)
         await poApi.createPO(formData, cartData);
+        
+        // Get the generated PO number for display
+        const poNo = await poApi.getNextPONumber(userDetails?.siteCode);
+        setFormData(prev => ({ ...prev, poNo }));
+        
         toast.success("Purchase Order created successfully");
       }
 

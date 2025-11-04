@@ -27,23 +27,103 @@ export const poApi = {
     }
   },
 
-  // Create PO
-  async createPO(header, items) {
+  // Create PO header
+  async createPOHeader(header) {
     try {
+      // Get control number first
+      const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+      const siteCode = userDetails?.siteCode;
+      const filter = {
+        where: {
+          and: [
+            { controlDescription: "PO" },
+            { siteCode: siteCode }
+          ]
+        }
+      };
+      const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+      const controlResponse = await apiService.get(`ControlNos${query}`);
+      
+      if (controlResponse && controlResponse.length > 0) {
+        const control = controlResponse[0];
+        header.poNo = `${control.controlPrefix}${control.siteCode}${control.controlNo}`;
+      }
+      
       // Save header
-      await apiService.post("pos", [header]);
+      const response = await apiService.post("pos", [header]);
+      return response;
+    } catch (error) {
+      console.error("Error creating PO header:", error);
+      throw error;
+    }
+  },
+
+  // Create PO line items
+  async createPOLineItems(items) {
+    try {
+      if (items.length === 0) return;
+      
+      // Get control number for line items
+      const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+      const siteCode = userDetails?.siteCode;
+      const filter = {
+        where: {
+          and: [
+            { controlDescription: "PO" },
+            { siteCode: siteCode }
+          ]
+        }
+      };
+      const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+      const controlResponse = await apiService.get(`ControlNos${query}`);
+      
+      if (controlResponse && controlResponse.length > 0) {
+        const control = controlResponse[0];
+        const poNo = `${control.controlPrefix}${control.siteCode}${control.controlNo}`;
+        const runningNo = control.controlNo;
+        
+        // Update all items with the same poNo
+        items.forEach(item => {
+          item.poNo = poNo;
+          item.RunningNo = runningNo;
+        });
+      }
       
       // Save line items
-      await apiService.post("podetails", items);
+      const response = await apiService.post("podetails", items);
       
       // Update control number
-      const controlNo = header.poNo.slice(-6);
-      const newControlNo = (parseInt(controlNo) + 1).toString().padStart(6, '0');
-      await apiService.post("ControlNos/updatecontrol", {
-        controldescription: "PO",
-        sitecode: header.itemsiteCode,
-        controlnumber: newControlNo
-      });
+      if (controlResponse && controlResponse.length > 0) {
+        const control = controlResponse[0];
+        const controlNo = control.controlNo;
+        const newControlNo = (parseInt(controlNo) + 1).toString().padStart(6, '0');
+        
+        await apiService.post("ControlNos/updatecontrol", {
+          controldescription: "PO",
+          sitecode: siteCode,
+          controlnumber: newControlNo
+        });
+      }
+      
+      return response;
+    } catch (error) {
+      console.error("Error creating PO line items:", error);
+      throw error;
+    }
+  },
+
+  // Create complete PO (header + line items)
+  async createPO(header, items) {
+    try {
+      // Create header first
+      const headerResponse = await this.createPOHeader(header);
+      
+      // Create line items
+      if (items && items.length > 0) {
+        await this.createPOLineItems(items);
+      }
+      
+      return headerResponse;
     } catch (error) {
       console.error("Error creating PO:", error);
       throw error;
@@ -66,6 +146,24 @@ export const poApi = {
       await apiService.post(`podetails/update?[where][poId]=${poId}`, item);
     } catch (error) {
       console.error("Error updating PO line item:", error);
+      throw error;
+    }
+  },
+
+  // Update multiple line items (for editing existing PO)
+  async updatePOLineItems(items) {
+    try {
+      for (const item of items) {
+        if (item.poId && item.poId !== "") {
+          // Update existing item
+          await apiService.post(`podetails/update?[where][poId]=${item.poId}`, item);
+        } else {
+          // Create new item
+          await apiService.post("podetails", item);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating PO line items:", error);
       throw error;
     }
   },

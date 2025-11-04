@@ -1408,15 +1408,48 @@ function AddAdj({ docData }) {
     if (cartItem.ordMemo1 === "specific" && cartItem.ordMemo2) {
       try {
         // Parse batch breakdown from ordMemo2
-        const batchBreakdown = cartItem.ordMemo2.split(',').map(batch => {
+        const batchParts = cartItem.ordMemo2.split(',');
+        const expDateParts = cartItem.ordMemo4 ? cartItem.ordMemo4.split(',') : [];
+        
+        const batchBreakdown = batchParts.map((batch, index) => {
           const [batchNo, quantity] = batch.split(':');
-          return { batchNo, quantity: Number(quantity) };
+          
+          // Try to get expiry date from ordMemo4 if available
+          let expDate = null;
+          if (expDateParts[index]) {
+            // Split by ':' and take everything except the last part as date (handles ISO dates with colons)
+            const parts = expDateParts[index].split(':');
+            if (parts.length > 1) {
+              // Last part is quantity, everything before is the date
+              const expDateStr = parts.slice(0, -1).join(':');
+              // Handle null, empty string, or invalid dates
+              if (expDateStr && expDateStr !== "null" && expDateStr !== "" && expDateStr !== "undefined") {
+                expDate = expDateStr;
+              }
+            }
+          }
+          
+          return { 
+            batchNo, 
+            quantity: Number(quantity),
+            expDate: expDate
+          };
         });
 
-        // Get expiry dates for each batch
+        // Get expiry dates for each batch (use ordMemo4 first, then API as fallback)
         const batchDetails = await Promise.all(
           batchBreakdown.map(async (batch) => {
             if (batch.batchNo) {
+              // If expDate already parsed from ordMemo4, use it directly (skip API call)
+              if (batch.expDate) {
+                return {
+                  batchNo: batch.batchNo,
+                  quantity: batch.quantity,
+                  expDate: batch.expDate
+                };
+              }
+              
+              // Otherwise, fetch from API as fallback
               try {
                 const batchFilter = {
                   where: {
@@ -2051,7 +2084,8 @@ function AddAdj({ docData }) {
       selectedBatches: item.selectedBatches,
       batchDetails: item.selectedBatches?.batchDetails,
       noBatchTransferQty: item.selectedBatches?.noBatchTransferQty,
-      transferType: item.transferType
+      transferType: item.transferType,
+      hasExpDate: item.selectedBatches?.batchDetails?.map(b => ({ batchNo: b.batchNo, expDate: b.expDate }))
     });
     setPreviewItem(item);
     setShowPreviewModal(true);
@@ -2122,21 +2156,25 @@ function AddAdj({ docData }) {
                         </thead>
                         <tbody>
                           {previewItem.selectedBatches.batchDetails?.map(
-                            (batch, index) => (
-                              <tr key={index} className="border-t">
-                                <td className="p-2 font-medium">
-                                  {batch.batchNo || "No Batch"}
-                                </td>
-                                <td className="p-2 text-right">
-                                  {batch.quantity}
-                                </td>
-                                <td className="p-2 text-xs">
-                                  {batch.expDate
-                                    ? format_Date(batch.expDate)
-                                    : "No Expiry"}
-                                </td>
-                              </tr>
-                            )
+                            (batch, index) => {
+                              // Try multiple sources for expiry date
+                              const expDate = batch.expDate || batch.expiryDate || null;
+                              return (
+                                <tr key={index} className="border-t">
+                                  <td className="p-2 font-medium">
+                                    {batch.batchNo || "No Batch"}
+                                  </td>
+                                  <td className="p-2 text-right">
+                                    {batch.quantity}
+                                  </td>
+                                  <td className="p-2 text-xs">
+                                    {expDate
+                                      ? format_Date(expDate)
+                                      : "No Expiry"}
+                                  </td>
+                                </tr>
+                              );
+                            }
                           )}
                           {(() => {
                             const noBatchQty = Number(previewItem.selectedBatches?.noBatchTransferQty || 0);
@@ -2550,10 +2588,10 @@ function AddAdj({ docData }) {
       trnDocno: docNo,
       trnType: "ADJ",
       // For adjustments: positive quantities go to trnDbQty, negative to trnCrQty
-      trnDbQty: isPositiveAdjustment ? Math.abs(Number(item.docQty)) : null,
-      trnCrQty: isNegativeAdjustment ? Math.abs(Number(item.docQty)) : null,
-      trnQty: item.docQty, // Keep original signed quantity for reference
-      trnBalqty: item.docQty, // This will be calculated based on current stock
+      trnDbQty: isPositiveAdjustment ? Math.abs(Number(item.docTtlqty || item.docQty)) : null,
+      trnCrQty: isNegativeAdjustment ? Math.abs(Number(item.docTtlqty || item.docQty)) : null,
+      trnQty: item.docTtlqty || item.docQty, // Keep original signed quantity for reference
+      trnBalqty: item.docTtlqty || item.docQty, // This will be calculated based on current stock
       trnBalcst: item.docAmt, // This will be calculated based on current stock
       trnAmt: item.docAmt,
       trnCost: item.docAmt,
@@ -2803,7 +2841,7 @@ function AddAdj({ docData }) {
           .map((b) => `${b.batchNo}:${b.quantity}`)
           .join(","),
         ordMemo3: item.selectedBatches.noBatchTransferQty.toString(),
-        ordMemo4: "",
+        ordMemo4: item.selectedBatches.batchDetails.map(b => `${b.expDate}:${b.quantity}`).join(','),
       };
     }
 
@@ -2813,7 +2851,9 @@ function AddAdj({ docData }) {
       docNo: stockHdrs.docNo || "",
       movCode: "ADJ",
       movType: "ADJ",
-      docLineno: null,
+      docLineno: cartData.length + 1,
+      docDate: stockHdrs.docDate,
+      createDate: stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
       docQty: Number(item.Qty),

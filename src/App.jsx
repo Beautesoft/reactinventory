@@ -132,6 +132,7 @@ function App() {
                   <Route path="purchase-requisition" element={<PurchaseRequisition />} />
                   <Route path="purchase-requisition/add" element={<AddPR />} />
                   <Route path="purchase-requisition/details/:id" element={<AddPR />} />
+                  <Route path="purchase-requisition/print/:docNo" element={<PrintPreview documentType="pr" />} />
                   <Route path="purchase-requisition/edit/:id" element={<AddPR />} />
                   
                   {/* Other Routes */}

@@ -52,6 +52,31 @@ const Login = () => {
     }
   };
 
+  // Function to fetch active currency
+  const fetchActiveCurrency = async () => {
+    try {
+      const filter = {
+        where: {
+          currencyIsActive: true
+        }
+      };
+      const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+      const response = await apiService.get(`CurrencyTables${query}`);
+      
+      if (response && response.length > 0) {
+        return {
+          currencyCode: response[0].currencyCode,
+          currencyName: response[0].currencyName,
+          currencyRate: response[0].currencyRate
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error("Error fetching active currency:", error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     console.log("salon", salon);
     // if (salon !== null) {
@@ -112,8 +137,11 @@ const Login = () => {
       console.log(selectedSalon, "sadet");
 
       if (response.success === "1") {
-        // Fetch user authorizations
-        const userAuthorizations = await fetchUserAuthorizations(username||response.userCode);
+        // Fetch user authorizations and active currency
+        const [userAuthorizations, currencyData] = await Promise.all([
+          fetchUserAuthorizations(username||response.userCode),
+          fetchActiveCurrency()
+        ]);
         
         const successData = {
           // emp_code: data.emp_code ?? "",
@@ -132,6 +160,7 @@ const Login = () => {
           autoPost: response.autoPost,
           // reportAuthInfo: response.reportAuthInfo,
           // token: data.token,
+          HQSiteCode: response.HQSiteCode,
           siteCode: selectedSalon.itemsiteCode,
           siteName: selectedSalon.itemsiteDesc,
           siteAddress: selectedSalon.itemsiteAddress,
@@ -140,6 +169,10 @@ const Login = () => {
           siteState: selectedSalon.itemsiteState,
           sitePostCode: selectedSalon.itemsitePostcode,
           sitePhone: selectedSalon.itemsitePhone1,
+          // Currency data
+          currencyCode: currencyData?.currencyCode || "$",
+          currencyName: currencyData?.currencyName || "USD",
+          currencyRate: currencyData?.currencyRate || 1,
           // role: data.role,
         };
 

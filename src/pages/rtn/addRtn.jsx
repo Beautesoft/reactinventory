@@ -1191,12 +1191,35 @@ function AddRtn({ docData }) {
     if (cartItem.ordMemo1 === "specific" && cartItem.ordMemo2) {
       try {
         // Parse batch breakdown from ordMemo2
-        const batchBreakdown = cartItem.ordMemo2.split(',').map(batch => {
+        const batchParts = cartItem.ordMemo2.split(',');
+        const expDateParts = cartItem.ordMemo4 ? cartItem.ordMemo4.split(',') : [];
+        
+        const batchBreakdown = batchParts.map((batch, index) => {
           const [batchNo, quantity] = batch.split(':');
-          return { batchNo, quantity: Number(quantity) };
+          
+          // Try to get expiry date from ordMemo4 if available
+          let expDate = null;
+          if (expDateParts[index]) {
+            // Split by ':' and take everything except the last part as date (handles ISO dates with colons)
+            const parts = expDateParts[index].split(':');
+            if (parts.length > 1) {
+              // Last part is quantity, everything before is the date
+              const expDateStr = parts.slice(0, -1).join(':');
+              // Handle null, empty string, or invalid dates
+              if (expDateStr && expDateStr !== "null" && expDateStr !== "" && expDateStr !== "undefined") {
+                expDate = expDateStr;
+              }
+            }
+          }
+          
+          return { 
+            batchNo, 
+            quantity: Number(quantity),
+            expDate: expDate
+          };
         });
         
-        // Fetch ItemBatches data to get fresh expiry dates
+        // Fetch ItemBatches data to get fresh expiry dates (as fallback if ordMemo4 not available)
         const itemBatchesFilter = {
           where: {
             and: [
@@ -1210,15 +1233,15 @@ function AddRtn({ docData }) {
         
         const itemBatchesResponse = await apiService.get(
           `ItemBatches?filter=${encodeURIComponent(JSON.stringify(itemBatchesFilter))}`
-        );
+        ).catch(() => []); // Return empty array on error
         
-        // Map batch data with fresh expiry dates from API
+        // Map batch data with expiry dates (prefer ordMemo4, fallback to API)
         const enrichedBatchDetails = batchBreakdown.map(batch => {
           const apiBatch = itemBatchesResponse.find(api => api.batchNo === batch.batchNo);
           return {
             batchNo: batch.batchNo,
             quantity: batch.quantity,
-            expDate: apiBatch?.expDate || null,
+            expDate: batch.expDate || apiBatch?.expDate || null, // Use ordMemo4 first, then API
             batchCost: apiBatch?.batchCost || 0
           };
         });
@@ -1668,7 +1691,7 @@ function AddRtn({ docData }) {
         ordMemo1: "specific",
         ordMemo2: item.selectedBatches.batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(','),
         ordMemo3: item.selectedBatches.noBatchTransferQty.toString(),
-        ordMemo4: ""
+        ordMemo4: item.selectedBatches.batchDetails.map(b => `${b.expDate}:${b.quantity}`).join(',')
       };
     }
 
@@ -1681,6 +1704,7 @@ function AddRtn({ docData }) {
       movType: "VGRN",
       docLineno: cartData.length + 1,
       docDate: stockHdrs.docDate,
+      createDate: stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
       docQty: Number(item.Qty),
@@ -1901,8 +1925,8 @@ function AddRtn({ docData }) {
       trnType: "VGRN",
       trnDbQty: null,
       trnCrQty: null,
-      trnQty: item.docQty * -1,
-      trnBalqty: item.docQty * -1,
+      trnQty: (item.docTtlqty || item.docQty) * -1,
+      trnBalqty: (item.docTtlqty || item.docQty) * -1,
       trnBalcst: item.docAmt * -1,
       trnAmt: item.docAmt * -1,
       trnCost: item.docAmt * -1,
@@ -3142,6 +3166,12 @@ function AddRtn({ docData }) {
   const [previewItem, setPreviewItem] = useState(null);
 
   const showTransferPreview = (item) => {
+    // Debug: Log batch details structure
+    console.log('🔍 Preview item batch details:', {
+      batchDetails: item.batchDetails,
+      individualBatches: item.batchDetails?.individualBatches,
+      hasExpDate: item.batchDetails?.individualBatches?.map(b => ({ batchNo: b.batchNo, expDate: b.expDate }))
+    });
     setPreviewItem(item);
     setShowPreviewModal(true);
   };
@@ -3191,15 +3221,19 @@ function AddRtn({ docData }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {previewItem.batchDetails.individualBatches?.map((batch, index) => (
-                        <tr key={index} className="border-t">
-                          <td className="p-2 font-medium">{batch.batchNo}</td>
-                          <td className="p-2 text-right">{batch.quantity}</td>
-                          <td className="p-2 text-xs">
-                            {batch.expDate ? format_Date(batch.expDate) : "No Expiry"}
-                          </td>
-                        </tr>
-                      ))}
+                      {previewItem.batchDetails.individualBatches?.map((batch, index) => {
+                        // Try multiple sources for expiry date
+                        const expDate = batch.expDate || batch.expiryDate || null;
+                        return (
+                          <tr key={index} className="border-t">
+                            <td className="p-2 font-medium">{batch.batchNo}</td>
+                            <td className="p-2 text-right">{batch.quantity}</td>
+                            <td className="p-2 text-xs">
+                              {expDate ? format_Date(expDate) : "No Expiry"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {previewItem.batchDetails.noBatchTransferQty > 0 && (
                         <tr className="border-t bg-gray-50">
                           <td className="p-2 font-medium text-gray-600">No Batch</td>

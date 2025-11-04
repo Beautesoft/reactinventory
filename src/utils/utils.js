@@ -494,3 +494,19 @@ export const getConfigValue = (key) => {
   const config = getAppConfig();
   return config[key];
 };
+
+// Currency utility functions
+export const getActiveCurrency = () => {
+  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  return userDetails.currencyCode || "$";
+};
+
+export const getCurrencyName = () => {
+  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  return userDetails.currencyName || "USD";
+};
+
+export const formatCurrency = (amount) => {
+  const currencyCode = getActiveCurrency();
+  return `${currencyCode} ${amount.toLocaleString()}`;
+};

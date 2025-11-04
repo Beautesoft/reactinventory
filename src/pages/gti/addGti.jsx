@@ -77,10 +77,12 @@ import { Badge } from "@/components/ui/badge";
 const calculateTotals = (cartData) => {
   return cartData.reduce(
     (acc, item) => ({
-      totalQty: acc.totalQty + Number(item.docQty),
-      totalAmt: acc.totalAmt + Number(item.docAmt),
+      totalQty: acc.totalQty + Number(item.docQty || 0),
+      totalFoc: acc.totalFoc + Number(item.docFocqty || 0),
+      totalDisc: acc.totalDisc + Number(item.docDisc || 0),
+      totalAmt: acc.totalAmt + Number(item.docAmt || 0),
     }),
-    { totalQty: 0, totalAmt: 0 }
+    { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
   );
 };
 
@@ -499,6 +501,32 @@ const EditDialog = memo(
                   />
                 </div>
               )}
+              <div className="space-y-2">
+                <Label htmlFor="focqty">FOC Quantity</Label>
+                <Input
+                  id="focqty"
+                  type="number"
+                  min="0"
+                  value={editData?.docFocqty || ""}
+                  onChange={(e) => onEditCart(e, "docFocqty")}
+                  className="w-full"
+                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="discper">Discount %</Label>
+                <Input
+                  id="discper"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={editData?.docPdisc || ""}
+                  onChange={(e) => onEditCart(e, "docPdisc")}
+                  className="w-full"
+                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                />
+              </div>
             </>
           )}
 
@@ -1039,12 +1067,40 @@ function AddGti({ docData }) {
     if (cartItem.ordMemo1 === "specific" && cartItem.ordMemo2) {
       try {
         // Parse batch breakdown from ordMemo2
-        const batchBreakdown = cartItem.ordMemo2.split(',').map(batch => {
+        const batchParts = cartItem.ordMemo2.split(',');
+        const expDateParts = cartItem.ordMemo4 ? cartItem.ordMemo4.split(',') : [];
+        
+        const batchBreakdown = batchParts.map((batch, index) => {
           const [batchNo, quantity] = batch.split(':');
-          return { batchNo, quantity: Number(quantity) };
+          
+          // Try to get expiry date from ordMemo4 if available
+          let expDate = null;
+          if (expDateParts[index]) {
+            // Split by ':' and take everything except the last part as date (handles ISO dates with colons)
+            const parts = expDateParts[index].split(':');
+            if (parts.length > 1) {
+              // Last part is quantity, everything before is the date
+              const expDateStr = parts.slice(0, -1).join(':');
+              // Handle null, empty string, or invalid dates
+              if (expDateStr && expDateStr !== "null" && expDateStr !== "" && expDateStr !== "undefined") {
+                expDate = expDateStr;
+                console.log(`✅ Parsed expDate from ordMemo4 for batch ${batchNo}:`, expDate);
+              } else {
+                console.log(`⚠️ Invalid expDate from ordMemo4 for batch ${batchNo}:`, expDateStr);
+              }
+            }
+          } else {
+            console.log(`⚠️ No expDatePart found at index ${index} for batch ${batchNo}`);
+          }
+          
+          return { 
+            batchNo, 
+            quantity: Number(quantity),
+            expDate: expDate
+          };
         });
         
-        // Fetch ItemBatches data to get fresh expiry dates
+        // Fetch ItemBatches data to get fresh expiry dates (as fallback if ordMemo4 not available)
         const itemBatchesFilter = {
           where: {
             and: [
@@ -1058,15 +1114,21 @@ function AddGti({ docData }) {
         
         const itemBatchesResponse = await apiService.get(
           `ItemBatches?filter=${encodeURIComponent(JSON.stringify(itemBatchesFilter))}`
-        );
+        ).catch(() => []); // Return empty array on error
         
-        // Map batch data with fresh expiry dates from API
+        // Map batch data with expiry dates (prefer ordMemo4, fallback to API)
         const enrichedBatchDetails = batchBreakdown.map(batch => {
           const apiBatch = itemBatchesResponse.find(api => api.batchNo === batch.batchNo);
+          const finalExpDate = batch.expDate || apiBatch?.expDate || null;
+          console.log(`🔍 Enriching batch ${batch.batchNo}:`, {
+            ordMemo4ExpDate: batch.expDate,
+            apiExpDate: apiBatch?.expDate,
+            finalExpDate: finalExpDate
+          });
           return {
             batchNo: batch.batchNo,
             quantity: batch.quantity,
-            expDate: apiBatch?.expDate || null,
+            expDate: finalExpDate, // Use ordMemo4 first, then API
             batchCost: apiBatch?.batchCost || 0
           };
         });
@@ -1315,10 +1377,35 @@ function AddGti({ docData }) {
 
   const handleEditCart = useCallback((e, type) => {
     const value = e.target.value;
-    setEditData((prev) => ({
-      ...prev,
-      [type]: value,
-    }));
+    setEditData((prev) => {
+      const updated = {
+        ...prev,
+        [type]: value,
+      };
+
+      // Auto-calculate dependent fields when FOC, discount, or quantity changes
+      if (type === 'docQty' || type === 'docFocqty' || type === 'docPdisc' || type === 'docPrice') {
+        const qty = parseFloat(updated.docQty || 0);
+        const focQty = parseFloat(updated.docFocqty || 0);
+        const price = parseFloat(updated.docPrice || 0);
+        const discPer = parseFloat(updated.docPdisc || 0);
+        
+        // Calculate total quantity (regular + FOC)
+        const totalQty = qty + focQty;
+        
+        // Calculate discount amount (only on regular quantity)
+        const discAmt = (qty * price * discPer) / 100;
+        
+        // Calculate final amount (regular quantity * price - discount)
+        const finalAmt = (qty * price) - discAmt;
+        
+        updated.docTtlqty = totalQty;
+        updated.docDisc = discAmt;
+        updated.docAmt = finalAmt;
+      }
+
+      return updated;
+    });
   }, []);
 
   const handleEditSubmit = useCallback(() => {
@@ -1545,14 +1632,16 @@ function AddGti({ docData }) {
       id: index + 1,
       docAmt: amount,
       docNo: stockHdrs.docNo,
-      movCode: "TFRT",
+      movCode: "TFRF",
       movType: "TFR",
-      docLineno: null,
+      docLineno: cartData.length + 1,
+      docDate: stockHdrs.docDate,
+      createDate: stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
       docQty: Number(item.Qty),
       docFocqty: 0,
-      docTtlqty: Number(item.Qty),
+      docTtlqty: Number(item.Qty) + 0, // Will be updated when FOC is added
       docPrice: Number(item.Price),
       docPdisc: 0,
       docDisc: 0,
@@ -1751,14 +1840,14 @@ function AddGti({ docData }) {
       ("0" + today.getMinutes()).slice(-2) +
       ("0" + today.getSeconds()).slice(-2);
 
-    const qty = Number(item.docQty) * multiplier;
+    const qty = Number(item.docTtlqty || item.docQty) * multiplier;
     const amt = Number(item.docAmt) * multiplier;
     const cost = Number(item.docAmt) * multiplier;
 
     return {
       id: null,
       trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
-      trnDate: item.docExpdate || null,
+      trnDate: stockHdrs.docDate,
       trnNo: null,
       postTime: timeStr,
       aperiod: null,
@@ -2371,27 +2460,66 @@ function AddGti({ docData }) {
                   await handleDestinationFefoTransfer(d, trimmedItemCode, cartItem?.docQty || d.trnQty);
                 }
               } else {
-                // No batch functionality - update Itemonqties only
-                const batchUpdate = {
-                  itemcode: trimmedItemCode,
-                  sitecode: d.storeNo,
-                  uom: d.itemUom,
-                  qty: Number(d.trnQty),
-                  batchcost: 0,
+                // No batch functionality - handle destination store "No Batch" with existence check
+                const noBatchFilter = {
+                  where: {
+                    and: [
+                      { itemCode: trimmedItemCode },
+                      { uom: d.itemUom },
+                      { siteCode: d.storeNo },
+                      { batchNo: "" }, // "No Batch" record
+                    ],
+                  },
                 };
 
-                await apiService
-                  .post(`ItemBatches/updateqty`, batchUpdate)
-                  .catch(async (err) => {
-                    const errorLog = {
-                      trnDocNo: docNo,
-                      itemCode: d.itemcode,
-                      loginUser: userDetails.username,
-                      siteCode: userDetails.siteCode,
-                      logMsg: `ItemBatches/updateqty ${err.message}`,
-                      createdDate: new Date().toISOString().split("T")[0],
-                    };
+                const noBatchUrl = `ItemBatches?filter=${encodeURIComponent(
+                  JSON.stringify(noBatchFilter)
+                )}`;
+                let existingNoBatch = await apiService
+                  .get(noBatchUrl)
+                  .then((resp) => resp[0])
+                  .catch((error) => {
+                    console.error("Error fetching destination 'No Batch':", error);
+                    return null;
                   });
+
+                if (!existingNoBatch) {
+                  // Create new "No Batch" record in destination store
+                  const batchCreate = {
+                    itemCode: trimmedItemCode,
+                    siteCode: d.storeNo,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchCost: 0,
+                    batchNo: "",
+                  };
+
+                  await apiService.post(`ItemBatches`, batchCreate).catch(async (err) => {
+                    console.error(`Error creating 'No Batch' for ${trimmedItemCode}:`, err);
+                  });
+                } else {
+                  // Update existing "No Batch" record in destination store
+                  const batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: d.storeNo,
+                    uom: d.itemUom,
+                    qty: Number(d.trnQty),
+                    batchcost: 0,
+                  };
+
+                  await apiService
+                    .post(`ItemBatches/updateqty`, batchUpdate)
+                    .catch(async (err) => {
+                      const errorLog = {
+                        trnDocNo: docNo,
+                        itemCode: d.itemcode,
+                        loginUser: userDetails.username,
+                        siteCode: userDetails.siteCode,
+                        logMsg: `ItemBatches/updateqty ${err.message}`,
+                        createdDate: new Date().toISOString().split("T")[0],
+                      };
+                    });
+                }
               }
             }
             
@@ -3004,23 +3132,58 @@ function AddGti({ docData }) {
     const isNoBatchTransfer = !stktrnItem.itemBatch || stktrnItem.itemBatch.trim() === "";
     
     if (isNoBatchTransfer) {
-      // Handle "No Batch" transfer to destination store
-      const noBatchDestUpdate = {
-        itemcode: trimmedItemCode,
-        sitecode: stockHdrs.tstoreNo, // Use tstoreNo (destination store) for GTI
-        uom: stktrnItem.itemUom,
-        qty: qty, // Use validated quantity
-        batchcost: 0,
-        // No batchNo key for "No Batch" transfers
+      // Handle "No Batch" transfer to destination store with existence check
+      const noBatchFilter = {
+        where: {
+          and: [
+            { itemCode: trimmedItemCode },
+            { uom: stktrnItem.itemUom },
+            { siteCode: stockHdrs.tstoreNo },
+            { batchNo: "" }, // "No Batch" record
+          ],
+        },
       };
 
-      await apiService
-        .post(`ItemBatches/updateqty`, noBatchDestUpdate)
-        .catch(async (err) => {
-          console.error(`Error updating "No Batch" for ${trimmedItemCode}:`, err);
+      const noBatchUrl = `ItemBatches?filter=${encodeURIComponent(
+        JSON.stringify(noBatchFilter)
+      )}`;
+      let existingNoBatch = await apiService
+        .get(noBatchUrl)
+        .then((resp) => resp[0])
+        .catch((error) => {
+          console.error("Error fetching destination 'No Batch':", error);
+          return null;
         });
-        
-      console.log(`✅ Updated "No Batch" in destination store ${stockHdrs.tstoreNo} by ${qty} qty`);
+
+      if (!existingNoBatch) {
+        // Create new "No Batch" record in destination store
+        const batchCreate = {
+          itemCode: trimmedItemCode,
+          siteCode: stockHdrs.tstoreNo, // Destination store
+          uom: stktrnItem.itemUom,
+          qty: qty, // Use validated quantity
+          batchCost: 0,
+          batchNo: "",
+        };
+
+        await apiService.post(`ItemBatches`, batchCreate).catch(async (err) => {
+          console.error(`Error creating 'No Batch' for ${trimmedItemCode}:`, err);
+        });
+      } else {
+        const noBatchDestUpdate = {
+          itemcode: trimmedItemCode,
+          sitecode: stockHdrs.tstoreNo, // Destination store
+          uom: stktrnItem.itemUom,
+          qty: qty, // Use validated quantity
+          batchcost: 0,
+        };
+
+        await apiService
+          .post(`ItemBatches/updateqty`, noBatchDestUpdate)
+          .catch(async (err) => {
+            console.error(`Error updating "No Batch" for ${trimmedItemCode}:`, err);
+          });
+      }
     } else {
       // Handle specific batch transfer to destination store
       // First, check if the specific batch exists in destination store
@@ -3386,23 +3549,58 @@ function AddGti({ docData }) {
     const isNoBatchTransfer = !stktrnItem.itemBatch || stktrnItem.itemBatch.trim() === "";
     
     if (isNoBatchTransfer) {
-      // Handle "No Batch" transfer to destination store
-      const noBatchDestUpdate = {
-        itemcode: trimmedItemCode,
-        sitecode: stktrnItem.storeNo, // Destination store
-        uom: stktrnItem.itemUom,
-        qty: qty, // Use validated quantity
-        batchcost: 0,
-        // No batchNo key for "No Batch" transfers
+      // Handle "No Batch" transfer to destination store with existence check
+      const noBatchFilter = {
+        where: {
+          and: [
+            { itemCode: trimmedItemCode },
+            { uom: stktrnItem.itemUom },
+            { siteCode: stktrnItem.storeNo },
+            { batchNo: "" }, // "No Batch" record
+          ],
+        },
       };
 
-      await apiService
-        .post(`ItemBatches/updateqty`, noBatchDestUpdate)
-        .catch(async (err) => {
-          console.error(`Error updating "No Batch" for ${trimmedItemCode}:`, err);
+      const noBatchUrl = `ItemBatches?filter=${encodeURIComponent(
+        JSON.stringify(noBatchFilter)
+      )}`;
+      let existingNoBatch = await apiService
+        .get(noBatchUrl)
+        .then((resp) => resp[0])
+        .catch((error) => {
+          console.error("Error fetching destination 'No Batch':", error);
+          return null;
         });
-        
-      console.log(`✅ Updated "No Batch" in destination store ${stktrnItem.storeNo} by ${qty} qty`);
+
+      if (!existingNoBatch) {
+        // Create new "No Batch" record in destination store
+        const batchCreate = {
+          itemCode: trimmedItemCode,
+          siteCode: stktrnItem.storeNo,
+          uom: stktrnItem.itemUom,
+          qty: qty, // Use validated quantity
+          batchCost: 0,
+          batchNo: "",
+        };
+
+        await apiService.post(`ItemBatches`, batchCreate).catch(async (err) => {
+          console.error(`Error creating 'No Batch' for ${trimmedItemCode}:`, err);
+        });
+      } else {
+        const noBatchDestUpdate = {
+          itemcode: trimmedItemCode,
+          sitecode: stktrnItem.storeNo, // Destination store
+          uom: stktrnItem.itemUom,
+          qty: qty, // Use validated quantity
+          batchcost: 0,
+        };
+
+        await apiService
+          .post(`ItemBatches/updateqty`, noBatchDestUpdate)
+          .catch(async (err) => {
+            console.error(`Error updating "No Batch" for ${trimmedItemCode}:`, err);
+          });
+      }
     } else {
       // Handle specific batch transfer to destination store
       // First, check if the specific batch exists in destination store
@@ -4121,6 +4319,22 @@ function AddGti({ docData }) {
 
   // NEW: Function to show transfer preview
   const showTransferPreview = (item) => {
+    // Debug: Log batch details structure
+    console.log('🔍 Preview item batch details:', {
+      itemcode: item.itemcode,
+      transferType: item.transferType,
+      batchDetails: item.batchDetails,
+      individualBatches: item.batchDetails?.individualBatches,
+      individualBatchesWithExpDate: item.batchDetails?.individualBatches?.map(b => ({ 
+        batchNo: b.batchNo, 
+        quantity: b.quantity,
+        expDate: b.expDate,
+        expDateType: typeof b.expDate,
+        hasExpDate: !!b.expDate
+      })),
+      ordMemo4: item.ordMemo4,
+      ordMemo2: item.ordMemo2
+    });
     setPreviewItem(item);
     setShowPreviewModal(true);
   };
@@ -4171,15 +4385,19 @@ function AddGti({ docData }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {previewItem.batchDetails.individualBatches?.map((batch, index) => (
-                        <tr key={index} className="border-t">
-                          <td className="p-2 font-medium">{batch.batchNo}</td>
-                          <td className="p-2 text-right">{batch.quantity}</td>
-                          <td className="p-2 text-xs">
-                            {batch.expDate ? format_Date(batch.expDate) : "No Expiry"}
-                          </td>
-                        </tr>
-                      ))}
+                      {previewItem.batchDetails.individualBatches?.map((batch, index) => {
+                        // Try multiple sources for expiry date
+                        const expDate = batch.expDate || batch.expiryDate || null;
+                        return (
+                          <tr key={index} className="border-t">
+                            <td className="p-2 font-medium">{batch.batchNo}</td>
+                            <td className="p-2 text-right">{batch.quantity}</td>
+                            <td className="p-2 text-xs">
+                              {expDate ? format_Date(expDate) : "No Expiry"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {previewItem.batchDetails.noBatchTransferQty > 0 && (
                         <tr className="border-t bg-gray-50">
                           <td className="p-2 font-medium text-gray-600">No Batch</td>
@@ -4638,10 +4856,13 @@ function AddGti({ docData }) {
                     </TableHead>
                     <TableHead>Item Description</TableHead>
                     <TableHead>UOM</TableHead>
-                    <TableCell>Quantity</TableCell>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>FOC Qty</TableHead>
                     {userDetails?.isSettingViewPrice === "True" && (
                       <TableHead>Price</TableHead>
                     )}
+                    <TableHead>Discount %</TableHead>
+                    <TableHead>Discount Amt</TableHead>
                     {userDetails?.isSettingViewPrice === "True" && (
                       <TableHead className="font-semibold text-slate-700">
                         Amount
@@ -4701,10 +4922,12 @@ function AddGti({ docData }) {
                           <TableCell className="font-medium">
                             {item.docQty}
                           </TableCell>
+                          <TableCell>{item.docFocqty || 0}</TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell>{item.docPrice}</TableCell>
                           )}
-
+                          <TableCell>{item.docPdisc || 0}%</TableCell>
+                          <TableCell>{item.docDisc || 0}</TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
                               {item.docAmt}

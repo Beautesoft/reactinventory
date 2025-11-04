@@ -15,7 +15,7 @@ import { useGto } from "@/context/gtoContext";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
 
-function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOptions = [] }) {
+function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOptions = [], approvalContext = false }) {
   const navigate = useNavigate();
   const { setDefaultdata: setGrnDefault } = useGrn();
   const { setDefaultdata: setGtoDefault } = useGto();
@@ -168,7 +168,13 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
   };
 
   const handleDetails = (item) => {
-    const status = item.docStatus === 7 ? "7" : "0";
+    // Derive status for PRs from reqStatus; others from docStatus
+    const prStatus = (type === "pr")
+      ? ((item.reqStatus === "Posted" || item.reqStatus === "posted" || item.reqStatus === 7) ? "7" : "0")
+      : null;
+    const status = type === "pr"
+      ? prStatus
+      : (item.docStatus === 7 ? "7" : "0");
     console.log(type)
     const basePath = 
       type === "grn" ? "goods-receive-note" 
@@ -178,9 +184,12 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       : type === "adj" ? "stock-adjustment" 
       : type === "sum" ? "stock-usage-memo"
       : type === "tke" ? "stock-take"
+      : type === "pr" ? "purchase-requisition"
       : "goods-transfer-in";
 
-    navigate(`/${basePath}/details/${item.docNo}?status=${status}`, {
+    const docNo = type === "pr" ? item.reqNo : item.docNo;
+    const approvalSuffix = (type === "pr" && approvalContext) ? "&approval=1" : "";
+    navigate(`/${basePath}/details/${docNo}?status=${status}${approvalSuffix}`, {
       state: { item },
     });
     console.log(basePath)
@@ -196,8 +205,11 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       : type === "adj" ? "stock-adjustment" 
       : type === "sum" ? "stock-usage-memo"
       : type === "tke" ? "stock-take"
+      : type === "pr" ? "purchase-requisition"
       : "goods-receive-note";
-    navigate(`/${basePath}/print/${item.docNo}`, { state: { item } });
+    
+    const docNo = type === "pr" ? item.reqNo : item.docNo;
+    navigate(`/${basePath}/print/${docNo}`, { state: { item } });
   };
 
   const handleSort = (key) => {
@@ -230,10 +242,13 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       let bValue = b[sortConfig.key];
 
       // Handle special cases
-      if (sortConfig.key === 'docDate') {
+      if (sortConfig.key === 'docDate' || sortConfig.key === 'reqDate') {
         aValue = new Date(aValue).getTime();
         bValue = new Date(bValue).getTime();
       } else if (sortConfig.key === 'supplyNo' && (type === 'grn' || type === 'rtn')) {
+        aValue = supplierDetails[aValue] || aValue;
+        bValue = supplierDetails[bValue] || bValue;
+      } else if (sortConfig.key === 'suppCode' && type === 'pr') {
         aValue = supplierDetails[aValue] || aValue;
         bValue = supplierDetails[bValue] || bValue;
       }
@@ -316,6 +331,17 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       { key: "docStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
+    pr: [
+      { key: "reqNo", label: "PR Number" },
+      { key: "reqDate", label: "PR Date" },
+      { key: "reqRef", label: "Ref Number" },
+      { key: "itemsiteCode", label: "Site" },
+      { key: "suppCode", label: "Supplier" },
+      { key: "reqTtqty", label: "Total Quantity" },
+      ...(showTotalAmount ? [{ key: "reqTtamt", label: "Total Amount" }] : []),
+      { key: "reqStatus", label: "Status" },
+      { key: "print", label: "Print" },
+    ],
   };
 
   const headers = tableHeaders[type] || tableHeaders.grn;
@@ -375,7 +401,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                       <TableCell>{item.docRef2 || "-"}</TableCell>
                       <TableCell>{item.docRemark || "-"}</TableCell>
                       <TableCell>{item.docQty || 0}</TableCell>
-                      {showTotalAmount && <TableCell>{item.docAmt || 0}</TableCell>}
+                      {showTotalAmount && <TableCell>{parseFloat(item.docAmt || 0).toFixed(2)}</TableCell>}
                     </>
                   ) : type === "tke" ? (
                     <>
@@ -427,6 +453,43 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                         />
                       </TableCell>
                     </>
+                  ) : type === "pr" ? (
+                    <>
+                      <TableCell
+                        onClick={() => handleDetails(item)}
+                        className="cursor-pointer text-gray-600 hover:text-black underline"
+                      >
+                        {item.reqNo}
+                      </TableCell>
+                      <TableCell>{dateConvert(item.reqDate)}</TableCell>
+                      <TableCell>{item.reqRef || "-"}</TableCell>
+                      <TableCell>{item.itemsiteCode || "-"}</TableCell>
+                      <TableCell>
+                        {supplierDetails[item.suppCode] || item.supplierName || item.suppCode || "-"}
+                      </TableCell>
+                      <TableCell>{item.reqTtqty || 0}</TableCell>
+                      {showTotalAmount && <TableCell>{parseFloat(item.reqTtamt || 0).toFixed(2)}</TableCell>}
+                      <TableCell
+                        className={`font-semibold ${
+                          item.reqStatus === "Approved"
+                            ? "text-green-600"
+                            : item.reqStatus === "Posted"
+                            ? "text-blue-600"
+                            : item.reqStatus === "Rejected"
+                            ? "text-red-600"
+                            : "text-yellow-600"
+                        }`}
+                      >
+                        {item.reqStatus}
+                      </TableCell>
+                      <TableCell className="text-left flex pr-4">
+                        <PrinterIcon
+                          onClick={() => printNote(item)}
+                          className="icon-print cursor-pointer"
+                          aria-label="Print"
+                        />
+                      </TableCell>
+                    </>
                   ) : (
                     <>
                       <TableCell
@@ -443,7 +506,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                           : item.docRef2 || "-"}
                       </TableCell>
                       <TableCell>{item.docQty}</TableCell>
-                      {showTotalAmount && <TableCell>{item.docAmt}</TableCell>}
+                      {showTotalAmount && <TableCell>{parseFloat(item.docAmt || 0).toFixed(2)}</TableCell>}
                       <TableCell
                         className={
                           item.docStatus === 7

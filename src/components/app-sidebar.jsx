@@ -193,15 +193,12 @@ export function AppSidebar() {
         url: "/stock-movement",
         icon: FiTrendingUp,
       },
-    ].filter(item => hasAuthorization(item.title));
-
-    // Purchase Management items
-    const purchaseItems = [
-      {
-        title: "Purchase Order",
-        url: "/purchase-order",
-        icon: FiShoppingCart,
-      },
+      // Temporarily hidden - Purchase Order
+      // {
+      //   title: "Purchase Order",
+      //   url: "/purchase-order",
+      //   icon: FiShoppingCart,
+      // },
       {
         title: "Purchase Requisition",
         url: "/purchase-requisition",
@@ -230,13 +227,6 @@ export function AppSidebar() {
         icon: Bot,
         items: [...stockControlItems, ...alwaysAvailableItems],
       }] : []),
-      // Show Purchase Management if user has at least one authorization
-      // ...(purchaseItems.length > 0 ? [{
-      //   title: "Purchase Management",
-      //   url: "#",
-      //   icon: FiShoppingCart,
-      //   items: purchaseItems,
-      // }] : []),
       // Only show Settings if user has isSettingEnabled = "Y"
       ...(userDetails?.isSettingEnabled === "Y" ? [{
         title: "Settings",

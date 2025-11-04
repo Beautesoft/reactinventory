@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +41,7 @@ import {
   Loader,
   Loader2,
   Edit,
+  Info,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import moment from "moment-timezone";
@@ -98,6 +99,390 @@ const calculateDefaultExpiryDate = () => {
   return expiryDate.toISOString().split("T")[0]; // Return in YYYY-MM-DD format
 };
 
+// Batch Selection Dialog for PR (matching GTO style)
+const BatchSelectionDialog = memo(
+  ({
+    showBatchDialog,
+    setShowBatchDialog,
+    batchBreakdown,
+    transferQty,
+    totalBatchQty,
+    noBatchQty,
+    scenarioMessage,
+    onBatchSelectionSubmit,
+    itemcode,
+    itemdesc,
+  }) => {
+    const [selectedBatches, setSelectedBatches] = useState([]);
+    const [batchQuantities, setBatchQuantities] = useState({});
+    const [noBatchSelected, setNoBatchSelected] = useState(false);
+    const [noBatchQuantity, setNoBatchQuantity] = useState(0);
+
+    // Reset dialog state when dialog closes
+    useEffect(() => {
+      if (!showBatchDialog) {
+        setSelectedBatches([]);
+        setBatchQuantities({});
+        setNoBatchSelected(false);
+        setNoBatchQuantity(0);
+      }
+    }, [showBatchDialog]);
+
+    // Calculate total selected quantity (including No Batch)
+    const totalSelectedQty =
+      selectedBatches.reduce(
+        (sum, batch) => sum + (batchQuantities[batch.batchNo] || 0),
+        0
+      ) + (noBatchSelected ? noBatchQuantity : 0);
+    const remainingQty = transferQty - totalSelectedQty;
+
+    const handleBatchSelection = (batch, isSelected) => {
+      if (isSelected) {
+        setSelectedBatches((prev) => [...prev, batch]);
+        setBatchQuantities((prev) => ({
+          ...prev,
+          [batch.batchNo]: Math.min(batch.availableQty, remainingQty),
+        }));
+      } else {
+        setSelectedBatches((prev) =>
+          prev.filter((b) => b.batchNo !== batch.batchNo)
+        );
+        setBatchQuantities((prev) => {
+          const newQuantities = { ...prev };
+          delete newQuantities[batch.batchNo];
+          return newQuantities;
+        });
+      }
+    };
+
+    const handleQuantityChange = (batchNo, quantity) => {
+      const batch = batchBreakdown.find((b) => b.batchNo === batchNo);
+      const maxQty = Math.min(
+        batch.availableQty,
+        remainingQty + (batchQuantities[batchNo] || 0)
+      );
+      const validQty = Math.max(0, Math.min(quantity, maxQty));
+
+      setBatchQuantities((prev) => ({ ...prev, [batchNo]: validQty }));
+    };
+
+    const handleNoBatchSelection = (isSelected) => {
+      setNoBatchSelected(isSelected);
+      if (!isSelected) {
+        setNoBatchQuantity(0);
+      } else {
+        // Set initial quantity to remaining quantity or available No Batch quantity
+        const noBatchItem = batchBreakdown.find((b) => b.batchNo === "");
+        const maxNoBatchQty = noBatchItem
+          ? Math.min(noBatchItem.availableQty, remainingQty)
+          : 0;
+        setNoBatchQuantity(Math.min(maxNoBatchQty, remainingQty));
+      }
+    };
+
+    const handleNoBatchQuantityChange = (quantity) => {
+      const noBatchItem = batchBreakdown.find((b) => b.batchNo === "");
+      const maxQty = noBatchItem
+        ? Math.min(noBatchItem.availableQty, remainingQty + noBatchQuantity)
+        : 0;
+      const validQty = Math.max(0, Math.min(quantity, maxQty));
+      setNoBatchQuantity(validQty);
+    };
+
+    const handleSubmit = () => {
+      if (totalSelectedQty === 0) {
+        toast.error("Please select at least one batch or No Batch option");
+        return;
+      }
+
+      // Validate that selected quantity matches the required transfer quantity
+      if (totalSelectedQty !== transferQty) {
+        toast.error(`Selected quantity (${totalSelectedQty}) must match the required quantity (${transferQty}). Please adjust your selection.`);
+        return;
+      }
+
+      // Create combined batch data
+      const combinedBatchData = {
+        batchNo: selectedBatches.map((b) => b.batchNo).join(", "),
+        expDate: selectedBatches
+          .map((b) => b.expDate)
+          .filter(Boolean)
+          .join(", "),
+        availableQty: selectedBatches.reduce(
+          (sum, batch) => sum + (batchQuantities[batch.batchNo] || 0),
+          0
+        ),
+        noBatchQty: noBatchSelected ? noBatchQuantity : 0,
+        selectedBatches: selectedBatches.map((batch) => ({
+          batchNo: batch.batchNo,
+          expDate: batch.expDate,
+          quantity: batchQuantities[batch.batchNo],
+        })),
+      };
+
+      onBatchSelectionSubmit(combinedBatchData);
+    };
+
+    return (
+      <Dialog open={showBatchDialog} onOpenChange={setShowBatchDialog}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>Select Specific Batches for Transfer</DialogTitle>
+            <div className="text-sm text-muted-foreground">
+              Choose specific batches to transfer for item:{" "}
+              <strong>{itemcode}</strong> - {itemdesc}
+            </div>
+          </DialogHeader>
+
+          {/* Transfer Summary */}
+          {scenarioMessage && (
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+              <div className="flex items-start space-x-2">
+                <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium">Transfer Summary</p>
+                  <p className="text-xs mt-1">{scenarioMessage}</p>
+                  <div className="mt-2 text-xs space-y-1">
+                    <p>
+                      <strong>Transfer Qty:</strong> {transferQty}
+                    </p>
+                    <p>
+                      <strong>Batch Qty:</strong> {totalBatchQty}
+                    </p>
+                    <p>
+                      <strong>"No Batch" Qty:</strong> {noBatchQty}
+                    </p>
+                    <p>
+                      <strong>Selected Qty:</strong> {totalSelectedQty} /{" "}
+                      {transferQty}
+                    </p>
+                    {remainingQty > 0 && (
+                      <p className="text-orange-600">
+                        <strong>Remaining:</strong> {remainingQty}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Available Batches Table */}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Available Batches</Label>
+              {batchBreakdown.length > 0 ? (
+                <div className="max-h-60 overflow-y-auto border rounded-md">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="text-left p-2 font-medium">Select</th>
+                        <th className="text-left p-2 font-medium">Batch No</th>
+                        <th className="text-right p-2 font-medium">
+                          Available Qty
+                        </th>
+                        <th className="text-center p-2 font-medium">
+                          Select Qty
+                        </th>
+                        <th className="text-left p-2 font-medium">
+                          Expiry Date
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batchBreakdown.map((batch, index) => {
+                        const isSelected = selectedBatches.some(
+                          (b) => b.batchNo === batch.batchNo
+                        );
+                        const selectedQty = batchQuantities[batch.batchNo] || 0;
+                        const maxSelectableQty = Math.min(
+                          batch.availableQty,
+                          remainingQty + selectedQty
+                        );
+
+                        return (
+                          <tr
+                            key={index}
+                            className={`border-t hover:bg-gray-50 ${
+                              batch.batchNo === "" ? "bg-gray-50" : ""
+                            }`}
+                          >
+                            <td className="p-2">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  batch.batchNo === ""
+                                    ? noBatchSelected
+                                    : isSelected
+                                }
+                                onChange={(e) => {
+                                  if (batch.batchNo === "") {
+                                    handleNoBatchSelection(e.target.checked);
+                                  } else {
+                                    handleBatchSelection(
+                                      batch,
+                                      e.target.checked
+                                    );
+                                  }
+                                }}
+                                disabled={
+                                  batch.batchNo !== "" &&
+                                  !isSelected &&
+                                  maxSelectableQty <= 0
+                                }
+                                className="w-4 h-4"
+                              />
+                            </td>
+                            <td className="p-2 font-medium">
+                              {batch.batchNo === ""
+                                ? "No Batch"
+                                : batch.batchNo}
+                              {batch.batchNo === "" && (
+                                <span className="ml-2 text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                                  Balance
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2 text-right">
+                              <span
+                                className={
+                                  batch.batchNo === "" ? "text-gray-600" : ""
+                                }
+                              >
+                                {batch.availableQty}
+                              </span>
+                            </td>
+                            <td className="p-2 text-center">
+                              {batch.batchNo === "" ? (
+                                noBatchSelected ? (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max={Math.min(
+                                      batch.availableQty,
+                                      remainingQty + noBatchQuantity
+                                    )}
+                                    value={noBatchQuantity}
+                                    onChange={(e) =>
+                                      handleNoBatchQuantityChange(
+                                        Number(e.target.value)
+                                      )
+                                    }
+                                    className="w-20 text-center"
+                                  />
+                                ) : (
+                                  <span className="text-gray-400">-</span>
+                                )
+                              ) : isSelected ? (
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max={maxSelectableQty}
+                                  value={selectedQty}
+                                  onChange={(e) =>
+                                    handleQuantityChange(
+                                      batch.batchNo,
+                                      Number(e.target.value)
+                                    )
+                                  }
+                                  className="w-20 text-center"
+                                />
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="p-2 text-xs">
+                              {batch.batchNo === ""
+                                ? "N/A"
+                                : batch.expDate
+                                ? format_Date(batch.expDate)
+                                : "No Expiry"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No valid batches available for selection</p>
+                  <p className="text-sm mt-1">
+                    This item only has 'No Batch' quantities available
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Selection Summary */}
+            {selectedBatches.length > 0 && (
+              <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                <div className="flex items-start space-x-2">
+                  <Info className="h-4 w-4 text-green-600 mt-0.5" />
+                  <div className="text-sm text-green-800">
+                    <p className="font-medium">Selected Batches</p>
+                    <div className="mt-2 space-y-1">
+                      {selectedBatches.map((batch) => (
+                        <p key={batch.batchNo} className="text-xs">
+                          <strong>{batch.batchNo}:</strong>{" "}
+                          {batchQuantities[batch.batchNo] || 0} qty
+                        </p>
+                      ))}
+                      {noBatchSelected && (
+                        <p key="no-batch" className="text-xs text-orange-600">
+                          <strong>No Batch:</strong> {noBatchQuantity} qty
+                        </p>
+                      )}
+                      <p className="text-xs font-medium">
+                        <strong>Total Selected:</strong> {totalSelectedQty} /{" "}
+                        {transferQty}
+                      </p>
+                      {remainingQty > 0 && (
+                        <p className="text-xs text-red-600">
+                          <strong>Remaining:</strong> {remainingQty} (not
+                          selected)
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Transfer Mode Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+              <div className="flex items-start space-x-2">
+                <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium">Multi-Batch Selection Mode</p>
+                  <p className="text-xs mt-1">
+                    Select multiple batches to reach your transfer quantity. You
+                    can select different quantities from each batch.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBatchDialog(false)} className="cursor-pointer">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={totalSelectedQty === 0}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              Confirm Selection ({totalSelectedQty}/{transferQty})
+              {remainingQty > 0 && ` (${remainingQty} remaining)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+);
+
 const EditDialog = memo(
   ({
     showEditDialog,
@@ -108,6 +493,7 @@ const EditDialog = memo(
     isBatchEdit,
     urlStatus,
     userDetails,
+    approvalMode,
   }) => {
     const [batchOptions, setBatchOptions] = useState([]);
     const [selectedBatch, setSelectedBatch] = useState(null);
@@ -128,6 +514,7 @@ const EditDialog = memo(
         setValidationErrors([]);
       }
     }, [showEditDialog]);
+
 
     useEffect(() => {
       if (showEditDialog && editData?.reqdItemcode) {
@@ -224,6 +611,13 @@ const EditDialog = memo(
     const handleSubmit = () => {
       const errors = [];
 
+      // Check if editData exists
+      if (!editData) {
+        errors.push("No data to save");
+        setValidationErrors(errors);
+        return;
+      }
+
       // Validate quantity
       if (!editData.reqdQty || editData.reqdQty <= 0) {
         errors.push("Quantity must be greater than 0");
@@ -236,16 +630,14 @@ const EditDialog = memo(
         }
       }
 
-      // Validate batch number if required
-      if (getConfigValue('BATCH_NO') === "Yes") {
+
+      // Traditional batch validation (only if not using batch transfer mode)
+      if (getConfigValue('BATCH_NO') === "Yes" && !userDetails?.manualBatchSelection) {
         if (!editData.docBatchNo || editData.docBatchNo.trim() === "") {
           errors.push("Batch number is required");
         }
-      }
-
-      // Validate expiry date if batch is required
-      if (getConfigValue('BATCH_NO') === "Yes" && getConfigValue('EXPIRY_DATE') === "Yes") {
-        if (!editData.docExpdate) {
+        
+        if (getConfigValue('EXPIRY_DATE') === "Yes" && !editData.docExpdate) {
           errors.push("Expiry date is required");
         }
       }
@@ -266,6 +658,18 @@ const EditDialog = memo(
             <DialogTitle>
               {isBatchEdit ? "Batch Edit Items" : "Edit Item"}
             </DialogTitle>
+            <div
+              id="edit-item-description"
+              className="text-sm text-muted-foreground"
+            >
+              {urlStatus == 7 &&
+              !approvalMode &&
+              userDetails?.isSettingPostedChangePrice === "True"
+                ? "Only price can be modified for posted documents"
+                : approvalMode && urlStatus == 7
+                ? "Approval mode: All fields can be modified for posted documents"
+                : "Modify item details"}
+            </div>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -305,7 +709,7 @@ const EditDialog = memo(
                   onChange={(e) => onEditCart(e, "reqdQty")}
                   min="0"
                   step="0.01"
-                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                  disabled={(urlStatus == 7 && !isBatchEdit && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True") || (urlStatus == 7 && isBatchEdit && !approvalMode)}
                 />
               </div>
               {userDetails?.isSettingViewPrice === "True" && (
@@ -318,7 +722,7 @@ const EditDialog = memo(
                     onChange={(e) => onEditCart(e, "reqdItemprice")}
                     min="0"
                     step="0.01"
-                    disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                    disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                 />
               </div>
               )}
@@ -331,7 +735,7 @@ const EditDialog = memo(
                   onChange={(e) => onEditCart(e, "reqdFocqty")}
                   min="0"
                   step="0.01"
-                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                  disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                 />
               </div>
               <div className="space-y-2">
@@ -344,13 +748,29 @@ const EditDialog = memo(
                   min="0"
                   max="100"
                   step="0.01"
-                  disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                  disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                 />
               </div>
+              {/* Batch Transfer Mode Display (Read-only) */}
+              {getConfigValue('BATCH_NO') === "Yes" && userDetails?.manualBatchSelection && (editData?.itemRemark1 || editData?.ordMemo1) && (
+                <div className="space-y-2">
+                  <Label>Batch Transfer Mode</Label>
+                  <Input
+                    value={(editData.itemRemark1 || editData.ordMemo1)?.startsWith("specific") ? "Specific Batches" : "FEFO (Auto-select)"}
+                    disabled
+                    className="bg-gray-50"
+                  />
+                  {(editData.itemRemark2 || editData.ordMemo2) && (
+                    <p className="text-xs text-gray-500">
+                      Selected batches: {editData.itemRemark2 || editData.ordMemo2}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Batch Number and Expiry Date Section */}
-            {getConfigValue('BATCH_NO') === "Yes" && (
+            {/* Traditional Batch Number and Expiry Date Section (only when not using batch transfer mode) */}
+            {getConfigValue('BATCH_NO') === "Yes" && !userDetails?.manualBatchSelection && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="batchno">Batch Number</Label>
@@ -367,7 +787,7 @@ const EditDialog = memo(
                           onEditCart({ target: { value: "" } }, "docBatchNo");
                         }
                       }}
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                     />
                     <Label htmlFor="useExistingBatch" className="text-sm">
                       Use existing batch
@@ -378,7 +798,7 @@ const EditDialog = memo(
                       <Select
                         value={selectedBatch?.value || ""}
                         onValueChange={handleExistingBatchChange}
-                        disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                        disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select existing batch" />
@@ -413,7 +833,7 @@ const EditDialog = memo(
                       placeholder="Enter new batch number"
                       className="w-full"
                       maxLength={20}
-                      disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                      disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                     />
                   )}
               </div>
@@ -425,7 +845,7 @@ const EditDialog = memo(
                     value={editData?.docExpdate || ""}
                     onChange={(e) => onEditCart(e, "docExpdate")}
                     className="w-full"
-                    disabled={urlStatus == 7 || (useExistingBatch && selectedBatch?.expDate)}
+                    disabled={(urlStatus == 7 && !approvalMode) || (useExistingBatch && selectedBatch?.expDate)}
                   />
                   {isExpiryReadOnly && (
                     <p className="text-xs text-blue-500">
@@ -450,6 +870,7 @@ const EditDialog = memo(
                 className="w-full"
                 disabled={
                   urlStatus == 7 &&
+                  !approvalMode &&
                   userDetails?.isSettingPostedChangePrice !== "True"
                 }
                 />
@@ -472,7 +893,7 @@ const EditDialog = memo(
                 Cancel
               </Button>
             <Button onClick={handleSubmit}>Save Changes</Button>
-            </DialogFooter>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     );
@@ -485,6 +906,7 @@ function AddPR() {
   const [searchParams] = useSearchParams();
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
   const urlStatus = searchParams.get("status") || 0;
+  const approvalParam = searchParams.get("approval") === "1";
 
   // State management
   const [activeTab, setActiveTab] = useState("detail");
@@ -538,12 +960,15 @@ function AddPR() {
 
   const [dropDownFilter, setDropDownFilter] = useState({});
 
+  // Check if user is HQ to set default supplier
+  const isHQUser = userDetails?.siteCode?.includes('HQ');
+  
   const [formData, setFormData] = useState({
     reqNo: "",
     itemsiteCode: userDetails?.siteCode || "",
-    suppCode: "HQ", // Default to HQ for requisitions
+    suppCode: isHQUser ? "" : "HQ", // Default to HQ for non-HQ users, empty for HQ users
     reqRef: "",
-    reqUser: userDetails?.userName || "",
+    reqUser: userDetails?.username || "",
     reqDate: moment().format("YYYY-MM-DD"),
     reqStatus: "Open",
     reqTtqty: 0,
@@ -553,7 +978,7 @@ function AddPR() {
     reqAttn: "",
     reqRemk1: "",
     reqRemk2: "",
-    supplierName: "HQ Warehouse", // Default supplier name
+    supplierName: isHQUser ? "" : "HQ Warehouse", // Default supplier name
     expectedDeliveryDate: "",
     // Billing Address
     reqBname: "",
@@ -572,6 +997,12 @@ function AddPR() {
     reqDstate: "",
     reqDcity: "",
     reqDcountry: "",
+    // Additional fields from .NET backend
+    reqCancelqty: 0,
+    reqRecstatus: "",
+    reqRecexpect: "",
+    reqRecttl: 0,
+    reqTime: moment().format("HH:mm:ss")
   });
 
   const [cartData, setCartData] = useState([]);
@@ -623,6 +1054,27 @@ function AddPR() {
   // Add search timer state
   const [searchTimer, setSearchTimer] = useState(null);
 
+  // Add batch selection states
+  const [showBatchDialog, setShowBatchDialog] = useState(false);
+  const [batchDialogData, setBatchDialogData] = useState(null);
+  const [itemBatchLoading, setItemBatchLoading] = useState({});
+
+  // Add preview modal states
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewItem, setPreviewItem] = useState(null);
+
+  // Add approval state management
+  const [approvalMode, setApprovalMode] = useState(false);
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [stockValidationErrors, setStockValidationErrors] = useState([]);
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [autoCreateTransfer, setAutoCreateTransfer] = useState(false);
+  
+  // Ref to track if we're loading PR data to prevent double supplier reload
+  const isLoadingPRDataRef = useRef(false);
+
   // Load data on component mount
   useEffect(() => {
     if (id) {
@@ -632,20 +1084,67 @@ function AddPR() {
     }
   }, [id]);
 
+  // Detect approval mode
+  useEffect(() => {
+    const isHQUser = userDetails?.siteCode?.includes('HQ');
+    const isPostedStatus = formData.reqStatus === 'Posted';
+    setApprovalMode(isHQUser && (isPostedStatus || approvalParam));
+  }, [formData.reqStatus, userDetails, approvalParam]);
+
+  // Reload suppliers when approval mode changes (for HQ users)
+  // But skip if we're currently loading PR data (will be loaded after data is set)
+  useEffect(() => {
+    if (userDetails?.siteCode?.includes('HQ') && !isLoadingPRDataRef.current) {
+      loadSuppliers();
+    }
+  }, [approvalMode]);
+
+  // Ensure approvalLoading is reset when dialog opens
+  useEffect(() => {
+    if (showApprovalDialog) {
+      // Always reset loading when dialog opens to ensure button is enabled
+      setApprovalLoading(false);
+    }
+  }, [showApprovalDialog]);
+
   // Load suppliers and HQ options
-  const loadSuppliers = async () => {
+  const loadSuppliers = async (overrideApprovalMode = null) => {
     try {
+      const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+      const isHQUser = userDetails?.siteCode?.includes('HQ');
+      
+      // Use override approval mode if provided, otherwise use state
+      const currentApprovalMode = overrideApprovalMode !== null ? overrideApprovalMode : approvalMode;
+      
       const res = await apiService.get("ItemSupplies");
-      const options = res
+      let options = res
         .filter((item) => item.splyCode)
         .map((item) => ({
           label: item.supplydesc,
           value: item.splyCode,
         }));
       
-      // Add HQ option
-      const hqOption = { label: "HQ Warehouse", value: "HQ" };
-      setSupplyOptions([hqOption, ...options]);
+      // For HQ users in Purchase Requisition tab (not approval mode), exclude HQ Warehouse
+      // For HQ users in approval mode, they can still see all suppliers including HQ (for viewing approved PRs)
+      if (isHQUser && !currentApprovalMode) {
+        // HQ user creating/editing PR - exclude HQ Warehouse option
+        options = options.filter((item) => item.value !== "HQ");
+      } else if (isHQUser && currentApprovalMode) {
+        // HQ user in approval mode - show all suppliers including HQ (for viewing existing PRs)
+        // Add HQ Warehouse option explicitly since it might not be in ItemSupplies
+        const hqOption = { label: "HQ Warehouse", value: "HQ" };
+        // Check if HQ already exists, if not add it
+        const hasHQ = options.some(item => item.value === "HQ");
+        if (!hasHQ) {
+          options = [hqOption, ...options];
+        }
+      } else {
+        // For non-HQ users, add HQ option
+        const hqOption = { label: "HQ Warehouse", value: "HQ" };
+        options = [hqOption, ...options];
+      }
+      console.log(options, "options", "approvalMode:", currentApprovalMode);
+      setSupplyOptions(options);
     } catch (err) {
       console.error("Error fetching suppliers:", err);
     }
@@ -657,7 +1156,6 @@ function AddPR() {
     try {
       await Promise.all([
         loadSuppliers(),
-        generatePRNumber(),
         getOptions(),
       ]);
     } catch (err) {
@@ -668,26 +1166,33 @@ function AddPR() {
     }
   };
 
-  // Generate PR number
-  const generatePRNumber = async () => {
-    try {
-      const reqNo = await prApi.getNextPRNumber();
-        setFormData(prev => ({ ...prev, reqNo }));
-    } catch (err) {
-      console.error("Error generating PR number:", err);
-      toast.error("Error generating PR number");
-    }
-  };
 
   // Load PR data for editing
   const loadPRData = async () => {
     setPageLoading(true);
+    isLoadingPRDataRef.current = true; // Set flag to prevent double supplier reload
     try {
       const [pr, items] = await Promise.all([
         prApi.getPR(id),
         prApi.getPRLineItems(id)
       ]);
 
+      // Determine approval mode based on PR data before loading suppliers
+      const isHQUser = userDetails?.siteCode?.includes('HQ');
+      const isPostedStatus = pr?.reqStatus === 'Posted';
+      const currentApprovalMode = isHQUser && (isPostedStatus || approvalParam);
+
+      // Load suppliers first with the correct approval mode
+      // This ensures suppliers are ready when formData is set
+      await Promise.all([
+        loadSuppliers(currentApprovalMode), // Pass approval mode directly
+        getOptions(),
+      ]);
+      
+      // Set approval mode state after suppliers are loaded
+      setApprovalMode(currentApprovalMode);
+
+      // Now set formData - this will trigger approval mode useEffect but suppliers are already loaded
       if (pr) {
         setFormData({
           reqNo: pr.reqNo,
@@ -695,7 +1200,7 @@ function AddPR() {
           suppCode: pr.suppCode,
           reqRef: pr.reqRef,
           reqUser: pr.reqUser,
-          reqDate: pr.reqDate,
+          reqDate: pr.reqDate ? moment(pr.reqDate).format("YYYY-MM-DD") : moment().format("YYYY-MM-DD"),
           reqStatus: pr.reqStatus,
           reqTtqty: pr.reqTtqty,
           reqTtfoc: pr.reqTtfoc,
@@ -705,7 +1210,7 @@ function AddPR() {
           reqRemk1: pr.reqRemk1,
           reqRemk2: pr.reqRemk2,
           supplierName: pr.supplierName,
-          expectedDeliveryDate: pr.expectedDeliveryDate || "",
+          // expectedDeliveryDate: pr.expectedDeliveryDate || "",
           // Billing Address
           reqBname: pr.reqBname,
           reqBaddr1: pr.reqBaddr1,
@@ -723,20 +1228,31 @@ function AddPR() {
           reqDstate: pr.reqDstate,
           reqDcity: pr.reqDcity,
           reqDcountry: pr.reqDcountry,
+          // Additional fields from .NET backend
+          reqCancelqty: pr.reqCancelqty || 0,
+          reqRecstatus: pr.reqRecstatus || "",
+          reqRecexpect: pr.reqRecexpect || "",
+          reqRecttl: pr.reqRecttl || 0,
+          reqTime: pr.reqTime ? (moment(pr.reqTime).isValid() ? moment(pr.reqTime).format("HH:mm:ss") : pr.reqTime) : moment().format("HH:mm:ss")
         });
       }
 
       if (items) {
-        setCartData(items);
+        // Initialize reqAppqty if not set (for approval mode)
+        const itemsWithApprovedQty = items.map(item => ({
+          ...item,
+          reqAppqty: item.reqAppqty !== undefined && item.reqAppqty !== null 
+            ? item.reqAppqty 
+            : item.reqdQty // Default to requested quantity if not set
+        }));
+        setCartData(itemsWithApprovedQty);
       }
 
-      await Promise.all([
-        loadSuppliers(),
-        getOptions(),
-      ]);
+      isLoadingPRDataRef.current = false; // Reset flag after everything is loaded
     } catch (err) {
       console.error("Error loading PR data:", err);
       toast.error("Error loading PR data");
+      isLoadingPRDataRef.current = false; // Reset flag on error
     } finally {
       setPageLoading(false);
     }
@@ -772,34 +1288,45 @@ function AddPR() {
     setLoading(true);
     try {
       const siteCode = userDetails?.siteCode;
-      const res = await apiService1.get(`api/GetInvitems?Site=${siteCode}`);
+      const hqSiteCode = userDetails?.HQSiteCode;
       
-      if (res && res.length > 0) {
-        const items = res.map(item => ({
-          ...item,
-          Qty: "",
-          Price: item.costPrice || 0,
-          Cost: item.costPrice || 0,
-          docUom: item.itemUom,
-          stockCode: item.itemcode,
-          stockName: item.itemdesc,
-          Brand: item.brandname,
-          BrandCode: item.brandcode,
-          Range: item.rangename,
-          RangeCode: item.rangecode,
-          Department: item.department,
-          isActive: "True"
-        }));
+      const query = `?Site=${hqSiteCode || 'ZEHQ'}`;
+      const response = await apiService1.get(`api/GetInvitems${query}`);
+      const stockDetails = response.result;
+      const count = response.result.length;
+      
+      console.log("Sample item from API:", stockDetails[0]);
+      console.log("Total items:", count);
+      
+      const updatedRes = stockDetails.map((item) => ({
+        ...item,
+        Qty: 0,
+        expiryDate: null,
+        Price: Number(item?.Price) || Number(item?.Cost) || 0,
+        docAmt: null,
+        // Map the fields to match the expected structure
+        stockCode: item.stockCode,
+        stockName: item.stockName,
+        Brand: item.Brand,
+        BrandCode: item.BrandCode,
+        Range: item.Range,
+        RangeCode: item.RangeCode,
+        Department: item.Department,
+        docUom: item.uom,
+        isActive: item.isActive || "True"
+      }));
 
-        setStockList(items);
-        setOriginalStockList(items);
-        setFilteredItemTotal(items.length);
-      }
+      console.log("Updated items with Price field:", updatedRes[0]);
+
+      setStockList(updatedRes);
+      setLoading(false)
+      setOriginalStockList(updatedRes);
+      setItemTotal(count);
+      setFilteredItemTotal(count); // Initially, filtered count equals total count
     } catch (err) {
-      console.error("Error loading items:", err);
-      toast.error("Error loading items");
-    } finally {
       setLoading(false);
+      console.error("Error fetching stock details:", err);
+      toast.error("Failed to fetch stock details");
     }
   };
 
@@ -984,18 +1511,311 @@ function AddPR() {
     setStockList(newStockList);
   };
 
+  // Handle expiry date change
+  const handleExpiryDateChange = (e, index) => {
+    const newStockList = [...stockList];
+    newStockList[index].expiryDate = e.target.value;
+    setStockList(newStockList);
+  };
+
+  // Handle batch selection
+  const handleBatchSelection = async (index, item) => {
+    // Always check if quantity is entered and valid
+    if (!item.Qty || item.Qty <= 0) {
+      toast.error("Please enter a valid quantity first");
+      return;
+    }
+
+    setItemBatchLoading(prev => ({ ...prev, [item.stockCode]: true }));
+    
+    try {
+      // Fetch available batches from HQ
+      const hqSiteCode = userDetails?.HQSiteCode || 'ZEHQ';
+      const filter = {
+        where: {
+          and: [
+            { itemCode: item.stockCode },
+            { siteCode: hqSiteCode },
+            { uom: item.docUom },
+            { qty: { gt: 0 } }
+          ]
+        }
+      };
+      
+      const batches = await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`);
+      
+      if (!batches || batches.length === 0) {
+        toast.error("No batch information found for this item");
+        return;
+      }
+
+      // Check if there are any batches with actual batch numbers (not empty strings)
+      const actualBatches = batches.filter(
+        (batch) =>
+          batch.batchNo && batch.batchNo.trim() !== "" && Number(batch.qty) > 0
+      );
+
+      if (actualBatches.length === 0) {
+        toast.error(
+          "No batches with batch numbers available for this item. Only 'No Batch' items exist."
+        );
+        return;
+      }
+      
+      // Process batch data
+      const processedBatches = batches.map((batch) => ({
+        batchNo: batch.batchNo || "",
+        availableQty: Number(batch.qty) || 0,
+        expDate: batch.expDate,
+        batchCost: batch.batchCost,
+      }));
+
+      // Sort by expiry date (FEFO) - actual batches first, then "No Batch"
+      const sortedActualBatches = actualBatches
+        .map((batch) => ({
+          batchNo: batch.batchNo,
+          availableQty: Number(batch.qty) || 0,
+          expDate: batch.expDate,
+          batchCost: batch.batchCost,
+        }))
+        .sort((a, b) => {
+          if (!a.expDate && !b.expDate) return 0;
+          if (!a.expDate) return 1;
+          if (!b.expDate) return -1;
+          return new Date(a.expDate) - new Date(b.expDate);
+        });
+
+      const noBatchItems = batches
+        .filter(
+          (b) => (!b.batchNo || b.batchNo.trim() === "") && Number(b.qty) > 0
+        )
+        .map((batch) => ({
+          batchNo: "",
+          availableQty: Number(batch.qty) || 0,
+          expDate: null,
+          batchCost: batch.batchCost,
+        }));
+
+      const sortedBatches = [...sortedActualBatches, ...noBatchItems];
+
+      // Calculate totals
+      const totalBatchQty = sortedActualBatches.reduce(
+        (sum, b) => sum + b.availableQty,
+        0
+      );
+      const noBatchQty = noBatchItems.reduce(
+        (sum, b) => sum + b.availableQty,
+        0
+      );
+      const transferQty = Number(item.Qty);
+
+      // Generate scenario message
+      let scenarioMessage = "";
+      if (transferQty <= totalBatchQty) {
+        scenarioMessage = `Transfer can be completed using available batches. ${transferQty} from batches, 0 from "No Batch".`;
+      } else {
+        const remainingQty = transferQty - totalBatchQty;
+        scenarioMessage = `Transfer requires ${totalBatchQty} from batches and ${remainingQty} from "No Batch" items.`;
+      }
+      
+      // Prepare batch data for dialog
+      setBatchDialogData({
+        item: item,
+        index: index,
+        batches: sortedBatches,
+        transferQty: transferQty,
+        totalBatchQty: totalBatchQty,
+        noBatchQty: noBatchQty,
+        scenarioMessage: scenarioMessage
+      });
+      setShowBatchDialog(true);
+      
+    } catch (error) {
+      console.error("Error fetching batches:", error);
+      toast.error("Failed to fetch batch information");
+    } finally {
+      setItemBatchLoading(prev => ({ ...prev, [item.stockCode]: false }));
+    }
+  };
+
+  // Handle batch selection submit
+  const handleBatchSelectionSubmit = (combinedBatchData) => {
+    if (!combinedBatchData || !batchDialogData) return;
+    
+    const transferQty = Number(batchDialogData.transferQty);
+
+    // Handle multiple batch selection
+    if (
+      combinedBatchData.selectedBatches &&
+      combinedBatchData.selectedBatches.length > 0
+    ) {
+      // Multiple batches selected
+      const batchDetails = combinedBatchData.selectedBatches.map((batch) => ({
+        batchNo: batch.batchNo,
+        expDate: batch.expDate,
+        quantity: batch.quantity,
+      }));
+
+      const totalBatchQty = batchDetails.reduce(
+        (sum, b) => sum + b.quantity,
+        0
+      );
+      const noBatchTransferQty =
+        combinedBatchData.noBatchQty ||
+        Math.max(0, transferQty - totalBatchQty);
+
+      // Update the stock item to show that specific batches are selected
+      setStockList((prev) =>
+        prev.map((stockItem) =>
+          stockItem.stockCode === batchDialogData.item.stockCode
+            ? {
+                ...stockItem,
+                selectedBatches: {
+                  batchNo: combinedBatchData.batchNo, // Combined batch numbers
+                  expDate: combinedBatchData.expDate, // Combined expiry dates
+                  batchTransferQty: totalBatchQty,
+                  noBatchTransferQty: noBatchTransferQty,
+                  totalTransferQty: transferQty,
+                  transferType: "specific", // Mark as specific batch transfer
+                  batchDetails: batchDetails, // Store individual batch details
+                },
+              }
+            : stockItem
+        )
+      );
+
+      const message =
+        noBatchTransferQty > 0
+          ? `Multiple batches selected: ${batchDetails
+              .map((b) => `${b.batchNo}(${b.quantity})`)
+              .join(
+                ", "
+              )}. Balance ${noBatchTransferQty} will be taken from "No Batch". Now click + icon to add to cart.`
+          : `Multiple batches selected: ${batchDetails
+              .map((b) => `${b.batchNo}(${b.quantity})`)
+              .join(", ")}. Now click + icon to add to cart.`;
+
+      toast.success(message);
+    } else {
+      // Single batch selection (backward compatibility)
+      const batchTransferQty = Math.min(
+        transferQty,
+        combinedBatchData.availableQty
+      );
+      const noBatchTransferQty = Math.max(0, transferQty - batchTransferQty);
+
+      // Update the stock item to show that specific batches are selected
+      setStockList((prev) =>
+        prev.map((stockItem) =>
+          stockItem.stockCode === batchDialogData.item.stockCode
+            ? {
+                ...stockItem,
+                selectedBatches: {
+                  batchNo: combinedBatchData.batchNo,
+                  expDate: combinedBatchData.expDate,
+                  batchTransferQty: batchTransferQty,
+                  noBatchTransferQty: noBatchTransferQty,
+                  totalTransferQty: transferQty,
+                  transferType: "specific", // Mark as specific batch transfer
+                  batchDetails: [
+                    {
+                      batchNo: combinedBatchData.batchNo,
+                      expDate: combinedBatchData.expDate,
+                      quantity: batchTransferQty,
+                    },
+                  ],
+                },
+              }
+            : stockItem
+        )
+      );
+
+      const message =
+        noBatchTransferQty > 0
+          ? `Specific batch ${combinedBatchData.batchNo} selected: ${batchTransferQty} qty. Balance ${noBatchTransferQty} will be taken from "No Batch". Now click + icon to add to cart.`
+          : `Specific batch ${combinedBatchData.batchNo} selected: ${batchTransferQty} qty. Now click + icon to add to cart.`;
+
+      toast.success(message);
+    }
+
+    // Reset states
+    setShowBatchDialog(false);
+    setBatchDialogData(null);
+  };
+
   // Add to cart
   const addToCart = (index, item) => {
-    const qty = parseFloat(item.Qty) || 0;
-    if (qty <= 0) {
+    // Always check if quantity is entered and valid
+    if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity");
       return;
+    }
+
+    const qty = parseFloat(item.Qty) || 0;
+
+    // Check if quantity exceeds on-hand quantity (if available)
+    if (item.quantity && Number(item.Qty) > Number(item.quantity)) {
+      toast.error("Not enough stock available");
+      return;
+    }
+
+    // Validate batch selection if enabled
+    if (getConfigValue('BATCH_NO') === "Yes" && item.selectedBatches) {
+      if (item.selectedBatches.transferType === "specific") {
+        const totalSelected = item.selectedBatches.batchDetails.reduce(
+          (sum, b) => sum + b.quantity, 0
+        ) + (item.selectedBatches.noBatchTransferQty || 0);
+        
+        if (totalSelected !== qty) {
+          toast.error("Selected batch quantities must match item quantity");
+          return;
+        }
+      }
     }
 
     const price = parseFloat(item.Price) || 0;
     const discPer = 0; // Default discount
     const discAmt = (qty * price * discPer) / 100;
     const amount = (qty * price) - discAmt;
+
+    // Prepare batch data for storage in reqdetails fields
+    // Store transfer type with UOM: "fefo-PCS", "specific-BOTTLE", etc.
+    const uom = item.docUom || "";
+    let itemRemark1 = `fefo${uom ? `-${uom}` : ""}`; // Default to fefo-UOM - Transfer type: fefo/specific
+    let itemRemark2 = ""; // Batch breakdown: batchNo:qty,batchNo:qty (include NOBATCH if needed)
+    let docBatchNoStorage = ""; // Just batch numbers: B01,B02
+    let docExpdateStorage = ""; // Expiry dates: expDate:qty,expDate:qty
+
+    if (item.selectedBatches) {
+      // Set transfer type from selectedBatches if available, include UOM
+      const transferType = item.selectedBatches.transferType || "fefo";
+      itemRemark1 = `${transferType}${uom ? `-${uom}` : ""}`; // "fefo-UOM" or "specific-UOM"
+      
+      if (item.selectedBatches.transferType === "specific" && item.selectedBatches.batchDetails) {
+        // Store batch details as "batchNo:qty,batchNo:qty" in itemRemark2
+        const batchPairs = item.selectedBatches.batchDetails
+          .map(b => `${b.batchNo}:${b.quantity}`)
+          .join(",");
+        
+        // Add No Batch qty to itemRemark2 if exists
+        if (item.selectedBatches.noBatchTransferQty > 0) {
+          itemRemark2 = batchPairs + ",NOBATCH:" + item.selectedBatches.noBatchTransferQty;
+        } else {
+          itemRemark2 = batchPairs;
+        }
+        
+        // Store just batch numbers in docBatchNo for compatibility: "B01,B02"
+        docBatchNoStorage = item.selectedBatches.batchDetails
+          .map(b => b.batchNo)
+          .filter(Boolean)
+          .join(",");
+        
+        // Store expiry dates in docExpdate: "expDate:qty,expDate:qty"
+        docExpdateStorage = item.selectedBatches.batchDetails
+          .map(b => `${b.expDate || ''}:${b.quantity}`)
+          .join(",");
+      }
+    }
 
     const newItem = {
       reqNo: formData.reqNo,
@@ -1015,22 +1835,52 @@ function AddPR() {
       reqdRecqty: 0,
       reqdCancelqty: 0,
       reqdOutqty: qty,
+      reqdDate: moment().format("YYYY-MM-DD"),
+      reqdTime: moment().format("HH:mm:ss"),
+      syncGuid: "D6358EAD-46E0-406A-8118-7F2DE6C6A4B2",
+      syncClientindex: "",
+      syncLstupd: "",
+      syncClientindexstring: "",
       brandcode: item.BrandCode,
       brandname: item.Brand,
       linenumber: cartData.length + 1,
       poststatus: "0",
+      reqId: "", // Will be set when saving
+      RunningNo: "", // Will be set when saving
       docUom: item.docUom,
-      docBatchNo: "",
-      docExpdate: "",
-      itemRemark: "",
-      useExistingBatch: true
+      docBatchNo: docBatchNoStorage || "",        // ✅ B01,B02
+      docExpdate: docExpdateStorage || "",        // ✅ 2025-08-12:4,2025-09-15:6
+      itemRemark: "",                             // Keep for user remarks
+      itemRemark1: itemRemark1 || "",             // ✅ fefo-UOM or specific-UOM (e.g., "fefo-PCS", "specific-BOTTLE")
+      itemRemark2: itemRemark2 || "",             // ✅ B01:5,B02:3,NOBATCH:2
+      useExistingBatch: true,
+      // ✅ ADD: Runtime fields for batch processing (NOT stored in DB)
+      transferType: item.selectedBatches ? item.selectedBatches.transferType : "fefo",
+      batchDetails: item.selectedBatches && item.selectedBatches.batchDetails
+        ? {
+            batchNo: item.selectedBatches.batchDetails
+              .map(b => b.batchNo)
+              .filter(Boolean)
+              .join(", "),
+            expDate: item.selectedBatches.batchDetails
+              .map(b => b.expDate)
+              .filter(Boolean)
+              .join(", "),
+            batchTransferQty: item.selectedBatches.batchDetails
+              .reduce((sum, b) => sum + b.quantity, 0),
+            noBatchTransferQty: item.selectedBatches.noBatchTransferQty || 0,
+            totalTransferQty: item.selectedBatches.totalTransferQty,
+            individualBatches: item.selectedBatches.batchDetails || [],
+          }
+        : null,
     };
 
     setCartData(prev => [...prev, newItem]);
     
-    // Reset quantity in stock list
+    // Reset quantity and batch selection in stock list
     const newStockList = [...stockList];
     newStockList[index].Qty = "";
+    newStockList[index].selectedBatches = null;
     setStockList(newStockList);
 
     toast.success("Item added to cart");
@@ -1048,10 +1898,36 @@ function AddPR() {
 
   // Handle edit cart changes
   const handleEditCart = (e, field) => {
-    setEditData(prev => ({
-      ...prev,
-      [field]: e.target.value
-    }));
+    const value = e.target.value;
+    setEditData(prev => {
+      const updated = {
+        ...prev,
+        [field]: value
+      };
+
+      // Auto-calculate dependent fields when FOC, discount, or quantity changes
+      if (field === 'reqdQty' || field === 'reqdFocqty' || field === 'reqdDiscper' || field === 'reqdItemprice') {
+        const qty = parseFloat(updated.reqdQty || 0);
+        const focQty = parseFloat(updated.reqdFocqty || 0);
+        const price = parseFloat(updated.reqdItemprice || 0);
+        const discPer = parseFloat(updated.reqdDiscper || 0);
+        
+        // Calculate total quantity (regular + FOC)
+        const totalQty = qty + focQty;
+        
+        // Calculate discount amount (only on regular quantity)
+        const discAmt = (qty * price * discPer) / 100;
+        
+        // Calculate final amount (regular quantity * price - discount)
+        const finalAmt = (qty * price) - discAmt;
+        
+        updated.reqdTtlqty = totalQty;
+        updated.reqdDiscamt = discAmt.toFixed(2);
+        updated.reqdAmt = finalAmt.toFixed(2);
+      }
+
+      return updated;
+    });
   };
 
   // Submit edit
@@ -1080,8 +1956,8 @@ function AddPR() {
       ...prev,
       reqTtqty: totals.totalQty,
       reqTtfoc: totals.totalFoc,
-      reqTtdisc: totals.totalDisc,
-      reqTtamt: totals.totalAmt,
+      reqTtdisc: parseFloat(parseFloat(totals.totalDisc || 0).toFixed(2)),
+      reqTtamt: parseFloat(parseFloat(totals.totalAmt || 0).toFixed(2)),
     }));
   }, [totals.totalQty, totals.totalFoc, totals.totalDisc, totals.totalAmt]);
 
@@ -1110,10 +1986,10 @@ function AddPR() {
 
   // Save PR
   const handleSave = async () => {
-      if (cartData.length === 0) {
-        toast.error("Please add at least one item");
-        return;
-      }
+    if (cartData.length === 0) {
+      toast.error("Please add at least one item");
+      return;
+    }
 
     setSaveLoading(true);
     try {
@@ -1121,18 +1997,16 @@ function AddPR() {
         // Update existing PR
         await prApi.updatePR(id, formData);
         
-        // Update line items
-        for (const item of cartData) {
-          if (item.reqId) {
-            await prApi.updatePRLineItem(item.reqId, item);
-          } else {
-            await prApi.createPR(formData, [item]);
-          }
-        }
+        // Update line items using the new method
+        await prApi.updatePRLineItems(cartData);
         toast.success("Purchase Requisition updated successfully");
       } else {
-        // Create new PR
-        await prApi.createPR(formData, cartData);
+        // Create new PR (this will handle control number generation internally)
+        const result = await prApi.createPR(formData, cartData);
+        
+        // Get the generated PR number for display
+        setFormData(prev => ({ ...prev, reqNo: result.reqNo }));
+        
         toast.success("Purchase Requisition created successfully");
       }
 
@@ -1154,15 +2028,157 @@ function AddPR() {
 
     setPostLoading(true);
     try {
-      await prApi.postPR(formData.reqNo);
-      setFormData(prev => ({ ...prev, reqStatus: "Posted" }));
+      // Generate PR number if not exists (for new PRs)
+      let reqNo = formData.reqNo;
+      if (!reqNo) {
+        reqNo = await prApi.getNextPRNumber();
+        const updatedFormData = { ...formData, reqNo };
+        setFormData(updatedFormData);
+      }
+      
+      // If this is a new PR (no ID), save it first before posting
+      if (!id) {
+        // Update formData to have Posted status before creating
+        const updatedFormData = { ...formData, reqStatus: "Posted" };
+        
+        // Create the PR with Posted status (this will handle control number update)
+        const result = await prApi.createPR(updatedFormData, cartData);
+        
+        setFormData(prev => ({ ...prev, reqStatus: "Posted", reqNo: result.reqNo }));
+      } else {
+        // For existing PRs, just update the status
+        await prApi.postPR(reqNo);
+        setFormData(prev => ({ ...prev, reqStatus: "Posted" }));
+      }
+      
       toast.success("Purchase Requisition posted successfully");
+      navigate("/purchase-requisition");
     } catch (err) {
       console.error("Error posting PR:", err);
       toast.error("Error posting Purchase Requisition");
     } finally {
       setPostLoading(false);
     }
+  };
+
+  // Handle PR approval
+  const handleApprove = async () => {
+    if (cartData.length === 0) {
+      toast.error("No items to approve");
+      return;
+    }
+
+    setApprovalLoading(true);
+    try {
+      // Clear previous validation errors
+      setStockValidationErrors([]);
+
+      // 1. Validate approved quantities
+      const validationErrors = [];
+      cartData.forEach((item, index) => {
+        const approvedQty = parseFloat(item.reqAppqty || item.reqdQty);
+        const requestedQty = parseFloat(item.reqdQty);
+        
+        if (approvedQty > requestedQty) {
+          validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity (${approvedQty}) cannot exceed requested quantity (${requestedQty})`);
+        }
+        if (approvedQty < 0) {
+          validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity cannot be negative`);
+        }
+        if (approvedQty === 0) {
+          validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity must be greater than 0`);
+        }
+      });
+
+      if (validationErrors.length > 0) {
+        setStockValidationErrors(validationErrors);
+        setApprovalLoading(false);
+        return;
+      }
+
+      // 2. Check HQ stock availability (only if supplier is HQ)
+      if (formData.suppCode === "HQ") {
+        const stockErrors = await prApi.validateHQStockForApproval(cartData);
+        if (stockErrors.length > 0) {
+          const errorMessages = stockErrors.map(error => {
+            if (error.errorType === 'BATCH_SHORTFALL' || error.errorType === 'NO_BATCH_SHORTFALL') {
+              return `${error.itemCode} (${error.itemDesc}): Batch ${error.batchNo} - Insufficient stock. Available: ${error.availableQty}, Required: ${error.approvedQty}, Shortfall: ${error.shortfall}`;
+            } else {
+              return `${error.itemCode} (${error.itemDesc}): Insufficient stock. Available: ${error.availableQty}, Required: ${error.approvedQty}, Shortfall: ${error.shortfall}`;
+            }
+          });
+          setStockValidationErrors(errorMessages);
+          setApprovalLoading(false);
+          return;
+        }
+      }
+
+      // 3. Reset loading and show confirmation dialog
+      // Ensure loading is false before opening dialog so button is enabled
+      setApprovalLoading(false);
+      setShowApprovalDialog(true);
+    } catch (err) {
+      console.error("Error validating approval:", err);
+      toast.error("Error validating approval: " + (err.message || "Unknown error"));
+      setApprovalLoading(false);
+    }
+  };
+
+  // Confirm approval with transfer option
+  const handleConfirmApproval = async () => {
+    setApprovalLoading(true);
+    setShowApprovalDialog(false); // Close dialog immediately to prevent double clicks
+    try {
+      // Only create GTO if supplier is HQ, otherwise just approve
+      const shouldCreateTransfer = formData.suppCode === "HQ";
+      const result = await prApi.approvePRWithQuantities(formData.reqNo, cartData, shouldCreateTransfer);
+      
+      // Show appropriate success message based on whether GTO was created
+      if (shouldCreateTransfer && result?.docNo) {
+        toast.success(`Purchase Requisition approved and GTO document ${result.docNo} created successfully (Open status)`);
+      } else {
+        toast.success("Purchase Requisition approved successfully");
+      }
+      
+      navigate("/purchase-requisition");
+    } catch (err) { 
+      console.error("Error approving PR:", err);
+      const errorMessage = err.response?.data?.message || err.message || "Unknown error occurred";
+      toast.error(`Error approving Purchase Requisition: ${errorMessage}`);
+      // Re-open dialog on error so user can retry
+      setShowApprovalDialog(true);
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
+
+  // Handle PR rejection
+  const handleReject = async () => {
+    if (!rejectionReason.trim()) {
+      toast.error("Please provide a rejection reason");
+      return;
+    }
+
+    setApprovalLoading(true);
+    try {
+      await prApi.rejectPR(formData.reqNo, rejectionReason);
+      toast.success("Purchase Requisition rejected successfully");
+      setRejectDialogOpen(false);
+      setRejectionReason("");
+      navigate("/purchase-requisition");
+    } catch (err) {
+      console.error("Error rejecting PR:", err);
+      toast.error("Error rejecting Purchase Requisition");
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
+
+  // Handle approved quantity change
+  const handleApprovedQtyChange = (index, value) => {
+    const newCartData = [...cartData];
+    newCartData[index].reqAppqty = parseFloat(value) || 0;
+    setCartData(newCartData);
   };
 
   // Pagination
@@ -1181,6 +2197,12 @@ function AddPR() {
       itemRemark: "" 
     });
     setShowEditDialog(true);
+  };
+
+  // Show transfer preview
+  const showTransferPreview = (item) => {
+    setPreviewItem(item);
+    setShowPreviewModal(true);
   };
 
   const handleBatchEditSubmit = (fields) => {
@@ -1209,12 +2231,23 @@ function AddPR() {
     );
   }
 
+  // Check if status is Posted or Approved (for view-only mode)
+  const isViewOnlyStatus = formData.reqStatus === "Posted" || formData.reqStatus === "Approved";
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header Section */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-gray-800">
-          {id ? "Edit Purchase Requisition" : "Add Purchase Requisition"}
+          {approvalMode 
+            ? (formData.reqStatus === "Approved" 
+                ? "View Approved Purchase Requisition" 
+                : "Approve Purchase Requisition")
+            : isViewOnlyStatus
+            ? (formData.reqStatus === "Approved" 
+                ? "View Approved Purchase Requisition" 
+                : "View Posted Purchase Requisition")
+            : (id ? "Edit Purchase Requisition" : "Add Purchase Requisition")}
         </h1>
         <div className="flex gap-4">
           <Button
@@ -1224,36 +2257,86 @@ function AddPR() {
           >
             Cancel
           </Button>
-          <Button
-            disabled={saveLoading || cartData.length === 0}
-            onClick={handleSave}
-            className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
-          >
-            {saveLoading ? (
+          
+          {approvalMode ? (
+            // Approval mode buttons - hide all except Cancel if status is Approved
+            formData.reqStatus === "Approved" ? null : (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
+                <Button
+                  disabled={saveLoading || cartData.length === 0}
+                  onClick={handleSave}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
+                  {saveLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    "Update"
+                  )}
+                </Button>
+                <Button
+                  onClick={handleApprove}
+                  disabled={approvalLoading || cartData.length === 0}
+                  className="cursor-pointer hover:bg-green-600 transition-colors duration-150"
+                >
+                  {approvalLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Approve PR"
+                  )}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setRejectDialogOpen(true)}
+                  disabled={approvalLoading}
+                  className="cursor-pointer hover:bg-red-700 transition-colors duration-150"
+                >
+                  Reject PR
+                </Button>
               </>
-            ) : (
-              id ? "Update" : "Save"
-            )}
-          </Button>
-          {formData.reqStatus !== "Posted" && (
-            <Button
-              variant="secondary"
-              onClick={handlePost}
-              className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-              disabled={postLoading || cartData.length === 0}
-            >
-              {postLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Posting...
-                </>
-              ) : (
-                "Post"
-              )}
-            </Button>
+            )
+          ) : (
+            // Regular mode buttons - hide all except Cancel if status is Posted or Approved
+            !isViewOnlyStatus && (
+              <>
+                <Button
+                  disabled={saveLoading || cartData.length === 0}
+                  onClick={handleSave}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
+                  {saveLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    id ? "Update" : "Save"
+                  )}
+                </Button>
+                {formData.reqStatus !== "Posted" && formData.reqStatus !== "Approved" && (
+                  <Button
+                    variant="secondary"
+                    onClick={handlePost}
+                    className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
+                    disabled={postLoading || cartData.length === 0}
+                  >
+                    {postLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Posting...
+                      </>
+                    ) : (
+                      "Post"
+                    )}
+                  </Button>
+                )}
+              </>
+            )
           )}
         </div>
       </div>
@@ -1282,6 +2365,7 @@ function AddPR() {
                     type="date"
                     value={formData.reqDate}
                     onChange={(e) => handleInputChange("reqDate", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
               <div className="space-y-2">
@@ -1290,6 +2374,7 @@ function AddPR() {
                   value={formData.reqRef}
                   onChange={(e) => handleInputChange("reqRef", e.target.value)}
                   placeholder="Enter reference"
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
             </div>
@@ -1303,6 +2388,7 @@ function AddPR() {
                   <Select
                     value={formData.suppCode}
                   onValueChange={handleSupplierChange}
+                  disabled={urlStatus == 7 && !approvalMode}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select destination" />
@@ -1317,12 +2403,18 @@ function AddPR() {
                   </Select>
                 </div>
               <div className="space-y-2">
-                <Label>Expected Delivery Date</Label>
+              <Label>Store Code</Label>
+                  <Input
+                  value={formData.itemsiteCode}
+                  readOnly
+                  className="bg-gray-50"
+                  />
+                {/* <Label>Expected Delivery Date</Label>
                   <Input
                   type="date"
                   value={formData.expectedDeliveryDate}
                   onChange={(e) => handleInputChange("expectedDeliveryDate", e.target.value)}
-                  />
+                  /> */}
                 </div>
               <div className="space-y-2">
                 <Label>Supplier Name</Label>
@@ -1345,6 +2437,8 @@ function AddPR() {
                   <SelectContent>
                     <SelectItem value="Open">Open</SelectItem>
                     <SelectItem value="Posted">Posted</SelectItem>
+                    <SelectItem value="Approved">Approved</SelectItem>
+                    <SelectItem value="Rejected">Rejected</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1354,25 +2448,23 @@ function AddPR() {
                     value={formData.reqAttn}
                     onChange={(e) => handleInputChange("reqAttn", e.target.value)}
                   placeholder="Enter attention to"
+                  disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
-              <div className="space-y-2">
-                <Label>Store Code</Label>
-                  <Input
-                  value={formData.itemsiteCode}
-                  readOnly
-                  className="bg-gray-50"
-                  />
-                </div>
+              {/* <div className="space-y-2">
+      
+                </div> */}
               </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div className="space-y-2">
-              <Label>Created By</Label>
-                <Input
-                value={formData.reqUser}
-                readOnly
+              <Label>
+                Created By<span className="text-red-500">*</span>
+              </Label>
+              <Input
+                value={userDetails?.username || ""}
+                disabled
                 className="bg-gray-50"
               />
             </div>
@@ -1382,6 +2474,7 @@ function AddPR() {
                   value={formData.reqRemk1}
                   onChange={(e) => handleInputChange("reqRemk1", e.target.value)}
                 placeholder="Enter remarks"
+                disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
           </div>
@@ -1395,7 +2488,7 @@ function AddPR() {
         </TabsList>
 
         <TabsContent value="detail" className="space-y-6">
-          {urlStatus != 7 && (
+          {urlStatus != 7 && !isViewOnlyStatus && (
             <Card className={"p-0 gap-0"}>
               <CardTitle className={"ml-4 pt-4 text-xl"}>Select Items</CardTitle>
               <CardContent className="p-4">
@@ -1465,7 +2558,15 @@ function AddPR() {
                   loading={loading}
                   onQtyChange={handleQtyChange}
                   onPriceChange={handlePriceChange}
+                  onExpiryDateChange={(e, index) => handleExpiryDateChange(e, index)}
                   onAddToCart={addToCart}
+                  onBatchSelection={urlStatus != 7 ? handleBatchSelection : null}
+                  onRemoveBatchSelection={(index) => {
+                    setStockList(prev => prev.map((item, idx) => 
+                      idx === index ? { ...item, selectedBatches: null } : item
+                    ));
+                  }}
+                  itemBatchLoading={itemBatchLoading}
                   currentPage={pagination.page}
                   itemsPerPage={pagination.limit}
                   totalPages={totalPages}
@@ -1477,6 +2578,8 @@ function AddPR() {
                   costLabel="Cost"
                   showPrice={userDetails?.isSettingViewPrice === "True"}
                   showCost={userDetails?.isSettingViewCost === "True"}
+                  canEdit={() => urlStatus != 7}
+                  // Add sorting functionality
                   enableSorting={true}
                   onSort={handleSort}
                   sortConfig={sortConfig}
@@ -1499,6 +2602,7 @@ function AddPR() {
                   id="reqBname"
                   value={formData.reqBname}
                   onChange={(e) => handleInputChange("reqBname", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1508,6 +2612,7 @@ function AddPR() {
                     id="reqBaddr1"
                     value={formData.reqBaddr1}
                     onChange={(e) => handleInputChange("reqBaddr1", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
                 <div>
@@ -1516,6 +2621,7 @@ function AddPR() {
                     id="reqBaddr2"
                     value={formData.reqBaddr2}
                     onChange={(e) => handleInputChange("reqBaddr2", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
                 <div>
@@ -1524,6 +2630,7 @@ function AddPR() {
                     id="reqBcity"
                     value={formData.reqBcity}
                     onChange={(e) => handleInputChange("reqBcity", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
                 <div>
@@ -1532,6 +2639,7 @@ function AddPR() {
                     id="reqBstate"
                     value={formData.reqBstate}
                     onChange={(e) => handleInputChange("reqBstate", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
                 <div>
@@ -1540,6 +2648,7 @@ function AddPR() {
                     id="reqBpostcode"
                     value={formData.reqBpostcode}
                     onChange={(e) => handleInputChange("reqBpostcode", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
                 <div>
@@ -1548,6 +2657,7 @@ function AddPR() {
                     id="reqBcountry"
                     value={formData.reqBcountry}
                     onChange={(e) => handleInputChange("reqBcountry", e.target.value)}
+                    disabled={urlStatus == 7 && !approvalMode}
                   />
                 </div>
               </div>
@@ -1567,6 +2677,7 @@ function AddPR() {
                   id="reqDaddr1"
                   value={formData.reqDaddr1}
                   onChange={(e) => handleInputChange("reqDaddr1", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
               <div>
@@ -1575,6 +2686,7 @@ function AddPR() {
                   id="reqDaddr2"
                   value={formData.reqDaddr2}
                   onChange={(e) => handleInputChange("reqDaddr2", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
               <div>
@@ -1583,6 +2695,7 @@ function AddPR() {
                   id="reqDcity"
                   value={formData.reqDcity}
                   onChange={(e) => handleInputChange("reqDcity", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
               <div>
@@ -1591,6 +2704,7 @@ function AddPR() {
                   id="reqDstate"
                   value={formData.reqDstate}
                   onChange={(e) => handleInputChange("reqDstate", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
               <div>
@@ -1599,6 +2713,7 @@ function AddPR() {
                   id="reqDpostcode"
                   value={formData.reqDpostcode}
                   onChange={(e) => handleInputChange("reqDpostcode", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
               <div>
@@ -1607,6 +2722,7 @@ function AddPR() {
                   id="reqDcountry"
                   value={formData.reqDcountry}
                   onChange={(e) => handleInputChange("reqDcountry", e.target.value)}
+                  disabled={urlStatus == 7 && !approvalMode}
                 />
               </div>
             </div>
@@ -1616,14 +2732,14 @@ function AddPR() {
       </Tabs>
 
       {/* Batch Edit Button */}
-      {cartData.length > 0 && (
+      {cartData.length > 0 && !isViewOnlyStatus && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            {selectedRows.length > 0 && (urlStatus != 7 || userDetails?.isSettingPostedChangePrice === "True") && (
+            {selectedRows.length > 0 && (urlStatus != 7 || approvalMode || userDetails?.isSettingPostedChangePrice === "True") && (
               <Button
                 variant="outline"
                 onClick={handleBatchEditClick}
-                disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
+                disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
               >
                 <Edit className="w-4 h-4 mr-2" />
                 Update Selected
@@ -1643,7 +2759,7 @@ function AddPR() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                  {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                  {(urlStatus != 7 || approvalMode || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) && !isViewOnlyStatus ? (
                     <TableHead>
                       <input
                         type="checkbox"
@@ -1663,19 +2779,23 @@ function AddPR() {
                     <TableHead>Item Code</TableHead>
                     <TableHead>Description</TableHead>
                   <TableHead>UOM</TableHead>
-                  <TableHead>Qty</TableHead>
+                  <TableHead>Requested Qty</TableHead>
+                  <TableHead>FOC Qty</TableHead>
+                  {approvalMode && <TableHead>Approved Qty</TableHead>}
                   {userDetails?.isSettingViewPrice === "True" && <TableHead>Price</TableHead>}
+                  <TableHead>Discount %</TableHead>
+                  <TableHead>Discount Amt</TableHead>
                   {userDetails?.isSettingViewPrice === "True" && <TableHead>Amount</TableHead>}
+                  {getConfigValue('BATCH_NO') === "Yes" && <TableHead>Batch Mode</TableHead>}
                   {getConfigValue('BATCH_NO') === "Yes" && <TableHead>Batch No</TableHead>}
-                  {getConfigValue('EXPIRY_DATE') === "Yes" && <TableHead>Expiry Date</TableHead>}
                   <TableHead>Remarks</TableHead>
-                    <TableHead>Actions</TableHead>
+                    {!isViewOnlyStatus && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {cartData.map((item, index) => (
                     <TableRow key={index}>
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                    {(urlStatus != 7 || approvalMode || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) && !isViewOnlyStatus ? (
                       <TableCell>
                         <input
                           type="checkbox"
@@ -1697,39 +2817,73 @@ function AddPR() {
                       {item.reqdItemdesc}
                     </TableCell>
                     <TableCell>{item.docUom}</TableCell>
-                      <TableCell>{item.reqdQty}</TableCell>
-                    {userDetails?.isSettingViewPrice === "True" && (
-                      <TableCell>{item.reqdItemprice}</TableCell>
+                      <TableCell>{parseFloat(item.reqdQty || 0).toFixed(2)}</TableCell>
+                      <TableCell>{parseFloat(item.reqdFocqty || 0).toFixed(2)}</TableCell>
+                    {approvalMode && (
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={parseFloat(item.reqAppqty || item.reqdQty || 0).toFixed(2)}
+                          onChange={(e) => handleApprovedQtyChange(index, e.target.value)}
+                          min="0"
+                          max={item.reqdQty}
+                          step="0.01"
+                          className="w-20"
+                        />
+                      </TableCell>
                     )}
                     {userDetails?.isSettingViewPrice === "True" && (
-                      <TableCell>{item.reqdAmt}</TableCell>
+                      <TableCell>{parseFloat(item.reqdItemprice || 0).toFixed(2)}</TableCell>
+                    )}
+                      <TableCell>{parseFloat(item.reqdDiscper || 0).toFixed(2)}%</TableCell>
+                      <TableCell>{parseFloat(item.reqdDiscamt || 0).toFixed(2)}</TableCell>
+                    {userDetails?.isSettingViewPrice === "True" && (
+                      <TableCell>{parseFloat(item.reqdAmt || 0).toFixed(2)}</TableCell>
+                    )}
+                    {getConfigValue('BATCH_NO') === "Yes" && (
+                      <TableCell>
+                        {(item.itemRemark1 || item.ordMemo1)?.startsWith("specific") ? (
+                          <div className="flex items-center space-x-2">
+                            <Badge className="bg-green-100 text-green-800">Specific</Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => showTransferPreview(item)}
+                              className="h-6 px-2 text-xs"
+                            >
+                              Preview
+                            </Button>
+                          </div>
+                        ) : (
+                          <Badge className="bg-blue-100 text-blue-800">FEFO</Badge>
+                        )}
+                      </TableCell>
                     )}
                     {getConfigValue('BATCH_NO') === "Yes" && (
                       <TableCell>{item.docBatchNo || "-"}</TableCell>
                     )}
-                    {getConfigValue('EXPIRY_DATE') === "Yes" && (
-                      <TableCell>{item.docExpdate || "-"}</TableCell>
-                    )}
                     <TableCell>{item.itemRemark || "-"}</TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                          onClick={() => editCartItem(index)}
-                          disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                          onClick={() => removeFromCart(index)}
-                          disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                        {!isViewOnlyStatus && (
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                            onClick={() => editCartItem(index)}
+                            disabled={urlStatus == 7 && !approvalMode}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                            onClick={() => removeFromCart(index)}
+                            disabled={urlStatus == 7 && !approvalMode}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1748,16 +2902,134 @@ function AddPR() {
               </div>
               <div>
                 <Label>Total Discount</Label>
-                <Input value={totals.totalDisc} readOnly className="bg-gray-50" />
+                <Input value={parseFloat(totals.totalDisc || 0).toFixed(2)} readOnly className="bg-gray-50" />
               </div>
               <div>
                 <Label>Total Amount</Label>
-                <Input value={totals.totalAmt} readOnly className="bg-gray-50" />
+                <Input value={parseFloat(totals.totalAmt || 0).toFixed(2)} readOnly className="bg-gray-50" />
               </div>
             </div>
         </div>
               </div>
             )}
+
+      {/* Stock Validation Errors */}
+      {stockValidationErrors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
+          <h4 className="text-sm font-medium text-red-800 mb-2">Validation Errors:</h4>
+          <ul className="text-sm text-red-700 list-disc list-inside">
+            {stockValidationErrors.map((error, index) => (
+              <li key={index}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Approval Confirmation Dialog */}
+      <Dialog 
+        open={showApprovalDialog} 
+        onOpenChange={(open) => {
+          setShowApprovalDialog(open);
+          // Reset loading state if dialog is closed without confirming
+          if (!open && !approvalLoading) {
+            setApprovalLoading(false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm PR Approval</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p>Are you sure you want to approve this Purchase Requisition?</p>
+            {formData.suppCode === "HQ" ? (
+              <>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> This will automatically create a GTO (Goods Transfer Out) from HQ to the requesting site.
+                  </p>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Items to Transfer:</strong>
+                  </p>
+                  <ul className="text-xs text-yellow-700 list-disc list-inside mt-1 space-y-1">
+                    {cartData.map((item, idx) => (
+                      <li key={idx}>
+                        {item.reqdItemcode}: {item.reqAppqty || item.reqdQty} {item.docUom}
+                        {(item.itemRemark1 || item.ordMemo1)?.startsWith("specific") && " (Specific Batches)"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will approve the Purchase Requisition without creating a transfer document.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowApprovalDialog(false)}
+              disabled={approvalLoading}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleConfirmApproval} 
+              disabled={approvalLoading}
+              className="bg-green-600 hover:bg-green-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {approvalLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Approving...
+                </>
+              ) : (
+                "Confirm Approval"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rejection Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Purchase Requisition</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Label htmlFor="rejectionReason">Rejection Reason</Label>
+            <Input
+              id="rejectionReason"
+              placeholder="Enter rejection reason..."
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleReject} disabled={approvalLoading}>
+              {approvalLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Rejecting...
+                </>
+              ) : (
+                "Confirm Rejection"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <EditDialog
@@ -1769,11 +3041,357 @@ function AddPR() {
         isBatchEdit={isBatchEdit}
         urlStatus={urlStatus}
         userDetails={userDetails}
+        approvalMode={approvalMode}
+      />
+
+      {/* Batch Selection Dialog */}
+      <BatchSelectionDialog
+        showBatchDialog={showBatchDialog}
+        setShowBatchDialog={setShowBatchDialog}
+        batchBreakdown={batchDialogData?.batches || []}
+        transferQty={batchDialogData?.transferQty || 0}
+        totalBatchQty={batchDialogData?.totalBatchQty || 0}
+        noBatchQty={batchDialogData?.noBatchQty || 0}
+        scenarioMessage={batchDialogData?.scenarioMessage || ""}
+        onBatchSelectionSubmit={handleBatchSelectionSubmit}
+        itemcode={batchDialogData?.item?.stockCode || ""}
+        itemdesc={batchDialogData?.item?.stockName || ""}
+      />
+
+      {/* Transfer Preview Modal */}
+      <TransferPreviewModal
+        showPreviewModal={showPreviewModal}
+        setShowPreviewModal={setShowPreviewModal}
+        previewItem={previewItem}
+        formData={formData}
       />
 
       <Toaster />
     </div>
   );
 }
+
+// Transfer Preview Modal Component
+const TransferPreviewModal = memo(
+  ({ showPreviewModal, setShowPreviewModal, previewItem, formData }) => {
+    const [batchDetails, setBatchDetails] = useState([]);
+    const [loadingBatches, setLoadingBatches] = useState(false);
+    const [hasNoBatch, setHasNoBatch] = useState(false);
+    const [noBatchQty, setNoBatchQty] = useState(0);
+
+    // Also handle noBatchTransferQty from batchDetails if available
+    const getNoBatchQty = () => {
+      if (!previewItem) return 0;
+      if (previewItem.batchDetails && previewItem.batchDetails.noBatchTransferQty) {
+        return previewItem.batchDetails.noBatchTransferQty;
+      }
+      // Parse from itemRemark2
+      const batchString = previewItem.itemRemark2 || previewItem.ordMemo2;
+      if (!batchString) return 0;
+      const batchPairs = batchString.split(",");
+      const noBatchPair = batchPairs.find(pair => pair.includes("NOBATCH"));
+      if (noBatchPair) {
+        const [, qty] = noBatchPair.split(":");
+        return Number(qty) || 0;
+      }
+      return 0;
+    };
+
+    // Parse batch details from itemRemark2
+    const parseBatchDetails = () => {
+      if (!previewItem) return [];
+      
+      // First, try to use batchDetails if available (runtime field)
+      if (previewItem.batchDetails && previewItem.batchDetails.individualBatches) {
+        return previewItem.batchDetails.individualBatches.map((batch) => ({
+          batchNo: batch.batchNo || "",
+          quantity: batch.quantity || 0,
+          expDate: batch.expDate || null,
+        }));
+      }
+
+      // If not available, parse from itemRemark2 and docExpdate
+      if (!previewItem.itemRemark2 && !previewItem.ordMemo2) {
+        return [];
+      }
+
+      const batchString = previewItem.itemRemark2 || previewItem.ordMemo2;
+      const batchPairs = batchString.split(",");
+      
+      // Parse expiry dates from docExpdate if available
+      // Format: "2025-11-01T00:00:00.000Z:2,2025-11-15T00:00:00.000Z:1"
+      const expiryDates = [];
+      if (previewItem.docExpdate) {
+        const expiryPairs = previewItem.docExpdate.split(",");
+        expiryPairs.forEach((pair) => {
+          // Find the last colon (separates date from quantity)
+          const lastColonIndex = pair.lastIndexOf(":");
+          if (lastColonIndex > 0) {
+            const expDateStr = pair.substring(0, lastColonIndex).trim();
+            if (expDateStr) {
+              try {
+                const date = new Date(expDateStr);
+                if (!isNaN(date.getTime())) {
+                  expiryDates.push(date.toISOString());
+                } else {
+                  expiryDates.push(expDateStr);
+                }
+              } catch (e) {
+                expiryDates.push(expDateStr);
+              }
+            }
+          }
+        });
+      }
+      
+      // Map batch pairs with expiry dates by index/position
+      // Note: expiry dates are stored in the same order as batches (excluding NOBATCH)
+      let expiryIndex = 0;
+      
+      return batchPairs.map((pair) => {
+        const [batchNo, quantity] = pair.split(":");
+        const qty = Number(quantity) || 0;
+        const isNoBatch = batchNo === "NOBATCH";
+        
+        // Only match expiry date for non-NOBATCH entries by index
+        // NOBATCH entries don't have expiry dates, so skip them in the expiry array
+        let expDate = null;
+        if (!isNoBatch && expiryIndex < expiryDates.length) {
+          expDate = expiryDates[expiryIndex];
+          expiryIndex++; // Move to next expiry date for next batch
+        }
+        
+        return {
+          batchNo: isNoBatch ? "" : batchNo,
+          quantity: qty,
+          expDate: expDate,
+        };
+      });
+    };
+
+    // Fetch batch expiry dates from ItemBatches API and enrich the batch details
+    const enrichBatchDetails = async (parsedBatches) => {
+      if (!previewItem) return;
+      
+      try {
+        setLoadingBatches(true);
+        const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+        const hqSiteCode = userDetails?.HQSiteCode || "HQ";
+        const itemCode = previewItem.reqdItemcode || previewItem.itemcode;
+        const uom = previewItem.docUom;
+
+        // Fetch batches from API
+        const filter = {
+          where: {
+            and: [
+              { itemCode: itemCode },
+              { siteCode: hqSiteCode },
+              ...(uom ? [{ uom }] : []),
+              // { qty: { gt: 0 } },
+            ],
+          },
+        };
+
+        const batches = await apiService.get(
+          `ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`
+        );
+
+        // Create a map of batchNo to expDate
+        const batchExpDateMap = new Map();
+        batches.forEach((batch) => {
+          const batchNo = (batch.batchNo || "").trim();
+          if (batchNo && batch.expDate) {
+            batchExpDateMap.set(batchNo, batch.expDate);
+          }
+        });
+
+        // Enrich parsed batches with expiry dates from API
+        const enriched = parsedBatches.map((batch) => {
+          if (batch.batchNo && !batch.expDate) {
+            const expDate = batchExpDateMap.get(batch.batchNo.trim());
+            if (expDate) {
+              return { ...batch, expDate };
+            }
+          }
+          return batch;
+        });
+
+        setBatchDetails(enriched);
+        setHasNoBatch(enriched.some(b => !b.batchNo || b.batchNo === ""));
+        setNoBatchQty(getNoBatchQty());
+      } catch (err) {
+        console.error("Error fetching batch expiry dates:", err);
+        // If fetch fails, use parsed batches as is
+        setBatchDetails(parsedBatches);
+        setHasNoBatch(parsedBatches.some(b => !b.batchNo || b.batchNo === ""));
+        setNoBatchQty(getNoBatchQty());
+      } finally {
+        setLoadingBatches(false);
+      }
+    };
+
+    // Load batch details when modal opens or previewItem changes
+    useEffect(() => {
+      if (showPreviewModal && previewItem) {
+        const parsed = parseBatchDetails();
+        
+        // Check if any batch is missing expiry date
+        const needsFetch = parsed.some(b => b.batchNo && !b.expDate);
+        
+        if (needsFetch) {
+          // Fetch expiry dates from API and enrich
+          enrichBatchDetails(parsed);
+        } else {
+          // All batches have expiry dates, set state directly
+          setBatchDetails(parsed);
+          setHasNoBatch(parsed.some(b => !b.batchNo || b.batchNo === ""));
+          setNoBatchQty(getNoBatchQty());
+        }
+      } else {
+        // Reset state when modal closes or previewItem is null
+        setBatchDetails([]);
+        setHasNoBatch(false);
+        setNoBatchQty(0);
+        setLoadingBatches(false);
+      }
+    }, [showPreviewModal, previewItem]);
+
+    // Early return after all hooks
+    if (!previewItem) return null;
+
+    return (
+      <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Batch Transfer Details Preview</DialogTitle>
+            <div className="text-sm text-muted-foreground">
+              Item: {previewItem.reqdItemcode} - {previewItem.reqdItemdesc}
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Transfer Summary */}
+            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+              <div className="flex items-start space-x-2">
+                <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium">Transfer Summary</p>
+                  <div className="mt-2 text-xs space-y-1">
+                    <p>
+                      <strong>Total Requested Qty:</strong> {previewItem.reqdQty}
+                    </p>
+                    <p>
+                      <strong>Transfer Type:</strong> Specific Batches
+                    </p>
+                    <p>
+                      <strong>From:</strong> {formData.suppCode || "HQ"}
+                    </p>
+                    <p>
+                      <strong>To:</strong> {formData.itemsiteCode}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Batch Details */}
+            {(batchDetails.length > 0 || loadingBatches) && (
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm">Batch Breakdown</h3>
+                <div className="border rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left p-2 font-medium">Batch No</th>
+                        <th className="text-right p-2 font-medium">Quantity</th>
+                        <th className="text-left p-2 font-medium">Expiry Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loadingBatches && batchDetails.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="p-4 text-center text-muted-foreground">
+                            <div className="flex items-center justify-center space-x-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Loading expiry dates...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        <>
+                          {batchDetails.map((batch, index) => (
+                            <tr key={index} className="border-t">
+                              <td className="p-2 font-medium">
+                                {batch.batchNo || "No Batch"}
+                                {!batch.batchNo && (
+                                  <span className="ml-2 text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                                    Balance
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2 text-right">{batch.quantity}</td>
+                              <td className="p-2 text-xs">
+                                {loadingBatches && !batch.expDate ? (
+                                  <div className="flex items-center space-x-1">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    <span>Loading...</span>
+                                  </div>
+                                ) : (
+                                  batch.expDate ? format_Date(batch.expDate) : "N/A"
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                          {noBatchQty > 0 && !hasNoBatch && (
+                            <tr className="border-t bg-gray-50">
+                              <td className="p-2 font-medium text-gray-600">
+                                No Batch
+                                <span className="ml-2 text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                                  Balance
+                                </span>
+                              </td>
+                              <td className="p-2 text-right text-gray-600">{noBatchQty}</td>
+                              <td className="p-2 text-xs text-gray-600">N/A</td>
+                            </tr>
+                          )}
+                        </>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Transfer Flow Info */}
+            <div className="bg-green-50 border border-green-200 rounded-md p-3">
+              <div className="flex items-start space-x-2">
+                <Info className="h-4 w-4 text-green-600 mt-0.5" />
+                <div className="text-sm text-green-800">
+                  <p className="font-medium">Transfer Flow</p>
+                  <p className="text-xs mt-1">
+                    Items will be transferred from {formData.suppCode || "HQ"} to {formData.itemsiteCode} using the selected batch quantities.
+                    {(hasNoBatch || noBatchQty > 0) && " Some quantity will be taken from 'No Batch' items."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowPreviewModal(false)}
+              className="cursor-pointer"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+);
+
+TransferPreviewModal.displayName = "TransferPreviewModal";
 
 export default AddPR;

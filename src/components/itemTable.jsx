@@ -311,7 +311,7 @@ function ItemTable({
                         />
                         {/* NEW: Batch Selection Indicator */}
                         {getConfigValue('BATCH_NO') === "Yes" && 
-                         getConfigValue('ManualBatchSelection') === true && 
+                         userDetails?.manualBatchSelection && 
                          item.selectedBatches && (
                           <div className="mt-1 text-xs space-y-1">
                             {/* Specific Batches */}
@@ -395,7 +395,7 @@ function ItemTable({
                           </Button>
                           {/* NEW: Batch Selection Button */}
                           {getConfigValue('BATCH_NO') === "Yes" && 
-                           getConfigValue('ManualBatchSelection') === true && 
+                           userDetails?.manualBatchSelection && 
                            onBatchSelection && (
                             <Button
                               variant="ghost"
@@ -403,7 +403,7 @@ function ItemTable({
                               onClick={() => onBatchSelection(startIndex + index, item)}
                               className="cursor-pointer hover:bg-green-50 hover:text-green-600 transition-colors duration-150"
                               title="Select Specific Batch"
-                              disabled={itemBatchLoading[item.stockCode] || false}
+                              disabled={!canEdit() || itemBatchLoading[item.stockCode] || false}
                             >
                               {itemBatchLoading[item.stockCode] ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

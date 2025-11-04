@@ -253,6 +253,17 @@ const DOCUMENT_CONFIGS = {
       docDate: 'Adjustment Stock Date',
       remarks: ['Remark 1', 'Remark 2']
     }
+  },
+  'pr': {
+    title: 'Purchase Requisition Print',
+    docType: 'PR',
+    fields: {
+      docNo: 'PR No.',
+      docDate: 'PR Date',
+      docRef1: 'Reference',
+      supplier: 'Request To',
+      remarks: ['Remark 1', 'Remark 2']
+    }
   }
 };
 
@@ -328,14 +339,19 @@ function PrintPreview({
   }, []);
 
   useEffect(() => {
+    // For PR documents, use reqNo instead of docNo
+    const identifier = documentType === 'pr' 
+      ? (documentData.reqNo || documentData.docNo)
+      : documentData.docNo;
+    
     const filter = {
-      where: {
-        docNo: documentData.docNo,
-      },
+      where: documentType === 'pr' 
+        ? { reqNo: identifier }
+        : { docNo: identifier }
     };
 
     getDocumentDetails(filter);
-  }, [documentData.docNo]);
+  }, [documentData.docNo, documentData.reqNo, documentType]);
 
   useEffect(() => {
     getStoreList();
@@ -388,13 +404,30 @@ function PrintPreview({
 
   const getDocumentDetails = async (filter) => {
     try {
-      // const response = await apiService.get(
-      //   `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
-      // );
-
-      const response = await apiService.get(
-        `Stkprintlists${buildFilterQuery(filter ?? filter)}`
-      );
+      let response;
+      
+      if (documentType === 'pr') {
+        // For PR, fetch from reqdetails endpoint
+        response = await apiService.get(
+          `reqdetails${buildFilterQuery(filter)}`
+        );
+        
+        // Transform PR items to match print preview format
+        response = response.map((item) => ({
+          itemcode: item.reqdItemcode || item.itemcode,
+          itemdesc: item.reqdItemdesc || item.itemdesc,
+          docQty: item.reqdQty || item.docQty || 0,
+          docPrice: item.reqdItemprice || item.reqdPrice || item.docPrice || 0,
+          docAmt: item.reqdAmt || item.docAmt || 0,
+          itemCost: item.itemCost || 0,
+          batchselect: item.docBatchNo || item.batchselect || "-",
+        }));
+      } else {
+        // For other documents, use Stkprintlists
+        response = await apiService.get(
+          `Stkprintlists${buildFilterQuery(filter)}`
+        );
+      }
 
       setItems(response);
     } catch (err) {
@@ -427,10 +460,14 @@ function PrintPreview({
   const getTitles = async () => {
     try {
       // Create filter object with where clause
+      // For PR, use itemsiteCode instead of storeNo
+      const storeCode = documentType === 'pr' 
+        ? (documentData?.itemsiteCode || documentData?.storeNo || userDetails?.siteCode)
+        : (documentData?.storeNo || userDetails?.siteCode);
+      
       const filter = {
         where: {
-          productLicense: documentData?.storeNo || userDetails?.siteCode
-          
+          productLicense: storeCode
         }
       };
       
@@ -469,21 +506,26 @@ function PrintPreview({
   const renderDocumentFields = (config, data) => {
     const fields = config.fields;
     
+    // For PR, use reqNo and reqDate instead of docNo and docDate
+    const docNo = documentType === 'pr' ? (data?.reqNo || data?.docNo) : data?.docNo;
+    const docDate = documentType === 'pr' ? (data?.reqDate || data?.docDate) : data?.docDate;
+    const supplier = documentType === 'pr' ? (data?.supplierName || data?.suppCode || data?.supplyNo) : data?.supplyNo;
+    
     return (
       <div className="grid grid-cols-2 text-sm mb-4">
         <div>
-          <p><span className="w-32 inline-block ">{fields.docNo}</span>: {data?.docNo}</p>
-          <p><span className="w-32 inline-block">{fields.docDate}</span>: {format_Date(data?.docDate)}</p>
+          <p><span className="w-32 inline-block ">{fields.docNo}</span>: {docNo}</p>
+          <p><span className="w-32 inline-block">{fields.docDate}</span>: {format_Date(docDate)}</p>
           
           {/* Conditional fields based on document type */}
           {fields.docRef1 && (
-            <p><span className="w-32 inline-block">{fields.docRef1}</span>: {data?.docRef1 || "-"}</p>
+            <p><span className="w-32 inline-block">{fields.docRef1}</span>: {documentType === 'pr' ? (data?.reqRef || data?.docRef1 || "-") : (data?.docRef1 || "-")}</p>
           )}
           {fields.docRef2 && (
             <p><span className="w-32 inline-block">{fields.docRef2}</span>: {data?.docRef2 || "-"}</p>
           )}
           {fields.supplier && showSupplier && (
-            <p><span className="w-32 inline-block">{fields.supplier}</span>: {data?.supplyNo || "-"}</p>
+            <p><span className="w-32 inline-block">{fields.supplier}</span>: {supplier || "-"}</p>
           )}
           {fields.fromStore && showStoreInfo && (
             <p><span className="w-32 inline-block">{fields.fromStore}</span>: {getStoreName(data?.fstoreNo)}</p>
@@ -493,17 +535,22 @@ function PrintPreview({
           )}
           
           {/* Remarks */}
-          {fields.remarks?.map((remark, index) => (
-            <p key={index}>
-              <span className="w-32 inline-block">{remark}</span>: {data?.[`docRemk${index + 1}`] || "-"}
-            </p>
-          ))}
+          {fields.remarks?.map((remark, index) => {
+            const remarkKey = documentType === 'pr' 
+              ? `reqRemk${index + 1}` 
+              : `docRemk${index + 1}`;
+            return (
+              <p key={index}>
+                <span className="w-32 inline-block">{remark}</span>: {data?.[remarkKey] || "-"}
+              </p>
+            );
+          })}
         </div>
         <div>
           <p><span className="w-32 inline-block">Print Date</span>: {formatCurrentDate()}</p>
           <p><span className="w-32 inline-block">Print Time</span>: {new Date().toLocaleTimeString()}</p>
-          <p><span className="w-32 inline-block">Staff Name</span>: {data?.createUser || data?.docAttn || "Support"}</p>
-          <p><span className="w-32 inline-block">Store</span>: {getStoreName(data?.storeNo) || "-"}</p>
+          <p><span className="w-32 inline-block">Staff Name</span>: {documentType === 'pr' ? (data?.reqUser || data?.createUser || data?.docAttn || "Support") : (data?.createUser || data?.docAttn || "Support")}</p>
+          <p><span className="w-32 inline-block">Store</span>: {getStoreName(documentType === 'pr' ? (data?.itemsiteCode || data?.storeNo) : data?.storeNo) || "-"}</p>
         </div>
       </div>
     );
@@ -511,24 +558,30 @@ function PrintPreview({
 
   // Dynamic export headers based on document type
   const getExportHeaders = (config) => {
+    // For PR, use reqNo instead of docNo
+    const docNo = documentType === 'pr' ? (documentData?.reqNo || documentData?.docNo) : documentData?.docNo;
+    const docDate = documentType === 'pr' ? (documentData?.reqDate || documentData?.docDate) : documentData?.docDate;
+    const supplier = documentType === 'pr' ? (documentData?.supplierName || documentData?.suppCode || documentData?.supplyNo) : documentData?.supplyNo;
+    
     const baseHeaders = [
       titles ? [titles.companyHeader1] : ["Company:", userDetails?.siteName],
       titles ? [titles.companyHeader2] : ["Address:", userDetails?.siteAddress],
       titles ? [titles.companyHeader3] : ["City:", `${userDetails?.siteCity} ${userDetails?.sitePostCode}`],
       titles ? [titles.companyHeader4] : ["Phone:", userDetails?.sitePhone],
       [""],
-      [`${config.docType} No:`, documentData?.docNo],
+      [`${config.docType} No:`, docNo],
     ];
     
     // Add document-specific headers
     if (config.fields.docRef1) {
-      baseHeaders.push([config.fields.docRef1, documentData?.docRef1 || "-"]);
+      const ref1 = documentType === 'pr' ? (documentData?.reqRef || documentData?.docRef1 || "-") : (documentData?.docRef1 || "-");
+      baseHeaders.push([config.fields.docRef1, ref1]);
     }
     if (config.fields.docRef2) {
       baseHeaders.push([config.fields.docRef2, documentData?.docRef2 || "-"]);
     }
     if (config.fields.supplier && showSupplier) {
-      baseHeaders.push([config.fields.supplier, documentData?.supplyNo || "-"]);
+      baseHeaders.push([config.fields.supplier, supplier || "-"]);
     }
          if (config.fields.fromStore && showStoreInfo) {
        baseHeaders.push([config.fields.fromStore, getStoreName(documentData?.fstoreNo)]);
@@ -538,9 +591,9 @@ function PrintPreview({
      }
     
     baseHeaders.push(
-      ["Staff Name:", documentData?.docAttn || documentData?.createUser || "Support"],
-      [`${config.docType} Date:`, format_Date(documentData?.docDate)],
-      ["Store:", getStoreName(documentData?.storeNo) || "-"],
+      ["Staff Name:", documentData?.reqUser || documentData?.docAttn || documentData?.createUser || "Support"],
+      [`${config.docType} Date:`, format_Date(docDate)],
+      ["Store:", getStoreName(documentData?.itemsiteCode || documentData?.storeNo) || "-"],
       [""]
     );
     
@@ -548,7 +601,8 @@ function PrintPreview({
   };
 
   const handleExport = async (format) => {
-    const fileName = `${documentData?.docNo || config.docType}_${
+    const docNo = documentType === 'pr' ? (documentData?.reqNo || documentData?.docNo) : documentData?.docNo;
+    const fileName = `${docNo || config.docType}_${
       new Date().toISOString().split("T")[0]
     }`;
 
@@ -577,10 +631,10 @@ function PrintPreview({
            
            if (effectiveMode === 'admin') {
              row.push(
-               item.docPrice,
-               item.docAmt,
-                              (item.itemCost || 0).toFixed(1),
-                              ((item.docQty * item.itemCost) || 0).toFixed(1)
+               item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "0.00",
+               item.docAmt ? parseFloat(item.docAmt).toFixed(2) : "0.00",
+               (item.itemCost || 0).toFixed(2),
+               ((item.docQty * item.itemCost) || 0).toFixed(2)
              );
            }
            
@@ -593,13 +647,13 @@ function PrintPreview({
           0
         );
         const totalAmt = filteredItems.reduce(
-          (sum, item) => sum + (item.docAmt || 0),
+          (sum, item) => sum + (parseFloat(item.docAmt) || 0),
           0
         );
 
                  const totalsRow = ["", "", "Grand Total", "", totalQty];
          if (effectiveMode === 'admin') {
-           totalsRow.push("", totalAmt, "", "");
+           totalsRow.push("", parseFloat(totalAmt).toFixed(2), "", "");
          }
         const totalsData = [totalsRow];
 
@@ -889,10 +943,10 @@ function PrintPreview({
                 <td className="py-3 px-3 print-cell text-right font-medium">{item.docQty}</td>
                 {effectiveMode === 'admin' && (
                   <>
-                    <td className="py-3 px-3 print-cell text-right">{item.docPrice || "-"}</td>
-                    <td className="py-3 px-3 print-cell text-right font-medium">{item.docAmt || "-"}</td>
-                    <td className="py-3 px-3 print-cell text-right">{(item.itemCost || 0).toFixed(2)}</td>
-                    <td className="py-3 px-3 print-cell text-right font-medium">{((item.docQty * item.itemCost) || 0).toFixed(2)}</td>
+                    <td className="py-3 px-3 print-cell text-right">{item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "-"}</td>
+                    <td className="py-3 px-3 print-cell text-right font-medium">{item.docAmt ? parseFloat(item.docAmt).toFixed(2) : "-"}</td>
+                    <td className="py-3 px-3 print-cell text-right">{(parseFloat(item.itemCost) || 0).toFixed(2)}</td>
+                    <td className="py-3 px-3 print-cell text-right font-medium">{((item.docQty * (parseFloat(item.itemCost) || 0)) || 0).toFixed(2)}</td>
                   </>
                 )}
               </tr>
@@ -948,14 +1002,14 @@ function PrintPreview({
                     <td className="py-4 px-4 text-right">-</td>
                     <td className="py-4 px-4 text-right text-blue-800">
                       {filteredItems.reduce(
-                        (sum, item) => sum + (item.docAmt || 0),
+                        (sum, item) => sum + (parseFloat(item.docAmt) || 0),
                         0
                       ).toFixed(2)}
                     </td>
                     <td className="py-4 px-4 text-right">-</td>
                     <td className="py-4 px-4 text-right text-blue-800">
                       {filteredItems.reduce(
-                        (sum, item) => sum + ((item.docQty * item.itemCost) || 0),
+                        (sum, item) => sum + ((item.docQty * (parseFloat(item.itemCost) || 0)) || 0),
                         0
                       ).toFixed(2)}
                     </td>
