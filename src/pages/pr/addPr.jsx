@@ -1288,9 +1288,9 @@ function AddPR() {
     setLoading(true);
     try {
       const siteCode = userDetails?.siteCode;
-      const hqSiteCode = userDetails?.HQSiteCode;
+      // const hqSiteCode = userDetails?.HQSiteCode;
       
-      const query = `?Site=${hqSiteCode || 'ZEHQ'}`;
+      const query = `?Site=${siteCode}`;
       const response = await apiService1.get(`api/GetInvitems${query}`);
       const stockDetails = response.result;
       const count = response.result.length;

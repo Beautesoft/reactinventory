@@ -1807,15 +1807,24 @@ function AddGti({ docData }) {
 
         // Create Stktrnbatches records for each batch
         for (const batch of batchDetails) {
+          const trnQty = Number(stktrnRecord.trnQty ?? 0);
+          const trnSign =
+            trnQty === 0
+              ? type === "source"
+                ? -1
+                : 1
+              : Math.sign(trnQty);
+          const absoluteBatchQty = Math.abs(Number(batch.quantity) || 0);
+
           const stktrnbatchesPayload = {
             batchNo: batch.batchNo || "No Batch", // Use "No Batch" string for Stktrnbatches API
             stkTrnId: stktrnRecord.id,
-            batchQty: type === "source" ? -batch.quantity : batch.quantity // Negative for source, positive for destination
+            batchQty: trnSign * absoluteBatchQty
           };
 
           try {
             await apiService.post("Stktrnbatches", stktrnbatchesPayload);
-            console.log(`✅ Created Stktrnbatches for ${type}: ${batch.batchNo || "No Batch"} - ${batch.quantity} qty`);
+            console.log(`✅ Created Stktrnbatches for ${type}: ${batch.batchNo || "No Batch"} - ${stktrnbatchesPayload.batchQty} qty`);
           } catch (error) {
             console.error(`❌ Error creating Stktrnbatches for ${batch.batchNo || "No Batch"}:`, error);
           }

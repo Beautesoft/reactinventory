@@ -2418,8 +2418,8 @@ function AddGto({ docData }) {
               });
             }
 
-            // Create Stktrnbatches records for destination (immediately after stktrns posting)
-            await createStktrnbatchesRecords(stktrns, processedDetails, "destination");
+            // Create Stktrnbatches records for source (immediately after stktrns posting)
+            await createStktrnbatchesRecords(stktrns, processedDetails, "source");
 
   
 
@@ -2571,8 +2571,8 @@ function AddGto({ docData }) {
                 });
               }
 
-              // Create Stktrnbatches records for source (immediately after stktrns1 posting)
-              await createStktrnbatchesRecords(stktrns1, processedDetails, "source");
+              // Create Stktrnbatches records for destination (immediately after stktrns1 posting)
+              await createStktrnbatchesRecords(stktrns1, processedDetails, "destination");
 
               // 9) Per-item log
               for (const d of stktrns1) {
