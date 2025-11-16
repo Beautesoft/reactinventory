@@ -1748,42 +1748,61 @@ function AddGrn({ docData }) {
   // Helper function to group cart items by itemcode+uom and combine multiple batches
   const groupCartItemsByItem = (cartItems) => {
     const grouped = new Map();
-    
-    cartItems.forEach(item => {
+
+    cartItems.forEach((item) => {
       const key = `${item.itemcode}-${item.docUom}`;
-      
+
       if (!grouped.has(key)) {
-        // Initialize with first item's values
         grouped.set(key, {
           ...item,
-          docQty: item.docQty, // Start with first item's quantity
-          docAmt: item.docAmt, // Start with first item's amount
-          batchDetails: {
-            individualBatches: []
-          }
+          docQty: Number(item.docQty) || 0,
+          docAmt: Number(item.docAmt) || 0,
+          batchDetails: { individualBatches: [] },
         });
+      } else {
+        const existing = grouped.get(key);
+        existing.docQty += Number(item.docQty) || 0;
+        existing.docAmt += Number(item.docAmt) || 0;
       }
-      
-      const groupedItem = grouped.get(key);
-      
-      // Add batch information if batch functionality is enabled
+
+      const g = grouped.get(key);
+
+      // Capture batch info if present and enabled
       if (getConfigValue('BATCH_NO') === "Yes" && item.docBatchNo) {
-        groupedItem.batchDetails.individualBatches.push({
+        g.batchDetails.individualBatches.push({
           batchNo: item.docBatchNo,
-          quantity: item.docQty,
+          quantity: Number(item.docQty) || 0,
           expDate: item.docExpdate,
-          batchCost: item.itemprice
+          batchCost: item.itemprice,
         });
-      }
-      
-      // Only accumulate if this is not the first item (already initialized above)
-      if (groupedItem.batchDetails.individualBatches.length > 1) {
-        groupedItem.docQty += item.docQty;
-        groupedItem.docAmt += item.docAmt;
       }
     });
-    
-    return Array.from(grouped.values());
+
+    // Consolidate duplicate batch numbers and sync totals
+    return Array.from(grouped.values()).map((g) => {
+      if (getConfigValue('BATCH_NO') === "Yes" && g.batchDetails?.individualBatches?.length) {
+        const consolidated = new Map();
+        g.batchDetails.individualBatches.forEach((b) => {
+          const k = b.batchNo || "No Batch";
+          const prev = consolidated.get(k);
+          if (prev) {
+            prev.quantity += Number(b.quantity) || 0;
+            if (!prev.expDate && b.expDate) prev.expDate = b.expDate;
+          } else {
+            consolidated.set(k, {
+              batchNo: b.batchNo,
+              quantity: Number(b.quantity) || 0,
+              expDate: b.expDate,
+              batchCost: b.batchCost,
+            });
+          }
+        });
+        g.batchDetails.individualBatches = Array.from(consolidated.values());
+      }
+
+      g.docTtlqty = g.docQty;
+      return g;
+    });
   };
 
   // Helper function to update ItemBatches for multiple batches
@@ -1957,7 +1976,7 @@ function AddGrn({ docData }) {
 
     return {
       id: null,
-      trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
+      trnPost: today.toISOString().split("T")[0],
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
       aperiod: null,
@@ -1969,8 +1988,8 @@ function AddGrn({ docData }) {
       trnType: "GRN",
       trnDbQty: null,
       trnCrQty: null,
-      trnQty: item.docTtlqty || item.docQty,
-      trnBalqty: item.docTtlqty || item.docQty,
+      trnQty: Number(item.docQty),
+      trnBalqty: Number(item.docQty),
       trnBalcst: item.docAmt,
       trnAmt: item.docAmt,
       trnCost: item.docAmt,
@@ -2216,7 +2235,7 @@ function AddGrn({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
+                trnPost: today.toISOString().split("T")[0],
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,

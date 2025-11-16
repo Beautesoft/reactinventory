@@ -1855,7 +1855,7 @@ function AddGti({ docData }) {
 
     return {
       id: null,
-      trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
+      trnPost: today.toISOString().split("T")[0],
       trnDate: stockHdrs.docDate,
       trnNo: null,
       postTime: timeStr,
@@ -1891,6 +1891,8 @@ function AddGti({ docData }) {
       transPackageLineNo: null,
       // Only set docExpdate if batch functionality is enabled and we have a valid date
               docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? item.docExpdate : null,
+      // Carry FEFO batches forward so destination handler can upsert per-batch
+      fefoBatches: Array.isArray(item?.fefoBatches) ? item.fefoBatches : null,
     };
   };
 
@@ -2466,7 +2468,14 @@ function AddGti({ docData }) {
                 } else {
                   // Regular FEFO batch transfer - handle destination store only
                   console.log(`🔄 Processing destination FEFO transfer for ${trimmedItemCode}`);
-                  await handleDestinationFefoTransfer(d, trimmedItemCode, cartItem?.docQty || d.trnQty);
+                  const pd = processedDetails.find(x =>
+                    x.itemcode === trimmedItemCode && x.docUom === d.itemUom
+                  );
+                  await handleDestinationFefoTransfer(
+                    { ...d, fefoBatches: Array.isArray(pd?.fefoBatches) ? pd.fefoBatches : null },
+                    trimmedItemCode,
+                    cartItem?.docQty || d.trnQty
+                  );
                 }
               } else {
                 // No batch functionality - handle destination store "No Batch" with existence check
@@ -3120,42 +3129,93 @@ function AddGti({ docData }) {
   // Helper function to handle destination store FEFO batch operations (TO store) - ADD quantity
   const handleDestinationFefoTransfer = async (stktrnItem, trimmedItemCode, transferQty = null) => {
     console.log(`🔄 Destination FEFO Transfer: ${transferQty || stktrnItem.trnQty} qty for ${trimmedItemCode}`);
-    
     // Validate required parameters
     if (!stktrnItem || !trimmedItemCode) {
       console.error("❌ Missing required parameters for destination FEFO transfer");
       return;
     }
 
+    // If FEFO batches are precomputed, iterate and upsert per batch
+    if (Array.isArray(stktrnItem.fefoBatches) && stktrnItem.fefoBatches.length > 0) {
+      for (const fb of stktrnItem.fefoBatches) {
+        const destBatchNo = fb.batchNo || "";
+        const destQty = Number(fb.quantity || 0);
+        if (destQty <= 0) continue;
+
+        const filter = {
+          where: {
+            and: [
+              { itemCode: trimmedItemCode },
+              { uom: stktrnItem.itemUom },
+              { siteCode: stockHdrs.tstoreNo },
+              { batchNo: destBatchNo },
+            ],
+          },
+        };
+
+        const url = `ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+        const existing = await apiService
+          .get(url)
+          .then((resp) => resp[0])
+          .catch((error) => {
+            console.error("Error fetching destination batch:", error);
+            return null;
+          });
+
+        if (!existing) {
+          const createPayload = {
+            itemCode: trimmedItemCode,
+            siteCode: stockHdrs.tstoreNo,
+            uom: stktrnItem.itemUom,
+            qty: destQty,
+            batchCost: Number(stktrnItem.itemBatchCost) || 0,
+            batchNo: destBatchNo,
+            expDate: fb.expDate || (stktrnItem?.docExpdate ? stktrnItem.docExpdate : null),
+          };
+          await apiService.post(`ItemBatches`, createPayload).catch((err) => {
+            console.error(`Error creating batch for ${trimmedItemCode}:`, err);
+          });
+          console.log(`✅ Created FEFO batch ${destBatchNo || "(No Batch)"} in destination store ${stockHdrs.tstoreNo} with ${destQty} qty`);
+        } else {
+          const updatePayload = {
+            itemcode: trimmedItemCode,
+            sitecode: stockHdrs.tstoreNo,
+            uom: stktrnItem.itemUom,
+            qty: destQty,
+            batchcost: 0,
+            batchno: destBatchNo,
+          };
+          await apiService.post(`ItemBatches/updateqty`, updatePayload).catch((err) => {
+            console.error(`Error updating batch for ${trimmedItemCode}:`, err);
+          });
+          console.log(`✅ Updated FEFO batch ${destBatchNo || "(No Batch)"} in destination store ${stockHdrs.tstoreNo} by ${destQty} qty`);
+        }
+      }
+      return;
+    }
+
+    // Fallback to previous behavior when no fefoBatches supplied
     const qty = transferQty || Number(stktrnItem.trnQty);
     if (qty <= 0) {
       console.error(`❌ Invalid transfer quantity: ${qty}`);
       return;
     }
 
-    // For FEFO destination transfers, we need to handle multiple batches
-    // This function will be called multiple times for each batch from the source FEFO transfer
-    // Each call represents one batch being transferred to destination
-    
-    // Check if this is a "No Batch" transfer
     const isNoBatchTransfer = !stktrnItem.itemBatch || stktrnItem.itemBatch.trim() === "";
-    
+
     if (isNoBatchTransfer) {
-      // Handle "No Batch" transfer to destination store with existence check
       const noBatchFilter = {
         where: {
           and: [
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stockHdrs.tstoreNo },
-            { batchNo: "" }, // "No Batch" record
+            { batchNo: "" },
           ],
         },
       };
 
-      const noBatchUrl = `ItemBatches?filter=${encodeURIComponent(
-        JSON.stringify(noBatchFilter)
-      )}`;
+      const noBatchUrl = `ItemBatches?filter=${encodeURIComponent(JSON.stringify(noBatchFilter))}`;
       let existingNoBatch = await apiService
         .get(noBatchUrl)
         .then((resp) => resp[0])
@@ -3165,12 +3225,11 @@ function AddGti({ docData }) {
         });
 
       if (!existingNoBatch) {
-        // Create new "No Batch" record in destination store
         const batchCreate = {
           itemCode: trimmedItemCode,
-          siteCode: stockHdrs.tstoreNo, // Destination store
+          siteCode: stockHdrs.tstoreNo,
           uom: stktrnItem.itemUom,
-          qty: qty, // Use validated quantity
+          qty: qty,
           batchCost: 0,
           batchNo: "",
         };
@@ -3181,9 +3240,9 @@ function AddGti({ docData }) {
       } else {
         const noBatchDestUpdate = {
           itemcode: trimmedItemCode,
-          sitecode: stockHdrs.tstoreNo, // Destination store
+          sitecode: stockHdrs.tstoreNo,
           uom: stktrnItem.itemUom,
-          qty: qty, // Use validated quantity
+          qty: qty,
           batchcost: 0,
         };
 
@@ -3194,22 +3253,18 @@ function AddGti({ docData }) {
           });
       }
     } else {
-      // Handle specific batch transfer to destination store
-      // First, check if the specific batch exists in destination store
       const specificBatchFilter = {
         where: {
           and: [
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stockHdrs.tstoreNo },
-            { batchNo: stktrnItem.itemBatch }, // Filter by specific batch
+            { batchNo: stktrnItem.itemBatch },
           ],
         },
       };
 
-      const specificBatchUrl = `ItemBatches?filter=${encodeURIComponent(
-        JSON.stringify(specificBatchFilter)
-      )}`;
+      const specificBatchUrl = `ItemBatches?filter=${encodeURIComponent(JSON.stringify(specificBatchFilter))}`;
       let existingBatch = await apiService
         .get(specificBatchUrl)
         .then((resp) => resp[0])
@@ -3219,12 +3274,11 @@ function AddGti({ docData }) {
         });
 
       if (!existingBatch) {
-        // Create new batch record in destination store
         const batchCreate = {
           itemCode: trimmedItemCode,
-          siteCode: stockHdrs.tstoreNo, // Use tstoreNo (destination store) for GTI
+          siteCode: stockHdrs.tstoreNo,
           uom: stktrnItem.itemUom,
-          qty: qty, // Use validated quantity
+          qty: qty,
           batchCost: Number(stktrnItem.itemBatchCost) || 0,
           batchNo: stktrnItem.itemBatch,
           expDate: stktrnItem?.docExpdate ? stktrnItem?.docExpdate : null,
@@ -3236,12 +3290,11 @@ function AddGti({ docData }) {
 
         console.log(`✅ Created new FEFO batch ${stktrnItem.itemBatch} in destination store ${stockHdrs.tstoreNo} with ${qty} qty`);
       } else {
-        // Update existing batch in destination store (tstoreNo)
         const batchUpdate = {
           itemcode: trimmedItemCode,
           sitecode: stockHdrs.tstoreNo, // Use tstoreNo (destination store) for GTI
           uom: stktrnItem.itemUom,
-          qty: qty, // Use validated quantity
+          qty: qty,
           batchcost: 0,
           batchno: stktrnItem.itemBatch,
         };
@@ -4147,7 +4200,7 @@ function AddGti({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
+                trnPost: today.toISOString().split("T")[0],
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,

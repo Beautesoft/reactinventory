@@ -1913,7 +1913,7 @@ function AddRtn({ docData }) {
 
     return {
       id: null,
-      trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
+      trnPost: today.toISOString().split("T")[0],
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
       aperiod: null,
@@ -2996,7 +2996,7 @@ function AddRtn({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: `${today.toISOString().split("T")[0]} ${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:${timeStr.slice(4,6)}`,
+                trnPost: today.toISOString().split("T")[0],
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,
