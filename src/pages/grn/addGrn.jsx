@@ -1460,16 +1460,35 @@ function AddGrn({ docData }) {
     // Cart Validation
     if (cart.length === 0) errors.push("Cart shouldn't be empty");
 
-    // Batch Validation - Only for post and when batch functionality is enabled
-    if (type === "post" && getConfigValue('BATCH_NO') === "Yes") {
+    // Batch and Expiry Date Validation - For both save and post when batch functionality is enabled
+    if (getConfigValue('BATCH_NO') === "Yes") {
       cart.forEach((item, index) => {
-        if (!item.docBatchNo) {
+        const itemDesc = item.itemdesc || item.itemcode;
+        const itemNumber = index + 1;
+        
+        // Check for batch number - can be in docBatchNo or batchDetails.individualBatches
+        const hasBatchNo = item.docBatchNo || 
+                          (item.batchDetails?.individualBatches?.length > 0) ||
+                          (item.selectedBatches?.batchDetails?.length > 0);
+        
+        if (!hasBatchNo) {
           errors.push(
-            `Batch number is required for item ${index + 1} (${item.itemcode})`
+            `Batch number is required for item ${itemNumber}: ${itemDesc}. Please click the edit icon to add batch number.`
           );
         }
-        // Note: Expiry date is now optional - if missing, it will be auto-calculated during processing
-        // No validation error for missing expiry date
+        
+        // Check for expiry date when EXPIRY_DATE config is enabled
+        if (getConfigValue('EXPIRY_DATE') === "Yes") {
+          const hasExpiryDate = item.docExpdate || 
+                               (item.batchDetails?.individualBatches?.some(b => b.expDate)) ||
+                               (item.selectedBatches?.batchDetails?.some(b => b.expDate));
+          
+          if (!hasExpiryDate) {
+            errors.push(
+              `Expiry date is required for item ${itemNumber}: ${itemDesc}. Please click the edit icon to add expiry date.`
+            );
+          }
+        }
       });
     }
 

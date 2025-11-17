@@ -1873,8 +1873,13 @@ function AddRtn({ docData }) {
 
         let batchDetails = [];
 
-        // Get batch details based on transfer type
-        if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
+        // FIRST: Check for grouped batch details (from groupCartItemsByItem)
+        // This contains both specific batches and FEFO batches after grouping
+        if (processedItem?.batchDetails?.individualBatches?.length > 0) {
+          batchDetails = processedItem.batchDetails.individualBatches;
+        }
+        // Fallback: Get batch details based on transfer type (for non-grouped items)
+        else if (processedItem?.transferType === "specific" && processedItem?.batchDetails?.individualBatches?.length > 0) {
           // Specific batch transfer
           batchDetails = processedItem.batchDetails.individualBatches;
         } else if (processedItem?.transferType === "fefo" && processedItem?.fefoBatches?.length > 0) {
@@ -1903,6 +1908,120 @@ function AddRtn({ docData }) {
     }
   };
 
+  // Helper function to group cart items by itemcode+uom and combine multiple batches
+  const groupCartItemsByItem = (cartItems) => {
+    const grouped = new Map();
+
+    cartItems.forEach((item) => {
+      const key = `${item.itemcode}-${item.docUom}`;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          ...item,
+          docQty: Number(item.docQty) || 0,
+          docAmt: Number(item.docAmt) || 0,
+          batchDetails: item.batchDetails || { individualBatches: [] },
+          fefoBatches: item.fefoBatches || [],
+          // Preserve selectedBatches and transferType if present
+          selectedBatches: item.selectedBatches,
+          transferType: item.transferType,
+        });
+      } else {
+        const existing = grouped.get(key);
+        existing.docQty += Number(item.docQty) || 0;
+        existing.docAmt += Number(item.docAmt) || 0;
+        
+        // Merge batch details if present
+        if (item.batchDetails?.individualBatches?.length) {
+          if (!existing.batchDetails) existing.batchDetails = { individualBatches: [] };
+          existing.batchDetails.individualBatches.push(...item.batchDetails.individualBatches);
+        }
+        
+        // Merge FEFO batches if present
+        if (item.fefoBatches?.length) {
+          if (!existing.fefoBatches) existing.fefoBatches = [];
+          existing.fefoBatches.push(...item.fefoBatches);
+        }
+      }
+
+      const g = grouped.get(key);
+
+      // Capture batch info if present
+      if (getConfigValue('BATCH_NO') === "Yes") {
+        // Handle fefoBatches (from FEFO calculation) - convert to individualBatches
+        if (item.fefoBatches?.length > 0) {
+          if (!g.batchDetails) g.batchDetails = { individualBatches: [] };
+          item.fefoBatches.forEach((batch) => {
+            g.batchDetails.individualBatches.push({
+              batchNo: batch.batchNo,
+              quantity: Number(batch.quantity) || 0,
+              expDate: batch.expDate,
+              batchCost: batch.batchCost || item.itemprice,
+            });
+          });
+        }
+        // Handle simple docBatchNo (only if no structured batch info exists)
+        else if (item.docBatchNo && !item.batchDetails?.individualBatches?.length) {
+          if (!g.batchDetails) g.batchDetails = { individualBatches: [] };
+          g.batchDetails.individualBatches.push({
+            batchNo: item.docBatchNo,
+            quantity: Number(item.docQty) || 0,
+            expDate: item.docExpdate,
+            batchCost: item.itemprice,
+          });
+        }
+      }
+    });
+
+    // Consolidate duplicate batch numbers and sync totals
+    return Array.from(grouped.values()).map((g) => {
+      // Consolidate individualBatches if present
+      if (getConfigValue('BATCH_NO') === "Yes" && g.batchDetails?.individualBatches?.length) {
+        const consolidated = new Map();
+        g.batchDetails.individualBatches.forEach((b) => {
+          const k = b.batchNo || "No Batch";
+          const prev = consolidated.get(k);
+          if (prev) {
+            prev.quantity += Number(b.quantity) || 0;
+            if (!prev.expDate && b.expDate) prev.expDate = b.expDate;
+          } else {
+            consolidated.set(k, {
+              batchNo: b.batchNo,
+              quantity: Number(b.quantity) || 0,
+              expDate: b.expDate,
+              batchCost: b.batchCost,
+            });
+          }
+        });
+        g.batchDetails.individualBatches = Array.from(consolidated.values());
+      }
+
+      // Consolidate FEFO batches if present
+      if (getConfigValue('BATCH_NO') === "Yes" && g.fefoBatches?.length) {
+        const consolidated = new Map();
+        g.fefoBatches.forEach((b) => {
+          const k = b.batchNo || "No Batch";
+          const prev = consolidated.get(k);
+          if (prev) {
+            prev.quantity += Number(b.quantity) || 0;
+            if (!prev.expDate && b.expDate) prev.expDate = b.expDate;
+          } else {
+            consolidated.set(k, {
+              batchNo: b.batchNo,
+              quantity: Number(b.quantity) || 0,
+              expDate: b.expDate,
+              batchCost: b.batchCost,
+            });
+          }
+        });
+        g.fefoBatches = Array.from(consolidated.values());
+      }
+
+      g.docTtlqty = g.docQty; // Sync totals
+      return g;
+    });
+  };
+
   const createTransactionObject = (item, docNo, storeNo) => {
     console.log(item, "trafr object");
     const today = new Date();
@@ -1925,8 +2044,8 @@ function AddRtn({ docData }) {
       trnType: "VGRN",
       trnDbQty: null,
       trnCrQty: null,
-      trnQty: (item.docTtlqty || item.docQty) * -1,
-      trnBalqty: (item.docTtlqty || item.docQty) * -1,
+      trnQty: Number(item.docQty) * -1, // Use aggregated docQty, then multiply by -1 for returns
+      trnBalqty: Number(item.docQty) * -1, // Use aggregated docQty
       trnBalcst: item.docAmt * -1,
       trnAmt: item.docAmt * -1,
       trnCost: item.docAmt * -1,
@@ -1937,12 +2056,21 @@ function AddRtn({ docData }) {
       movType: "VGRN",
       // Only set itemBatch if batch functionality is enabled
       itemBatch: getConfigValue('BATCH_NO') === "Yes" ? 
-        (item?.transferType === "specific" && item?.batchDetails?.individualBatches?.length > 0 ?
-          item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',') :
-          item?.transferType === "fefo" && item?.fefoBatches?.length > 0 ?
-            item.fefoBatches.map(batch => batch.batchNo || "No Batch").join(',') : // Actual FEFO batch numbers
-            item?.docBatchNo || 
-            null) : null,
+        (() => {
+          // First check for grouped batch details (from groupCartItemsByItem)
+          // This contains both specific batches and FEFO batches after grouping
+          if (item?.batchDetails?.individualBatches?.length > 0) {
+            return item.batchDetails.individualBatches.map(batch => batch.batchNo || "No Batch").join(',');
+          }
+          // Fallback: Check based on transfer type
+          if (item?.transferType === "specific" && item?.batchDetails?.individualBatches?.length > 0) {
+            return item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',');
+          }
+          if (item?.transferType === "fefo" && item?.fefoBatches?.length > 0) {
+            return item.fefoBatches.map(batch => batch.batchNo || "No Batch").join(',');
+          }
+          return item?.docBatchNo || null;
+        })() : null,
       itemBatchCost: item.itemprice,
       stockIn: null,
       transPackageLineNo: null,
@@ -2198,7 +2326,13 @@ function AddRtn({ docData }) {
           details.map(async (item) => await calculateFefoBatches(item))
         );
         
-        const stktrns = processedDetails.map((item) =>
+        // Group cart items by itemcode+uom to combine multiple batches (AFTER FEFO calculation)
+        const groupedDetails = groupCartItemsByItem(processedDetails);
+        console.log("Grouped details:", groupedDetails);
+
+        // Create STKTRN records - one per unique item (not per batch)
+        // Batch details are tracked in Stktrnbatches table
+        const stktrns = groupedDetails.map((item) =>
           createTransactionObject(item, docNo, userDetails.siteCode)
         );
 
@@ -2288,7 +2422,8 @@ function AddRtn({ docData }) {
           }
 
           // Create Stktrnbatches records for each batch (AFTER Stktrns are posted)
-          await createStktrnbatchesRecords(stktrns, processedDetails, "return");
+          // Pass the grouped details which contains the consolidated batch information
+          await createStktrnbatchesRecords(stktrns, groupedDetails, "return");
 
           // 9) Per-item log and (optional) BatchSNO GET
           for (const d of stktrns) {
@@ -2405,7 +2540,8 @@ function AddRtn({ docData }) {
             if (getConfigValue('BATCH_NO') === "Yes") {
               // For RTN, we need to find existing batches and reduce their quantities
               // Check if this is a specific batch selection or FEFO
-              const cartItem = cartData.find(item => 
+              // Use grouped details which contains the consolidated batch information
+              const cartItem = groupedDetails.find(item => 
                 item.itemcode === trimmedItemCode && 
                 item.docUom === d.itemUom
               );

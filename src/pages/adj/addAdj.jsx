@@ -2270,6 +2270,18 @@ function AddAdj({ docData }) {
   const getProcessedBatchDetails = (processedItem) => {
     let batchDetails = [];
 
+    // FIRST: Check for grouped batch details (from groupCartItemsByItem)
+    // This handles the case where items with same itemcode+UOM have been grouped
+    if (processedItem?.batchDetails?.individualBatches?.length > 0) {
+      batchDetails = processedItem.batchDetails.individualBatches;
+      console.log(`🔍 getProcessedBatchDetails - Grouped batch details found:`, {
+        itemcode: processedItem.itemcode,
+        batchDetailsLength: batchDetails.length,
+        batchDetails: batchDetails
+      });
+      return batchDetails; // Return early, don't check other sources
+    }
+
     if (processedItem?.transferType === "specific") {
       // Specific batch transfer - handle both specific batches and No Batch only scenarios
       batchDetails = processedItem.selectedBatches?.batchDetails || [];
@@ -2558,6 +2570,112 @@ function AddAdj({ docData }) {
     }
   };
 
+  // Helper function to group cart items by itemcode+uom and combine multiple batches
+  // Supports both positive and negative quantities for adjustments
+  const groupCartItemsByItem = (cartItems) => {
+    const grouped = new Map();
+
+    cartItems.forEach((item) => {
+      const key = `${item.itemcode}-${item.docUom}`;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          ...item,
+          docQty: Number(item.docQty) || 0, // Can be positive or negative for adjustments
+          docAmt: Number(item.docAmt) || 0,
+          batchDetails: { individualBatches: [] },
+          fefoBatches: item.fefoBatches || [], // Preserve fefoBatches
+          // Preserve selectedBatches and transferType if present
+          selectedBatches: item.selectedBatches,
+          transferType: item.transferType,
+        });
+      } else {
+        const existing = grouped.get(key);
+        existing.docQty += Number(item.docQty) || 0; // Sum signed quantities (can be positive or negative)
+        existing.docAmt += Number(item.docAmt) || 0;
+        
+        // Merge fefoBatches if present
+        if (item.fefoBatches?.length) {
+          if (!existing.fefoBatches) existing.fefoBatches = [];
+          existing.fefoBatches.push(...item.fefoBatches);
+        }
+      }
+
+      const g = grouped.get(key);
+
+      // Capture batch info if present (preserve sign in quantity for adjustments)
+      if (getConfigValue('BATCH_NO') === "Yes") {
+        // Handle selectedBatches structure (specific batch selection)
+        if (item.selectedBatches?.batchDetails?.length > 0) {
+          item.selectedBatches.batchDetails.forEach((batch) => {
+            g.batchDetails.individualBatches.push({
+              batchNo: batch.batchNo,
+              quantity: Number(batch.quantity) || 0, // Preserve sign from batch selection
+              expDate: batch.expDate,
+              batchCost: item.itemprice,
+            });
+          });
+          
+          // Handle No Batch quantity if present
+          if (item.selectedBatches?.noBatchTransferQty && Number(item.selectedBatches.noBatchTransferQty) !== 0) {
+            g.batchDetails.individualBatches.push({
+              batchNo: "",
+              quantity: Number(item.selectedBatches.noBatchTransferQty) || 0,
+              expDate: null,
+              batchCost: 0,
+            });
+          }
+        }
+        // Handle fefoBatches (from FEFO calculation)
+        else if (item.fefoBatches?.length > 0) {
+          item.fefoBatches.forEach((batch) => {
+            g.batchDetails.individualBatches.push({
+              batchNo: batch.batchNo,
+              quantity: Number(batch.quantity) || 0, // Can be positive or negative
+              expDate: batch.expDate,
+              batchCost: batch.batchCost || item.itemprice,
+            });
+          });
+        }
+        // Handle simple docBatchNo (direct batch entry)
+        else if (item.docBatchNo) {
+          g.batchDetails.individualBatches.push({
+            batchNo: item.docBatchNo,
+            quantity: Number(item.docQty) || 0, // Preserve sign (positive or negative)
+            expDate: item.docExpdate,
+            batchCost: item.itemprice,
+          });
+        }
+      }
+    });
+
+    // Consolidate duplicate batch numbers and sync totals
+    return Array.from(grouped.values()).map((g) => {
+      if (getConfigValue('BATCH_NO') === "Yes" && g.batchDetails?.individualBatches?.length) {
+        const consolidated = new Map();
+        g.batchDetails.individualBatches.forEach((b) => {
+          const k = b.batchNo || "No Batch";
+          const prev = consolidated.get(k);
+          if (prev) {
+            prev.quantity += Number(b.quantity) || 0; // Sum signed quantities
+            if (!prev.expDate && b.expDate) prev.expDate = b.expDate;
+          } else {
+            consolidated.set(k, {
+              batchNo: b.batchNo,
+              quantity: Number(b.quantity) || 0,
+              expDate: b.expDate,
+              batchCost: b.batchCost,
+            });
+          }
+        });
+        g.batchDetails.individualBatches = Array.from(consolidated.values());
+      }
+
+      g.docTtlqty = g.docQty; // Sync totals (can be positive or negative)
+      return g;
+    });
+  };
+
   const createTransactionObject = (item, docNo, storeNo, lineNo) => {
     console.log(item, "trafr object");
     console.log(`🔍 Creating transaction object for ${item.itemcode}:`, {
@@ -2588,9 +2706,10 @@ function AddAdj({ docData }) {
       trnDocno: docNo,
       trnType: "ADJ",
       // For adjustments: positive quantities go to trnDbQty, negative to trnCrQty
-      trnDbQty: isPositiveAdjustment ? Math.abs(Number(item.docTtlqty || item.docQty)) : null,
-      trnCrQty: isNegativeAdjustment ? Math.abs(Number(item.docTtlqty || item.docQty)) : null,
-      trnQty: item.docTtlqty || item.docQty, // Keep original signed quantity for reference
+      // Use aggregated docQty (can be positive or negative after grouping)
+      trnDbQty: isPositiveAdjustment ? Math.abs(Number(item.docQty)) : null,
+      trnCrQty: isNegativeAdjustment ? Math.abs(Number(item.docQty)) : null,
+      trnQty: Number(item.docQty), // Use aggregated docQty (can be positive or negative)
       trnBalqty: item.docTtlqty || item.docQty, // This will be calculated based on current stock
       trnBalcst: item.docAmt, // This will be calculated based on current stock
       trnAmt: item.docAmt,
@@ -2603,22 +2722,31 @@ function AddAdj({ docData }) {
       itemBatch:
         getConfigValue("BATCH_NO") === "Yes"
           ? (() => {
-              // Use the same logic as getProcessedBatchDetails to ensure consistency
-              const batchDetails = getProcessedBatchDetails(item);
+              // First check for grouped batch details (from groupCartItemsByItem)
+              if (item?.batchDetails?.individualBatches?.length > 0) {
+                const batchNumbers = item.batchDetails.individualBatches.map((batch) => {
+                  return batch.batchNo === "" ? "Unbatched" : batch.batchNo;
+                });
+                const result = batchNumbers.join(",");
+                console.log(`🔍 itemBatch construction (from grouped batches) for ${item.itemcode}:`, {
+                  batchDetails: item.batchDetails.individualBatches,
+                  batchNumbers: batchNumbers,
+                  result: result
+                });
+                return result;
+              }
               
-              // Extract batch numbers from the processed batch details
+              // Fallback to getProcessedBatchDetails for other cases
+              const batchDetails = getProcessedBatchDetails(item);
               const batchNumbers = batchDetails.map((batch) => {
-                // Convert empty string to "Unbatched" for display
                 return batch.batchNo === "" ? "Unbatched" : batch.batchNo;
               });
-              
               const result = batchNumbers.join(",");
-              console.log(`🔍 itemBatch construction for ${item.itemcode}:`, {
+              console.log(`🔍 itemBatch construction (from getProcessedBatchDetails) for ${item.itemcode}:`, {
                 batchDetails: batchDetails,
                 batchNumbers: batchNumbers,
                 result: result
               });
-              
               return result;
             })()
           : null,
@@ -3178,7 +3306,14 @@ function AddAdj({ docData }) {
           // await apiService.post("Inventorylogs", inventoryLog);
 
           let batchId;
-          const stktrns = details.map((item) =>
+          
+          // Group cart items by itemcode+uom to combine multiple batches
+          const groupedDetails = groupCartItemsByItem(details);
+          console.log("Grouped details:", groupedDetails);
+
+          // Create STKTRN records - one per unique item (not per batch)
+          // Batch details are tracked in Stktrnbatches table
+          const stktrns = groupedDetails.map((item) =>
             createTransactionObject(item, docNo, userDetails.siteCode)
           );
 
@@ -3274,8 +3409,8 @@ function AddAdj({ docData }) {
             }
 
             // Create Stktrnbatches records for each batch (AFTER Stktrns are posted)
-            // Pass the cart data (details) which contains the batch information
-            await createStktrnbatchesRecords(stktrns, details, "adjustment");
+            // Pass the grouped details which contains the consolidated batch information
+            await createStktrnbatchesRecords(stktrns, groupedDetails, "adjustment");
 
             // Update ItemBatches for non-batch items (when batch functionality is disabled)
             await updateItemBatchesForNonBatchItems(stktrns);
