@@ -4857,7 +4857,16 @@ function AddGti({ docData }) {
               <TabsTrigger value="detail">Details</TabsTrigger>
             </TabsList>
             <TabsContent value="detail" className="space-y-4">
-              {urlStatus != 7 && (
+              {urlStatus != 7 && !stockHdrs.fstoreNo && (
+                <Card className={"p-0 gap-0"}>
+                  <CardContent className="p-4">
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Please select "From Store" to view and select items</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {urlStatus != 7 && stockHdrs.fstoreNo && (
                 <Card className={"p-0 gap-0"}>
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}

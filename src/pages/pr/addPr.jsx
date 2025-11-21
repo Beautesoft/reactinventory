@@ -79,15 +79,27 @@ import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import ItemTable from "@/components/itemTable";
 
 const calculateTotals = (cartData) => {
-  return cartData.reduce(
-    (acc, item) => ({
-      totalQty: acc.totalQty + Number(item.reqdQty || 0),
-      totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
-      totalDisc: acc.totalDisc + Number(item.reqdDiscamt || 0),
-      totalAmt: acc.totalAmt + Number(item.reqdAmt || 0),
-    }),
-    { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
+  const result = cartData.reduce(
+    (acc, item) => {
+      const approvedQty = item.reqAppqty != null ? Number(item.reqAppqty) : null;
+      return {
+        totalQty: acc.totalQty + Number(item.reqdQty || 0),
+        totalApprovedQty: approvedQty != null ? (acc.totalApprovedQty || 0) + approvedQty : acc.totalApprovedQty,
+        hasApprovedQty: acc.hasApprovedQty || (approvedQty != null),
+        totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
+        totalDisc: acc.totalDisc + Number(item.reqdDiscamt || 0),
+        totalAmt: acc.totalAmt + Number(item.reqdAmt || 0),
+      };
+    },
+    { totalQty: 0, totalApprovedQty: null, hasApprovedQty: false, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
   );
+  
+  // If no items have reqAppqty set, keep totalApprovedQty as null
+  if (!result.hasApprovedQty) {
+    result.totalApprovedQty = null;
+  }
+  
+  return result;
 };
 
 // Helper function to calculate default expiry date
@@ -2177,7 +2189,7 @@ function AddPR() {
   // Handle approved quantity change
   const handleApprovedQtyChange = (index, value) => {
     const newCartData = [...cartData];
-    newCartData[index].reqAppqty = parseFloat(value) || 0;
+    newCartData[index].reqAppqty = (value) || 0;
     setCartData(newCartData);
   };
 
@@ -2780,6 +2792,7 @@ function AddPR() {
                     <TableHead>Description</TableHead>
                   <TableHead>UOM</TableHead>
                   <TableHead>Requested Qty</TableHead>
+                  {!isHQUser && (isViewOnlyStatus || formData.reqStatus === "Rejected") && <TableHead>Approved Qty</TableHead>}
                   <TableHead>FOC Qty</TableHead>
                   {approvalMode && <TableHead>Approved Qty</TableHead>}
                   {userDetails?.isSettingViewPrice === "True" && <TableHead>Price</TableHead>}
@@ -2817,17 +2830,20 @@ function AddPR() {
                       {item.reqdItemdesc}
                     </TableCell>
                     <TableCell>{item.docUom}</TableCell>
-                      <TableCell>{parseFloat(item.reqdQty || 0).toFixed(2)}</TableCell>
-                      <TableCell>{parseFloat(item.reqdFocqty || 0).toFixed(2)}</TableCell>
+                      <TableCell>{parseFloat(item.reqdQty || 0)}</TableCell>
+                      {!isHQUser && (isViewOnlyStatus || formData.reqStatus === "Rejected") && (
+                        <TableCell>{parseFloat(item.reqAppqty || item.reqdQty || 0)}</TableCell>
+                      )}
+                      <TableCell>{parseFloat(item.reqdFocqty || 0)}</TableCell>
                     {approvalMode && (
                       <TableCell>
                         <Input
                           type="number"
-                          value={parseFloat(item.reqAppqty || item.reqdQty || 0).toFixed(2)}
+                          value={parseFloat(item.reqAppqty || item.reqdQty || 0).toString()}
                           onChange={(e) => handleApprovedQtyChange(index, e.target.value)}
                           min="0"
                           max={item.reqdQty}
-                          step="0.01"
+                          step="1"
                           className="w-20"
                         />
                       </TableCell>
@@ -2891,10 +2907,14 @@ function AddPR() {
               </Table>
 
         {/* Totals */}
-            <div className="grid grid-cols-4 gap-4 pt-4 border-t mt-4">
+            <div className="grid grid-cols-5 gap-4 pt-4 border-t mt-4">
               <div>
                 <Label>Total Quantity</Label>
                 <Input value={totals.totalQty} readOnly className="bg-gray-50" />
+              </div>
+              <div>
+                <Label>Total Approved Quantity</Label>
+                <Input value={totals.totalApprovedQty == null ? "-" : totals.totalApprovedQty} readOnly className="bg-gray-50" />
               </div>
               <div>
                 <Label>Total FOC Quantity</Label>

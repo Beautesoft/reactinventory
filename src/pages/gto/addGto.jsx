@@ -866,12 +866,16 @@ function AddGto({ docData }) {
     initializeData();
   }, []);
 
-  // Separate effect to load stock details after page initialization
+  // Separate effect to load stock details after selecting to store
   useEffect(() => {
-    if (!pageLoading && stockHdrs.fstoreNo) {
+    if (!pageLoading && stockHdrs.tstoreNo) {
       getStockDetails();
+    } else if (!stockHdrs.tstoreNo) {
+      // Clear stock list when to store is not selected
+      setStockList([]);
+      setItemTotal(0);
     }
-  }, [pageLoading, stockHdrs.fstoreNo]);
+  }, [pageLoading, stockHdrs.tstoreNo]);
 
   useEffect(() => {
     console.log(itemFilter.whereArray, "wherearray");
@@ -1738,6 +1742,12 @@ function AddGto({ docData }) {
   };
 
   const addToCart = (index, item) => {
+    // Check if 'to store' is selected
+    if (!stockHdrs.tstoreNo) {
+      toast.error("Please select 'To Store' before adding to cart");
+      return;
+    }
+
     // Always check if quantity is entered and valid
     if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity");
@@ -5810,7 +5820,16 @@ function AddGto({ docData }) {
               <TabsTrigger value="detail">Details</TabsTrigger>
             </TabsList>
             <TabsContent value="detail" className="space-y-4">
-              {urlStatus != 7 && (
+              {urlStatus != 7 && !stockHdrs.tstoreNo && (
+                <Card className={"p-0 gap-0"}>
+                  <CardContent className="p-4">
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Please select "To Store" to view and select items</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {urlStatus != 7 && stockHdrs.tstoreNo && (
                 <Card className={"p-0 gap-0"}>
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
