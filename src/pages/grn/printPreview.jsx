@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Loader2,
 } from "lucide-react";
 import {
   Select,
@@ -294,24 +295,7 @@ function PrintPreview({
 
   const currentMode = isAdminMode ? 'admin' : 'user';
 
-  // Column configurations for different modes
-  const columnConfigs = {
-    user: {
-      headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Qty'],
-      keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty'],
-      widths: [8, 18, 40, 14, 15],
-      alignments: ['left', 'left', 'left', 'left', 'right'],
-      colSpan: 4
-    },
-    admin: {
-      headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
-      keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
-      widths: [8, 12, 28, 12, 10, 12, 12, 12, 12],
-      alignments: ['left', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
-      colSpan: 4
-    }
-  };
-
+  // State declarations
   const [items, setItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -322,6 +306,73 @@ function PrintPreview({
   const [hasManuallySelectedMode, setHasManuallySelectedMode] = useState(false); // Track if user manually selected mode
   const [storeOptions, setStoreOptions] = useState([]); // Store store options
   const [titles, setTitles] = useState([]); // Store titles data
+  const [prStatus, setPrStatus] = useState(null); // Store PR status
+  const [loading, setLoading] = useState(true); // Loading state for data fetching
+
+  // Column configurations for different modes
+  // For PR documents, include "Approved Qty" after "Required Qty" only if status is "Approved"
+  const isPR = documentType === 'pr';
+  const isPRApproved = useMemo(() => {
+    return isPR && (prStatus === 'Approved' || documentData?.reqStatus === 'Approved');
+  }, [isPR, prStatus, documentData?.reqStatus]);
+  
+  const columnConfigs = useMemo(() => {
+    if (isPR && isPRApproved) {
+      // PR with Approved status - show Approved Qty
+      return {
+        user: {
+          headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Required Qty', 'Approved Qty'],
+          keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty', 'approvedQty'],
+          widths: [8, 18, 35, 12, 12, 12],
+          alignments: ['left', 'left', 'left', 'left', 'right', 'right'],
+          colSpan: 4
+        },
+        admin: {
+          headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Required Qty', 'Approved Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
+          keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty', 'approvedQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
+          widths: [8, 12, 24, 10, 8, 8, 10, 10, 10, 10],
+          alignments: ['left', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right', 'right'],
+          colSpan: 4
+        }
+      };
+    } else if (isPR) {
+      // PR without Approved status - don't show Approved Qty
+      return {
+        user: {
+          headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Required Qty'],
+          keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty'],
+          widths: [8, 18, 40, 14, 15],
+          alignments: ['left', 'left', 'left', 'left', 'right'],
+          colSpan: 4
+        },
+        admin: {
+          headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Required Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
+          keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
+          widths: [8, 12, 28, 12, 10, 12, 12, 12, 12],
+          alignments: ['left', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
+          colSpan: 4
+        }
+      };
+    } else {
+      // Non-PR documents
+      return {
+        user: {
+          headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Qty'],
+          keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty'],
+          widths: [8, 18, 40, 14, 15],
+          alignments: ['left', 'left', 'left', 'left', 'right'],
+          colSpan: 4
+        },
+        admin: {
+          headers: ['No', 'Item Code', 'Item Description', 'Batch', 'Qty', 'Unit Price', 'Amount', 'itemCost', 'Total itemCost'],
+          keys: ['no', 'itemcode', 'itemdesc', 'batchselect', 'docQty', 'docPrice', 'docAmt', 'itemCost', 'totalCost'],
+          widths: [8, 12, 28, 12, 10, 12, 12, 12, 12],
+          alignments: ['left', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right'],
+          colSpan: 4
+        }
+      };
+    }
+  }, [isPR, isPRApproved]);
 
   // Update current mode based on selection and permissions
   const effectiveMode = selectedMode; // Allow mode switching regardless of admin status
@@ -404,24 +455,71 @@ function PrintPreview({
 
   const getDocumentDetails = async (filter) => {
     try {
+      setLoading(true);
       let response;
       
       if (documentType === 'pr') {
-        // For PR, fetch from reqdetails endpoint
+        // For PR, fetch header first to get status
+        const identifier = documentData.reqNo || documentData.docNo;
+        const headerFilter = {
+          where: { reqNo: identifier }
+        };
+        try {
+          const headerResponse = await apiService.get(
+            `reqheaders${buildFilterQuery(headerFilter)}`
+          );
+          if (headerResponse && headerResponse.length > 0) {
+            setPrStatus(headerResponse[0].reqStatus);
+          }
+        } catch (headerErr) {
+          console.error("Error fetching PR header:", headerErr);
+          // Fallback to documentData status
+          setPrStatus(documentData.reqStatus);
+        }
+        
+        // Fetch from reqdetails endpoint
         response = await apiService.get(
           `reqdetails${buildFilterQuery(filter)}`
         );
         
         // Transform PR items to match print preview format
-        response = response.map((item) => ({
-          itemcode: item.reqdItemcode || item.itemcode,
-          itemdesc: item.reqdItemdesc || item.itemdesc,
-          docQty: item.reqdQty || item.docQty || 0,
-          docPrice: item.reqdItemprice || item.reqdPrice || item.docPrice || 0,
-          docAmt: item.reqdAmt || item.docAmt || 0,
-          itemCost: item.itemCost || 0,
-          batchselect: item.docBatchNo || item.batchselect || "-",
-        }));
+        response = response.map((item) => {
+          // Handle batch selection: if itemRemark1 contains "specific", extract batch from itemRemark2
+          let batchDisplay = "-";
+          if (item.itemRemark1 && item.itemRemark1.toLowerCase().includes("specific")) {
+            // Extract batch numbers from itemRemark2 (format: "B02:3,B03:2")
+            if (item.itemRemark2) {
+              const batches = item.itemRemark2.split(',').map(batch => {
+                const [batchNo] = batch.split(':');
+                return batchNo.trim();
+              });
+              batchDisplay = batches.join(', ');
+            }
+          } else if (item.itemRemark1 && item.itemRemark1.toLowerCase().includes("fefo")) {
+            // Show "fefo" for FEFO type items
+            batchDisplay = "fefo";
+          } else {
+            // If itemRemark1 doesn't contain "specific" and no specific batch info, it's FEFO
+            // Check if there's a specific batch number, otherwise default to "fefo"
+            if (item.docBatchNo || item.batchselect) {
+              batchDisplay = item.docBatchNo || item.batchselect;
+            } else {
+              // Default to "fefo" for non-specific items
+              batchDisplay = "fefo";
+            }
+          }
+          
+          return {
+            itemcode: item.reqdItemcode || item.itemcode,
+            itemdesc: item.reqdItemdesc || item.itemdesc,
+            docQty: item.reqdQty || item.docQty || 0,
+            approvedQty: item.reqAppqty != null ? item.reqAppqty : null,
+            docPrice: item.reqdItemprice || item.reqdPrice || item.docPrice || 0,
+            docAmt: item.reqdAmt || item.docAmt || 0,
+            itemCost: item.itemCost || 0,
+            batchselect: batchDisplay,
+          };
+        });
       } else {
         // For other documents, use Stkprintlists
         response = await apiService.get(
@@ -432,6 +530,9 @@ function PrintPreview({
       setItems(response);
     } catch (err) {
       console.error("Error fetching document details:", err);
+      toast.error("Failed to load document details");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -629,6 +730,11 @@ function PrintPreview({
              item.docQty,
            ];
            
+           // Add Approved Qty for PR documents only if status is Approved
+           if (isPRApproved) {
+             row.push(item.approvedQty != null ? item.approvedQty : "-");
+           }
+           
            if (effectiveMode === 'admin') {
              row.push(
                item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "0.00",
@@ -646,12 +752,21 @@ function PrintPreview({
           (sum, item) => sum + (item.docQty || 0),
           0
         );
+        const totalApprovedQty = isPRApproved 
+          ? filteredItems.reduce(
+              (sum, item) => sum + (parseFloat(item.approvedQty) || 0),
+              0
+            )
+          : null;
         const totalAmt = filteredItems.reduce(
           (sum, item) => sum + (parseFloat(item.docAmt) || 0),
           0
         );
 
                  const totalsRow = ["", "", "Grand Total", "", totalQty];
+         if (isPRApproved && totalApprovedQty != null) {
+           totalsRow.push(totalApprovedQty);
+         }
          if (effectiveMode === 'admin') {
            totalsRow.push("", parseFloat(totalAmt).toFixed(2), "", "");
          }
@@ -765,6 +880,16 @@ function PrintPreview({
   const handlePrint = () => {
     window.print();
   };
+
+  // Show loader while data is being fetched
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <Loader2 className="w-8 h-8 text-gray-500 animate-spin" />
+        <span className="text-gray-600 mt-4 text-sm">Loading document details...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4">
@@ -941,6 +1066,11 @@ function PrintPreview({
                 <td className="py-3 px-3 print-cell">{item.itemdesc}</td>
                 <td className="py-3 px-3 print-cell">{item.batchselect || "-"}</td>
                 <td className="py-3 px-3 print-cell text-right font-medium">{item.docQty}</td>
+                {isPRApproved && (
+                  <td className="py-3 px-3 print-cell text-right font-medium">
+                    {item.approvedQty != null ? item.approvedQty : "-"}
+                  </td>
+                )}
                 {effectiveMode === 'admin' && (
                   <>
                     <td className="py-3 px-3 print-cell text-right">{item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "-"}</td>
@@ -997,6 +1127,14 @@ function PrintPreview({
                     0
                   )}
                 </td>
+                {isPRApproved && (
+                  <td className="py-4 px-4 text-right text-blue-800">
+                    {filteredItems.reduce(
+                      (sum, item) => sum + (parseFloat(item.approvedQty) || 0),
+                      0
+                    )}
+                  </td>
+                )}
                 {effectiveMode === 'admin' && (
                   <>
                     <td className="py-4 px-4 text-right">-</td>
