@@ -627,6 +627,10 @@ export const prApi = {
         }),
         { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
       );
+      
+      // Format totals to 2 decimal places
+      totals.totalDisc = parseFloat(totals.totalDisc.toFixed(2));
+      totals.totalAmt = parseFloat(totals.totalAmt.toFixed(2));
 
       // 3. Create GTO header (StkMovdocHdrs) - Status 0 (Open)
       const gtoHeader = {
@@ -643,7 +647,7 @@ export const prApi = {
         postDate: "", // Empty for Open documents
         docStatus: "0", // Open status (not posted)
         docQty: totals.totalQty,
-        docAmt: totals.totalAmt,
+        docAmt: totals.totalAmt, // Already formatted to 2 decimal places
         docAttn: prData.reqAttn || "",
         docRemk1: `Created from PR: ${prData.reqNo}`,
         staffNo: userDetails?.usercode || userDetails?.username || "SYSTEM",
@@ -665,10 +669,14 @@ export const prApi = {
         const approvedQty = parseFloat(item.reqAppqty || item.reqdQty || 0);
         const focQty = parseFloat(item.reqdFocqty || 0);
         const totalQty = approvedQty + focQty;
-        const price = parseFloat(item.reqdItemprice || item.reqdPrice || 0);
-        const discPer = parseFloat(item.reqdDiscper || 0);
-        const discAmt = parseFloat(item.reqdDiscamt || 0);
-        const amount = parseFloat(item.reqdAmt || 0);
+        const price = parseFloat(parseFloat(item.reqdItemprice || item.reqdPrice || 0).toFixed(2));
+        const discPer = parseFloat(parseFloat(item.reqdDiscper || 0).toFixed(2));
+        
+        // Recalculate discount amount and amount from base values to ensure precision
+        // This prevents floating point precision errors (e.g., 37.599998474121094)
+        // Format to exactly 2 decimal places using toFixed(2) and parseFloat
+        const discAmt = parseFloat(((approvedQty * price * discPer) / 100).toFixed(2));
+        const amount = parseFloat(((approvedQty * price) - discAmt).toFixed(2));
         
         // Parse batch information from PR fields
         // itemRemark1 format: "fefo-UOM" or "specific-UOM" (e.g., "fefo-PCS", "specific-BOTTLE")
@@ -706,19 +714,57 @@ export const prApi = {
           })
           .join(',');
 
-        const expDateStr = item.docExpdate || item.ordMemo4 || "";
+        // Prefer ordMemo4 (ISO format) over docExpdate (YYYY-MM-DD format)
+        // ordMemo4 is the source of truth for expiry dates in ISO format (matching GTO)
+        const ordMemo4Source = item.ordMemo4 || "";
+        const docExpdateSource = item.docExpdate || "";
         
         // Parse batch breakdown for recQty fields and build ordMemo4
         let recQtyFields = { recQty1: 0, recQty2: 0, recQty3: 0, recQty4: 0, recQty5: 0 };
-        let ordMemo4Str = ""; // Initialize ordMemo4 string
+        let ordMemo4Str = ""; // Initialize ordMemo4 string (will store ISO format)
         
+        // Helper function to convert date to ISO format (handles both ISO and YYYY-MM-DD)
+        const convertDateToISO = (dateStr) => {
+          if (!dateStr || dateStr.trim() === "") return "";
+          
+          try {
+            // If already in ISO format, return as-is
+            if (dateStr.includes("T") || dateStr.includes("Z")) {
+              return dateStr;
+            }
+            
+            // Try to parse with moment and convert to ISO
+            const parsedDate = moment(dateStr);
+            if (parsedDate.isValid()) {
+              return parsedDate.toISOString();
+            }
+            
+            // If moment fails, try to extract date part and convert
+            const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (dateMatch) {
+              const dateOnly = dateMatch[1];
+              const parsed = moment(dateOnly);
+              if (parsed.isValid()) {
+                return parsed.toISOString();
+              }
+            }
+            
+            // Fallback to original string
+            return dateStr;
+          } catch (e) {
+            // Fallback to original string if conversion fails
+            return dateStr;
+          }
+        };
+
         if (cleanBatchBreakdownStr && transferType === "specific") {
           const batchPairs = cleanBatchBreakdownStr.split(",").filter(Boolean);
           
-          // Parse expiry dates from docExpdate if available (format: expDate:qty,expDate:qty)
-          const expDatePairs = expDateStr ? expDateStr.split(",").filter(Boolean) : [];
+          // Use ordMemo4 if available (ISO format), otherwise use docExpdate (YYYY-MM-DD)
+          const expDateSource = ordMemo4Source || docExpdateSource;
+          const expDatePairs = expDateSource ? expDateSource.split(",").filter(Boolean) : [];
           
-          // Build ordMemo4 in format: expDate:qty,expDate:qty,... (matching addGto.jsx pattern)
+          // Build ordMemo4 in format: expDate:qty,expDate:qty,... (ISO format matching addGto.jsx pattern)
           const ordMemo4Parts = batchPairs.map((pair, idx) => {
             const [batchNo, qty] = pair.split(":");
             const qtyNum = parseFloat(qty) || 0;
@@ -730,10 +776,12 @@ export const prApi = {
               const expDatePair = expDatePairs[idx];
               const lastColonIndex = expDatePair.lastIndexOf(":");
               if (lastColonIndex > 0) {
-                expDate = expDatePair.substring(0, lastColonIndex).trim();
+                const rawDate = expDatePair.substring(0, lastColonIndex).trim();
+                // Convert to ISO format (handles both ISO and YYYY-MM-DD input)
+                expDate = convertDateToISO(rawDate);
               } else {
-                // If no colon, treat entire string as date
-                expDate = expDatePair.trim();
+                // If no colon, treat entire string as date and convert to ISO
+                expDate = convertDateToISO(expDatePair.trim());
               }
             }
             
@@ -742,7 +790,7 @@ export const prApi = {
               recQtyFields[`recQty${idx + 1}`] = qtyNum;
             }
             
-            // Build ordMemo4 part: expDate:qty
+            // Build ordMemo4 part: expDate:qty (with ISO format date)
             return `${expDate}:${qtyNum}`;
           });
           
@@ -751,9 +799,47 @@ export const prApi = {
           // Store "No Batch" quantity in recQty5
           recQtyFields.recQty5 = parseFloat(noBatchQty) || 0;
         } else {
-          // For FEFO or no batch info, use existing expDateStr format
-          ordMemo4Str = expDateStr;
+          // For FEFO or no batch info, use ordMemo4 directly if it exists (ISO format)
+          // Otherwise convert docExpdate to ISO format
+          if (ordMemo4Source) {
+            // Already in ISO format, use directly
+            ordMemo4Str = ordMemo4Source;
+          } else if (docExpdateSource) {
+            // Convert YYYY-MM-DD format to ISO format
+            try {
+              const formattedParts = docExpdateSource.split(",").map(part => {
+                const lastColonIndex = part.lastIndexOf(":");
+                if (lastColonIndex > 0) {
+                  const datePart = part.substring(0, lastColonIndex).trim();
+                  const qtyPart = part.substring(lastColonIndex + 1);
+                  const isoDate = convertDateToISO(datePart);
+                  return `${isoDate}:${qtyPart}`;
+                }
+                // If no colon, try to convert the whole part as a date
+                return convertDateToISO(part.trim());
+              });
+              ordMemo4Str = formattedParts.join(",");
+            } catch (e) {
+              ordMemo4Str = docExpdateSource; // Fallback to original
+            }
+          } else {
+            ordMemo4Str = "";
+          }
         }
+
+        // docExpdate should be empty string - dates are stored in ordMemo4
+        // This matches the pattern used in GTO, GTI, RTN, and ADJ modules
+        // For specific batches: dates in ordMemo4 format "date:qty,date:qty"
+        // For FEFO: dates will be fetched from ItemBatches API when needed
+        // SQL Server expects docExpdate to be either empty or a single date, not "date:qty,date:qty" format
+
+        // Format all amount fields to exactly 2 decimal places before posting
+        // Use parseFloat(value.toFixed(2)) to ensure exactly 2 decimal places
+        // This prevents floating point precision errors when posting to database
+        const formattedPrice = parseFloat(price.toFixed(2));
+        const formattedDiscPer = parseFloat(discPer.toFixed(2));
+        const formattedDiscAmt = parseFloat(discAmt.toFixed(2));
+        const formattedAmount = parseFloat(amount.toFixed(2));
 
         return {
           docNo: docNo,
@@ -767,17 +853,17 @@ export const prApi = {
           docQty: approvedQty,
           docFocqty: focQty,
           docTtlqty: totalQty,
-          docPrice: price,
-          docPdisc: discPer,
-          docDisc: discAmt,
-          docAmt: amount,
+          docPrice: formattedPrice,
+          docPdisc: formattedDiscPer,
+          docDisc: formattedDiscAmt,
+          docAmt: formattedAmount,
           ...recQtyFields,
           recTtl: totalQty,
           postedQty: 0,
           cancelQty: 0,
           createUser: userDetails?.username || "SYSTEM",
           docUom: docUom, // Use UOM from itemRemark1 or fallback to docUom
-          docExpdate: expDateStr || "",
+          docExpdate: "", // Always empty - matches pattern in GTO, GTI, RTN, ADJ
           docBatchNo: item.docBatchNo || "",
           itmBrand: item.brandcode || "",
           itmRange: "",
@@ -786,7 +872,7 @@ export const prApi = {
           DOCUOMDesc: item.DOCUOMDesc || "",
           itemRemark: item.itemRemark || "",
           docMdisc: 0,
-          itemprice: price,
+          itemprice: formattedPrice,
           // Store batch transfer information in ordMemo fields
           ordMemo1: transferType,
           ordMemo2: cleanBatchBreakdownStr, // Clean batch breakdown WITHOUT NOBATCH entries

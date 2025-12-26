@@ -510,3 +510,110 @@ export const formatCurrency = (amount) => {
   const currencyCode = getActiveCurrency();
   return `${currencyCode} ${amount.toLocaleString()}`;
 };
+
+// Normalize expiry date to YYYY-MM-DD format for consistent comparison
+// Returns normalized date string or null for empty/null/undefined values
+export const normalizeExpDate = (dateStr) => {
+  console.log("🔍 normalizeExpDate input:", { dateStr, type: typeof dateStr, isArray: Array.isArray(dateStr) });
+  
+  // Handle null, undefined, or non-string types
+  if (!dateStr || dateStr === "" || dateStr === "null" || dateStr === "undefined") {
+    console.log("🔍 normalizeExpDate: returning null (empty/falsy)");
+    return null;
+  }
+
+  // Convert to string if it's not already a string
+  let dateString;
+  if (typeof dateStr === 'string') {
+    dateString = dateStr;
+  } else if (dateStr instanceof Date) {
+    dateString = dateStr.toISOString();
+  } else {
+    // Try to convert to string
+    dateString = String(dateStr);
+    console.log("🔍 normalizeExpDate: converted to string:", dateString);
+  }
+  
+  // If conversion resulted in "null", "undefined", or empty string, return null
+  if (!dateString || dateString === "null" || dateString === "undefined" || dateString.trim() === "") {
+    console.log("🔍 normalizeExpDate: returning null (after conversion)");
+    return null;
+  }
+
+  try {
+    // Handle ISO date format (e.g., "2028-12-17T00:00:00.000Z")
+    if (dateString.includes('T') || dateString.includes('Z')) {
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        const result = date.toISOString().split('T')[0];
+        console.log("🔍 normalizeExpDate: ISO format result:", result);
+        return result;
+      }
+    }
+    
+    // Handle DD/MM/YYYY format (e.g., "17/12/2028" or "17/12/2028 12:00:00 AM")
+    if (dateString.includes('/')) {
+      const parts = dateString.split(' ')[0].split('/');
+      if (parts.length === 3) {
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        const year = parts[2];
+        const result = `${year}-${month}-${day}`;
+        console.log("🔍 normalizeExpDate: DD/MM/YYYY format result:", result);
+        return result;
+      }
+    }
+    
+    // If it's already in YYYY-MM-DD format, extract just the date part
+    if (dateString.includes('-')) {
+      // Extract just the date part (YYYY-MM-DD) from YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
+      const result = dateString.split(' ')[0].split('T')[0];
+      console.log("🔍 normalizeExpDate: YYYY-MM-DD format result:", result);
+      return result;
+    }
+    
+    // Try to parse as Date object
+    const date = new Date(dateString);
+    if (!isNaN(date.getTime())) {
+      const result = date.toISOString().split('T')[0];
+      console.log("🔍 normalizeExpDate: Date parse result:", result);
+      return result;
+    }
+  } catch (error) {
+    console.error("❌ Error normalizing expiry date:", error, { dateStr, dateString });
+  }
+  
+  console.log("🔍 normalizeExpDate: returning null (fallback)");
+  return null;
+};
+
+// Convert normalized expiry date (YYYY-MM-DD) to ISO format for API payloads
+// Returns ISO date string (e.g., "2028-12-17T00:00:00.000Z") or null
+export const normalizeExpDateToISO = (dateStr) => {
+  if (!dateStr) return null;
+  
+  // If already in ISO format, return as-is
+  if (typeof dateStr === 'string' && (dateStr.includes('T') || dateStr.includes('Z'))) {
+    return dateStr;
+  }
+  
+  // If it's in YYYY-MM-DD format, convert to ISO
+  if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    // Create date at midnight UTC
+    const date = new Date(dateStr + 'T00:00:00.000Z');
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  
+  // Try to normalize first, then convert to ISO
+  const normalized = normalizeExpDate(dateStr);
+  if (normalized) {
+    const date = new Date(normalized + 'T00:00:00.000Z');
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  
+  return null;
+};

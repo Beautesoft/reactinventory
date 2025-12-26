@@ -342,6 +342,16 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       { key: "reqStatus", label: "Status" },
       { key: "print", label: "Print" },
     ],
+    sum: [
+      { key: "docNo", label: "Doc Number" },
+      { key: "docDate", label: "Doc Date" },
+      { key: "docRef1", label: "Ref 1" },
+      { key: "docRef2", label: "Ref 2" },
+      { key: "docQty", label: "Total Quantity" },
+      ...(showTotalAmount ? [{ key: "docAmt", label: "Total Amount" }] : []),
+      { key: "docStatus", label: "Status" },
+      { key: "print", label: "Print" },
+    ],
   };
 
   const headers = tableHeaders[type] || tableHeaders.grn;

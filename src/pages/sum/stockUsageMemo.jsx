@@ -43,7 +43,7 @@ function StockUsageMemo() {
   const [pagination, setPagination] = useState({
     where: {
       docStatus: null,
-      movCode: "ADJ",
+      movCode: "SUM",
       storeNo: userDetails?.siteCode,
       supplyNo: null,
     },
@@ -172,7 +172,7 @@ function StockUsageMemo() {
 
   const handleRoute = () => {
     console.log("Create New clicked");
-    navigate("/stock-adjustment/add/"); // Navigate to the add page
+    navigate("/stock-usage-memo/add/"); // Navigate to the add page
   };
   
   const handleSort = (key, direction) => {
@@ -194,7 +194,7 @@ function StockUsageMemo() {
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
             <h1 className="text-2xl font-bold text-gray-900">
-              Stock Adjustment
+              Stock Usage Memo
             </h1>
           </div>
 

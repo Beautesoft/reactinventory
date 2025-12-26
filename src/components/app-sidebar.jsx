@@ -173,11 +173,11 @@ export function AppSidebar() {
       { title: "Stock Adjustment", 
         url: "/stock-adjustment", 
         icon: FiEdit },
-      // {
-      //   title: "Stock Usage Memo",
-      //   url: "/stock-usage-memo",
-      //   icon: FiFileText,
-      // },
+      {
+        title: "Stock Usage Memo",
+        url: "/stock-usage-memo",
+        icon: FiFileText,
+      },
       {
         title: "Stock Balance",
         url: "/stock-balance-live",

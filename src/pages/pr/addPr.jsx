@@ -81,21 +81,34 @@ import ItemTable from "@/components/itemTable";
 const calculateTotals = (cartData) => {
   const result = cartData.reduce(
     (acc, item) => {
-      const approvedQty = item.reqAppqty != null ? Number(item.reqAppqty) : null;
+      // Get approved quantity - use reqAppqty if set, otherwise use reqdQty as fallback
+      // This matches the display logic: item.reqAppqty || item.reqdQty
+      const approvedQty = parseFloat(item.reqAppqty || item.reqdQty || 0);
+      
+      // Track if any item has explicit reqAppqty set (not just using reqdQty fallback)
+      const hasExplicitApprovedQty = item.reqAppqty != null && item.reqAppqty !== "";
+      
       return {
         totalQty: acc.totalQty + Number(item.reqdQty || 0),
-        totalApprovedQty: approvedQty != null ? (acc.totalApprovedQty || 0) + approvedQty : acc.totalApprovedQty,
-        hasApprovedQty: acc.hasApprovedQty || (approvedQty != null),
+        // Sum all approved quantities from all lines (cumulative total)
+        // This ensures the total matches the sum of what's displayed in each row
+        totalApprovedQty: acc.totalApprovedQty + approvedQty,
+        hasApprovedQty: acc.hasApprovedQty || hasExplicitApprovedQty,
         totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
         totalDisc: acc.totalDisc + Number(item.reqdDiscamt || 0),
         totalAmt: acc.totalAmt + Number(item.reqdAmt || 0),
       };
     },
-    { totalQty: 0, totalApprovedQty: null, hasApprovedQty: false, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
+    { totalQty: 0, totalApprovedQty: 0, hasApprovedQty: false, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
   );
   
-  // If no items have reqAppqty set, keep totalApprovedQty as null
-  if (!result.hasApprovedQty) {
+  // Format amounts to 2 decimal places to prevent floating point precision issues
+  result.totalDisc = parseFloat(parseFloat(result.totalDisc).toFixed(2));
+  result.totalAmt = parseFloat(parseFloat(result.totalAmt).toFixed(2));
+  
+  // If no items have explicit reqAppqty set, show null (for display purposes)
+  // But we still calculate the sum using reqdQty as fallback
+  if (!result.hasApprovedQty && result.totalApprovedQty === 0) {
     result.totalApprovedQty = null;
   }
   
@@ -124,6 +137,7 @@ const BatchSelectionDialog = memo(
     onBatchSelectionSubmit,
     itemcode,
     itemdesc,
+    isCartItem = false,
   }) => {
     const [selectedBatches, setSelectedBatches] = useState([]);
     const [batchQuantities, setBatchQuantities] = useState({});
@@ -239,9 +253,15 @@ const BatchSelectionDialog = memo(
       <Dialog open={showBatchDialog} onOpenChange={setShowBatchDialog}>
         <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
-            <DialogTitle>Select Specific Batches for Transfer</DialogTitle>
+            <DialogTitle>
+              {isCartItem 
+                ? "Edit Batch Selection for Transfer" 
+                : "Select Specific Batches for Transfer"}
+            </DialogTitle>
             <div className="text-sm text-muted-foreground">
-              Choose specific batches to transfer for item:{" "}
+              {isCartItem 
+                ? `Edit batch selection for item: ` 
+                : `Choose specific batches to transfer for item: `}
               <strong>{itemcode}</strong> - {itemdesc}
             </div>
           </DialogHeader>
@@ -1532,6 +1552,12 @@ function AddPR() {
 
   // Handle batch selection
   const handleBatchSelection = async (index, item) => {
+    // Prevent outlets from using batch selection - only HQ in approval mode can select batches
+    if (!approvalMode) {
+      toast.error("Batch selection is only available during HQ approval");
+      return;
+    }
+    
     // Always check if quantity is entered and valid
     if (!item.Qty || item.Qty <= 0) {
       toast.error("Please enter a valid quantity first");
@@ -1656,6 +1682,9 @@ function AddPR() {
     
     const transferQty = Number(batchDialogData.transferQty);
 
+    // Check if editing a cart item or stock list item
+    const isCartItemEdit = batchDialogData.isCartItem && batchDialogData.cartIndex !== undefined;
+
     // Handle multiple batch selection
     if (
       combinedBatchData.selectedBatches &&
@@ -1676,38 +1705,126 @@ function AddPR() {
         combinedBatchData.noBatchQty ||
         Math.max(0, transferQty - totalBatchQty);
 
-      // Update the stock item to show that specific batches are selected
-      setStockList((prev) =>
-        prev.map((stockItem) =>
-          stockItem.stockCode === batchDialogData.item.stockCode
+      if (isCartItemEdit) {
+        // Update cart item with new batch selection
+        const uom = batchDialogData.item.docUom || "";
+        const batchPairs = batchDetails
+          .map(b => `${b.batchNo}:${b.quantity}`)
+          .join(",");
+        
+        const itemRemark2 = noBatchTransferQty > 0
+          ? batchPairs + ",NOBATCH:" + noBatchTransferQty
+          : batchPairs;
+        
+        const docBatchNoStorage = batchDetails
+          .map(b => b.batchNo)
+          .filter(Boolean)
+          .join(",");
+        
+        // Format dates to YYYY-MM-DD for docExpdate (convert from ISO format if needed)
+        const docExpdateStorage = batchDetails
+          .map(b => {
+            const expDate = b.expDate || '';
+            let formattedDate = expDate;
+            
+            if (expDate) {
+              try {
+                // Try to parse with moment and format to YYYY-MM-DD
+                const parsedDate = moment(expDate);
+                if (parsedDate.isValid()) {
+                  formattedDate = parsedDate.format("YYYY-MM-DD");
+                } else {
+                  // If moment can't parse, try to extract date part from ISO string
+                  const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                  if (dateMatch) {
+                    formattedDate = dateMatch[1];
+                  }
+                }
+              } catch (e) {
+                // If parsing fails, try to extract date part from ISO string
+                const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                  formattedDate = dateMatch[1];
+                }
+                // Otherwise keep original
+              }
+            }
+            
+            return `${formattedDate}:${b.quantity}`;
+          })
+          .join(",");
+        
+        // Store ordMemo4 in ISO format (like GTO): "expDate:qty,expDate:qty"
+        // Keep original ISO format dates (e.g., "2027-10-31T00:00:00.000Z:2")
+        const ordMemo4Storage = batchDetails
+          .map(b => {
+            const expDate = b.expDate || '';
+            // Keep original ISO format if available, otherwise use as-is
+            return `${expDate}:${b.quantity}`;
+          })
+          .join(",");
+
+        setCartData(prev => prev.map((item, idx) => 
+          idx === batchDialogData.cartIndex
             ? {
-                ...stockItem,
-                selectedBatches: {
-                  batchNo: combinedBatchData.batchNo, // Combined batch numbers
-                  expDate: combinedBatchData.expDate, // Combined expiry dates
+                ...item,
+                itemRemark1: `specific${uom ? `-${uom}` : ""}`,
+                itemRemark2: itemRemark2,
+                docBatchNo: docBatchNoStorage,
+                docExpdate: docExpdateStorage,
+                ordMemo4: ordMemo4Storage, // Add ordMemo4 with ISO format (like GTO)
+                batchDetails: {
+                  batchNo: combinedBatchData.batchNo,
+                  expDate: combinedBatchData.expDate,
                   batchTransferQty: totalBatchQty,
                   noBatchTransferQty: noBatchTransferQty,
                   totalTransferQty: transferQty,
-                  transferType: "specific", // Mark as specific batch transfer
-                  batchDetails: batchDetails, // Store individual batch details
+                  individualBatches: batchDetails
                 },
+                transferType: "specific"
               }
-            : stockItem
-        )
-      );
+            : item
+        ));
 
-      const message =
-        noBatchTransferQty > 0
-          ? `Multiple batches selected: ${batchDetails
-              .map((b) => `${b.batchNo}(${b.quantity})`)
-              .join(
-                ", "
-              )}. Balance ${noBatchTransferQty} will be taken from "No Batch". Now click + icon to add to cart.`
-          : `Multiple batches selected: ${batchDetails
-              .map((b) => `${b.batchNo}(${b.quantity})`)
-              .join(", ")}. Now click + icon to add to cart.`;
+        const message = noBatchTransferQty > 0
+          ? `Batch selection updated: ${batchDetails.map((b) => `${b.batchNo}(${b.quantity})`).join(", ")}. Balance ${noBatchTransferQty} from "No Batch".`
+          : `Batch selection updated: ${batchDetails.map((b) => `${b.batchNo}(${b.quantity})`).join(", ")}.`;
 
-      toast.success(message);
+        toast.success(message);
+      } else {
+        // Update the stock item to show that specific batches are selected
+        setStockList((prev) =>
+          prev.map((stockItem) =>
+            stockItem.stockCode === batchDialogData.item.stockCode
+              ? {
+                  ...stockItem,
+                  selectedBatches: {
+                    batchNo: combinedBatchData.batchNo, // Combined batch numbers
+                    expDate: combinedBatchData.expDate, // Combined expiry dates
+                    batchTransferQty: totalBatchQty,
+                    noBatchTransferQty: noBatchTransferQty,
+                    totalTransferQty: transferQty,
+                    transferType: "specific", // Mark as specific batch transfer
+                    batchDetails: batchDetails, // Store individual batch details
+                  },
+                }
+              : stockItem
+          )
+        );
+
+        const message =
+          noBatchTransferQty > 0
+            ? `Multiple batches selected: ${batchDetails
+                .map((b) => `${b.batchNo}(${b.quantity})`)
+                .join(
+                  ", "
+                )}. Balance ${noBatchTransferQty} will be taken from "No Batch". Now click + icon to add to cart.`
+            : `Multiple batches selected: ${batchDetails
+                .map((b) => `${b.batchNo}(${b.quantity})`)
+                .join(", ")}. Now click + icon to add to cart.`;
+
+        toast.success(message);
+      }
     } else {
       // Single batch selection (backward compatibility)
       const batchTransferQty = Math.min(
@@ -1716,38 +1833,106 @@ function AddPR() {
       );
       const noBatchTransferQty = Math.max(0, transferQty - batchTransferQty);
 
-      // Update the stock item to show that specific batches are selected
-      setStockList((prev) =>
-        prev.map((stockItem) =>
-          stockItem.stockCode === batchDialogData.item.stockCode
+      if (isCartItemEdit) {
+        // Update cart item with single batch selection
+        const uom = batchDialogData.item.docUom || "";
+        const itemRemark2 = noBatchTransferQty > 0
+          ? `${combinedBatchData.batchNo}:${batchTransferQty},NOBATCH:${noBatchTransferQty}`
+          : `${combinedBatchData.batchNo}:${batchTransferQty}`;
+        
+        // Format date to YYYY-MM-DD for docExpdate
+        const expDate = combinedBatchData.expDate || '';
+        let formattedDate = expDate;
+        
+        if (expDate) {
+          try {
+            const parsedDate = moment(expDate);
+            if (parsedDate.isValid()) {
+              formattedDate = parsedDate.format("YYYY-MM-DD");
+            } else {
+              const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
+              if (dateMatch) {
+                formattedDate = dateMatch[1];
+              }
+            }
+          } catch (e) {
+            const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (dateMatch) {
+              formattedDate = dateMatch[1];
+            }
+          }
+        }
+        
+        const docExpdateStorage = `${formattedDate}:${batchTransferQty}`;
+        
+        // Store ordMemo4 in ISO format (like GTO): keep original ISO format
+        const ordMemo4Storage = expDate ? `${expDate}:${batchTransferQty}` : "";
+        
+        setCartData(prev => prev.map((item, idx) => 
+          idx === batchDialogData.cartIndex
             ? {
-                ...stockItem,
-                selectedBatches: {
+                ...item,
+                itemRemark1: `specific${uom ? `-${uom}` : ""}`,
+                itemRemark2: itemRemark2,
+                docBatchNo: combinedBatchData.batchNo,
+                docExpdate: docExpdateStorage,
+                ordMemo4: ordMemo4Storage, // Add ordMemo4 with ISO format (like GTO)
+                batchDetails: {
                   batchNo: combinedBatchData.batchNo,
                   expDate: combinedBatchData.expDate,
                   batchTransferQty: batchTransferQty,
                   noBatchTransferQty: noBatchTransferQty,
                   totalTransferQty: transferQty,
-                  transferType: "specific", // Mark as specific batch transfer
-                  batchDetails: [
-                    {
-                      batchNo: combinedBatchData.batchNo,
-                      expDate: combinedBatchData.expDate,
-                      quantity: batchTransferQty,
-                    },
-                  ],
+                  individualBatches: [{
+                    batchNo: combinedBatchData.batchNo,
+                    expDate: combinedBatchData.expDate,
+                    quantity: batchTransferQty
+                  }]
                 },
+                transferType: "specific"
               }
-            : stockItem
-        )
-      );
+            : item
+        ));
 
-      const message =
-        noBatchTransferQty > 0
-          ? `Specific batch ${combinedBatchData.batchNo} selected: ${batchTransferQty} qty. Balance ${noBatchTransferQty} will be taken from "No Batch". Now click + icon to add to cart.`
-          : `Specific batch ${combinedBatchData.batchNo} selected: ${batchTransferQty} qty. Now click + icon to add to cart.`;
+        const message = noBatchTransferQty > 0
+          ? `Batch selection updated: ${combinedBatchData.batchNo} (${batchTransferQty} qty). Balance ${noBatchTransferQty} from "No Batch".`
+          : `Batch selection updated: ${combinedBatchData.batchNo} (${batchTransferQty} qty).`;
 
-      toast.success(message);
+        toast.success(message);
+      } else {
+        // Update the stock item to show that specific batches are selected
+        setStockList((prev) =>
+          prev.map((stockItem) =>
+            stockItem.stockCode === batchDialogData.item.stockCode
+              ? {
+                  ...stockItem,
+                  selectedBatches: {
+                    batchNo: combinedBatchData.batchNo,
+                    expDate: combinedBatchData.expDate,
+                    batchTransferQty: batchTransferQty,
+                    noBatchTransferQty: noBatchTransferQty,
+                    totalTransferQty: transferQty,
+                    transferType: "specific", // Mark as specific batch transfer
+                    batchDetails: [
+                      {
+                        batchNo: combinedBatchData.batchNo,
+                        expDate: combinedBatchData.expDate,
+                        quantity: batchTransferQty,
+                      },
+                    ],
+                  },
+                }
+              : stockItem
+          )
+        );
+
+        const message =
+          noBatchTransferQty > 0
+            ? `Specific batch ${combinedBatchData.batchNo} selected: ${batchTransferQty} qty. Balance ${noBatchTransferQty} will be taken from "No Batch". Now click + icon to add to cart.`
+            : `Specific batch ${combinedBatchData.batchNo} selected: ${batchTransferQty} qty. Now click + icon to add to cart.`;
+
+        toast.success(message);
+      }
     }
 
     // Reset states
@@ -1766,13 +1951,14 @@ function AddPR() {
     const qty = parseFloat(item.Qty) || 0;
 
     // Check if quantity exceeds on-hand quantity (if available)
-    if (item.quantity && Number(item.Qty) > Number(item.quantity)) {
-      toast.error("Not enough stock available");
-      return;
-    }
+    // if (item.quantity && Number(item.Qty) > Number(item.quantity)) {
+    //   toast.error("Not enough stock available");
+    //   return;
+    // }
 
-    // Validate batch selection if enabled
-    if (getConfigValue('BATCH_NO') === "Yes" && item.selectedBatches) {
+    // Validate batch selection if enabled (only in approval mode)
+    // Outlets don't select batches, so validation is only needed when HQ assigns batches
+    if (getConfigValue('BATCH_NO') === "Yes" && item.selectedBatches && approvalMode) {
       if (item.selectedBatches.transferType === "specific") {
         const totalSelected = item.selectedBatches.batchDetails.reduce(
           (sum, b) => sum + b.quantity, 0
@@ -1787,8 +1973,9 @@ function AddPR() {
 
     const price = parseFloat(item.Price) || 0;
     const discPer = 0; // Default discount
-    const discAmt = (qty * price * discPer) / 100;
-    const amount = (qty * price) - discAmt;
+    // Calculate and format to exactly 2 decimal places to prevent floating point precision errors
+    const discAmt = parseFloat(((qty * price * discPer) / 100).toFixed(2));
+    const amount = parseFloat(((qty * price) - discAmt).toFixed(2));
 
     // Prepare batch data for storage in reqdetails fields
     // Store transfer type with UOM: "fefo-PCS", "specific-BOTTLE", etc.
@@ -1796,7 +1983,8 @@ function AddPR() {
     let itemRemark1 = `fefo${uom ? `-${uom}` : ""}`; // Default to fefo-UOM - Transfer type: fefo/specific
     let itemRemark2 = ""; // Batch breakdown: batchNo:qty,batchNo:qty (include NOBATCH if needed)
     let docBatchNoStorage = ""; // Just batch numbers: B01,B02
-    let docExpdateStorage = ""; // Expiry dates: expDate:qty,expDate:qty
+    let docExpdateStorage = ""; // Expiry dates: expDate:qty,expDate:qty (YYYY-MM-DD format)
+    let ordMemo4Storage = ""; // Expiry dates: expDate:qty,expDate:qty (ISO format like GTO)
 
     if (item.selectedBatches) {
       // Set transfer type from selectedBatches if available, include UOM
@@ -1822,9 +2010,47 @@ function AddPR() {
           .filter(Boolean)
           .join(",");
         
-        // Store expiry dates in docExpdate: "expDate:qty,expDate:qty"
+        // Store expiry dates in docExpdate: "expDate:qty,expDate:qty" (YYYY-MM-DD format)
         docExpdateStorage = item.selectedBatches.batchDetails
-          .map(b => `${b.expDate || ''}:${b.quantity}`)
+          .map(b => {
+            const expDate = b.expDate || '';
+            let formattedDate = expDate;
+            
+            if (expDate) {
+              try {
+                // Try to parse with moment and format to YYYY-MM-DD
+                const parsedDate = moment(expDate);
+                if (parsedDate.isValid()) {
+                  formattedDate = parsedDate.format("YYYY-MM-DD");
+                } else {
+                  // If moment can't parse, try to extract date part from ISO string
+                  const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                  if (dateMatch) {
+                    formattedDate = dateMatch[1];
+                  }
+                }
+              } catch (e) {
+                // If parsing fails, try to extract date part from ISO string
+                const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                  formattedDate = dateMatch[1];
+                }
+                // Otherwise keep original
+              }
+            }
+            
+            return `${formattedDate}:${b.quantity}`;
+          })
+          .join(",");
+        
+        // Store expiry dates in ordMemo4: "expDate:qty,expDate:qty" (ISO format like GTO)
+        // Keep original ISO format dates (e.g., "2027-10-31T00:00:00.000Z:2")
+        ordMemo4Storage = item.selectedBatches.batchDetails
+          .map(b => {
+            const expDate = b.expDate || '';
+            // Keep original ISO format if available, otherwise use as-is
+            return `${expDate}:${b.quantity}`;
+          })
           .join(",");
       }
     }
@@ -1835,15 +2061,15 @@ function AddPR() {
       status: "Active",
       reqdItemcode: item.stockCode,
       reqdItemdesc: item.stockName,
-      reqdItemprice: price.toFixed(2),
+      reqdItemprice: parseFloat(price.toFixed(2)), // Format to 2 decimal places as number
       reqdQty: qty,
       reqAppqty: 0,
       reqdFocqty: 0,
       reqdTtlqty: qty,
-      reqdPrice: price.toFixed(2),
+      reqdPrice: parseFloat(price.toFixed(2)), // Format to 2 decimal places as number
       reqdDiscper: discPer,
-      reqdDiscamt: discAmt.toFixed(2),
-      reqdAmt: amount.toFixed(2),
+      reqdDiscamt: discAmt, // Already formatted to 2 decimal places
+      reqdAmt: amount, // Already formatted to 2 decimal places
       reqdRecqty: 0,
       reqdCancelqty: 0,
       reqdOutqty: qty,
@@ -1861,7 +2087,8 @@ function AddPR() {
       RunningNo: "", // Will be set when saving
       docUom: item.docUom,
       docBatchNo: docBatchNoStorage || "",        // ✅ B01,B02
-      docExpdate: docExpdateStorage || "",        // ✅ 2025-08-12:4,2025-09-15:6
+      docExpdate: docExpdateStorage || "",        // ✅ 2025-08-12:4,2025-09-15:6 (YYYY-MM-DD format)
+      ordMemo4: ordMemo4Storage || "",            // ✅ 2027-10-31T00:00:00.000Z:2,2027-11-30T00:00:00.000Z:1 (ISO format like GTO)
       itemRemark: "",                             // Keep for user remarks
       itemRemark1: itemRemark1 || "",             // ✅ fefo-UOM or specific-UOM (e.g., "fefo-PCS", "specific-BOTTLE")
       itemRemark2: itemRemark2 || "",             // ✅ B01:5,B02:3,NOBATCH:2
@@ -1917,7 +2144,7 @@ function AddPR() {
         [field]: value
       };
 
-      // Auto-calculate dependent fields when FOC, discount, or quantity changes
+      // Auto-calculate dependent fields when FOC, discount, quantity, or price changes
       if (field === 'reqdQty' || field === 'reqdFocqty' || field === 'reqdDiscper' || field === 'reqdItemprice') {
         const qty = parseFloat(updated.reqdQty || 0);
         const focQty = parseFloat(updated.reqdFocqty || 0);
@@ -1928,14 +2155,19 @@ function AddPR() {
         const totalQty = qty + focQty;
         
         // Calculate discount amount (only on regular quantity)
-        const discAmt = (qty * price * discPer) / 100;
+        // Format to exactly 2 decimal places immediately to prevent floating point precision errors
+        const discAmt = parseFloat(((qty * price * discPer) / 100).toFixed(2));
         
         // Calculate final amount (regular quantity * price - discount)
-        const finalAmt = (qty * price) - discAmt;
+        // Format to exactly 2 decimal places immediately to prevent floating point precision errors
+        const finalAmt = parseFloat(((qty * price) - discAmt).toFixed(2));
         
+        // Format all amounts to 2 decimal places and store as numbers
         updated.reqdTtlqty = totalQty;
-        updated.reqdDiscamt = discAmt.toFixed(2);
-        updated.reqdAmt = finalAmt.toFixed(2);
+        updated.reqdItemprice = parseFloat(price.toFixed(2));
+        updated.reqdPrice = parseFloat(price.toFixed(2));
+        updated.reqdDiscamt = discAmt; // Already formatted to 2 decimal places
+        updated.reqdAmt = finalAmt; // Already formatted to 2 decimal places
       }
 
       return updated;
@@ -1946,7 +2178,29 @@ function AddPR() {
   const handleEditSubmit = () => {
     if (editData.editingIndex !== null) {
       const newCartData = [...cartData];
-      newCartData[editData.editingIndex] = { ...editData };
+      
+      // Ensure all amount fields are formatted to exactly 2 decimal places before saving
+      // This prevents floating point precision errors when saving edited items
+      const qty = parseFloat(editData.reqdQty || 0);
+      const focQty = parseFloat(editData.reqdFocqty || 0);
+      const price = parseFloat(editData.reqdItemprice || 0);
+      const discPer = parseFloat(editData.reqdDiscper || 0);
+      
+      // Recalculate and format discount amount and amount to prevent floating point errors
+      const discAmt = parseFloat(((qty * price * discPer) / 100).toFixed(2));
+      const amount = parseFloat(((qty * price) - discAmt).toFixed(2));
+      
+      // Create updated item with properly formatted amounts
+      const updatedItem = {
+        ...editData,
+        reqdItemprice: parseFloat(price.toFixed(2)),
+        reqdPrice: parseFloat(price.toFixed(2)),
+        reqdDiscamt: discAmt, // Already formatted to 2 decimal places
+        reqdAmt: amount, // Already formatted to 2 decimal places
+        reqdTtlqty: qty + focQty,
+      };
+      
+      newCartData[editData.editingIndex] = updatedItem;
       setCartData(newCartData);
     }
     setShowEditDialog(false);
@@ -2100,6 +2354,43 @@ function AddPR() {
         if (approvedQty === 0) {
           validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity must be greater than 0`);
         }
+
+        // Validate batch selection matches approved quantity for specific batch mode
+        if (getConfigValue('BATCH_NO') === "Yes") {
+          const isSpecificBatch = (item.itemRemark1 || item.ordMemo1)?.startsWith("specific");
+          
+          if (isSpecificBatch) {
+            // Parse batch quantities from itemRemark2 (format: "B01:2,B02:3,NOBATCH:1")
+            let totalBatchQty = 0;
+            
+            if (item.itemRemark2 || item.ordMemo2) {
+              const batchString = item.itemRemark2 || item.ordMemo2;
+              const batchPairs = batchString.split(",");
+              
+              batchPairs.forEach(pair => {
+                const [batchNo, qty] = pair.split(":");
+                const quantity = parseFloat(qty) || 0;
+                totalBatchQty += quantity;
+              });
+            } else if (item.batchDetails?.individualBatches) {
+              // Fallback to runtime batchDetails if available
+              totalBatchQty = item.batchDetails.individualBatches.reduce(
+                (sum, b) => sum + (parseFloat(b.quantity) || 0), 
+                0
+              );
+              if (item.batchDetails.noBatchTransferQty) {
+                totalBatchQty += parseFloat(item.batchDetails.noBatchTransferQty) || 0;
+              }
+            }
+            
+            // Compare total batch quantity with approved quantity
+            if (Math.abs(totalBatchQty - approvedQty) > 0.01) { // Allow small floating point differences
+              validationErrors.push(
+                `Item ${item.reqdItemcode} (${item.reqdItemdesc}): Batch selection total (${totalBatchQty}) does not match approved quantity (${approvedQty}). Please update batch selection or approved quantity.`
+              );
+            }
+          }
+        }
       });
 
       if (validationErrors.length > 0) {
@@ -2141,9 +2432,31 @@ function AddPR() {
     setApprovalLoading(true);
     setShowApprovalDialog(false); // Close dialog immediately to prevent double clicks
     try {
-      // Only create GTO if supplier is HQ, otherwise just approve
+      // Save all changes first (like GTO does before posting)
+      // This ensures batch selections, amounts, ordMemo4, etc. are all saved before approval
+      let reqNo = formData.reqNo;
+      
+      if (id) {
+        // Update existing PR with all changes (batch selections, amounts, etc.)
+        await prApi.updatePR(id, formData);
+        await prApi.updatePRLineItems(cartData);
+      } else {
+        // If new PR, create it first with all changes
+        // Generate PR number if not exists
+        if (!reqNo) {
+          reqNo = await prApi.getNextPRNumber();
+          setFormData(prev => ({ ...prev, reqNo }));
+        }
+        
+        // Create the PR with all data (this will handle control number generation internally)
+        const result = await prApi.createPR(formData, cartData);
+        reqNo = result.reqNo;
+        setFormData(prev => ({ ...prev, reqNo: result.reqNo }));
+      }
+      
+      // Now approve with the saved data (including batch selections, ordMemo4, etc.)
       const shouldCreateTransfer = formData.suppCode === "HQ";
-      const result = await prApi.approvePRWithQuantities(formData.reqNo, cartData, shouldCreateTransfer);
+      const result = await prApi.approvePRWithQuantities(reqNo, cartData, shouldCreateTransfer);
       
       // Show appropriate success message based on whether GTO was created
       if (shouldCreateTransfer && result?.docNo) {
@@ -2189,7 +2502,42 @@ function AddPR() {
   // Handle approved quantity change
   const handleApprovedQtyChange = (index, value) => {
     const newCartData = [...cartData];
-    newCartData[index].reqAppqty = (value) || 0;
+    const newApprovedQty = parseFloat(value) || 0;
+    newCartData[index].reqAppqty = newApprovedQty;
+    
+    // Warn if batch selection doesn't match new approved quantity
+    if (getConfigValue('BATCH_NO') === "Yes" && newApprovedQty > 0) {
+      const item = newCartData[index];
+      const isSpecificBatch = (item.itemRemark1 || item.ordMemo1)?.startsWith("specific");
+      
+      if (isSpecificBatch) {
+        let totalBatchQty = 0;
+        
+        if (item.itemRemark2 || item.ordMemo2) {
+          const batchString = item.itemRemark2 || item.ordMemo2;
+          const batchPairs = batchString.split(",");
+          batchPairs.forEach(pair => {
+            const [batchNo, qty] = pair.split(":");
+            totalBatchQty += parseFloat(qty) || 0;
+          });
+        } else if (item.batchDetails?.individualBatches) {
+          totalBatchQty = item.batchDetails.individualBatches.reduce(
+            (sum, b) => sum + (parseFloat(b.quantity) || 0), 0
+          );
+          if (item.batchDetails.noBatchTransferQty) {
+            totalBatchQty += parseFloat(item.batchDetails.noBatchTransferQty) || 0;
+          }
+        }
+        
+        if (Math.abs(totalBatchQty - newApprovedQty) > 0.01) {
+          toast.warning(
+            `Batch selection total (${totalBatchQty}) doesn't match approved quantity (${newApprovedQty}). Please update batch selection.`,
+            { duration: 5000 }
+          );
+        }
+      }
+    }
+    
     setCartData(newCartData);
   };
 
@@ -2232,6 +2580,176 @@ function AddPR() {
     setIsBatchEdit(false);
     setSelectedRows([]);
     toast.success("Batch update successful!");
+  };
+
+  // Handle reverting from specific batch selection back to FEFO mode
+  const handleRevertToFEFO = (index, cartItem) => {
+    const uom = cartItem.docUom || "";
+    
+    setCartData(prev => prev.map((item, idx) => 
+      idx === index
+        ? {
+            ...item,
+            itemRemark1: `fefo${uom ? `-${uom}` : ""}`, // Revert to FEFO mode
+            itemRemark2: "", // Clear batch breakdown
+            docBatchNo: "", // Clear batch numbers
+            docExpdate: "", // Clear expiry dates
+            batchDetails: null, // Clear batch details
+            transferType: "fefo" // Set transfer type to FEFO
+          }
+        : item
+    ));
+    
+    toast.success("Reverted to FEFO mode. Batches will be assigned automatically.");
+  };
+
+  // Handle batch selection editing for cart items (in approval mode)
+  const handleEditBatchSelection = async (index, cartItem) => {
+    // Use approved quantity if in approval mode, otherwise use requested quantity
+    const qty = approvalMode 
+      ? parseFloat(cartItem.reqAppqty || cartItem.reqdQty || 0)
+      : parseFloat(cartItem.reqdQty || 0);
+    
+    if (qty <= 0) {
+      toast.error("Please set approved quantity first");
+      return;
+    }
+
+    // Use unique key combining index and itemcode to prevent loader conflicts for duplicate items
+    const loaderKey = `${index}-${cartItem.reqdItemcode}`;
+    setItemBatchLoading(prev => ({ ...prev, [loaderKey]: true }));
+    
+    try {
+      // Fetch available batches from HQ
+      const hqSiteCode = userDetails?.HQSiteCode || 'ZEHQ';
+      const filter = {
+        where: {
+          and: [
+            { itemCode: cartItem.reqdItemcode },
+            { siteCode: hqSiteCode },
+            { uom: cartItem.docUom },
+            { qty: { gt: 0 } }
+          ]
+        }
+      };
+      
+      const batches = await apiService.get(`ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`);
+      
+      if (!batches || batches.length === 0) {
+        toast.error("No batch information found for this item");
+        return;
+      }
+
+      // Check if there are any batches with actual batch numbers (not empty strings)
+      const actualBatches = batches.filter(
+        (batch) =>
+          batch.batchNo && batch.batchNo.trim() !== "" && Number(batch.qty) > 0
+      );
+
+      if (actualBatches.length === 0) {
+        toast.error(
+          "No batches with batch numbers available for this item. Only 'No Batch' items exist."
+        );
+        return;
+      }
+      
+      // Process batch data
+      const processedBatches = batches.map((batch) => ({
+        batchNo: batch.batchNo || "",
+        availableQty: Number(batch.qty) || 0,
+        expDate: batch.expDate,
+        batchCost: batch.batchCost,
+      }));
+
+      // Sort by expiry date (FEFO) - actual batches first, then "No Batch"
+      const sortedActualBatches = actualBatches
+        .map((batch) => ({
+          batchNo: batch.batchNo,
+          availableQty: Number(batch.qty) || 0,
+          expDate: batch.expDate,
+          batchCost: batch.batchCost,
+        }))
+        .sort((a, b) => {
+          if (!a.expDate && !b.expDate) return 0;
+          if (!a.expDate) return 1;
+          if (!b.expDate) return -1;
+          return new Date(a.expDate) - new Date(b.expDate);
+        });
+
+      const noBatchItems = batches
+        .filter(
+          (b) => (!b.batchNo || b.batchNo.trim() === "") && Number(b.qty) > 0
+        )
+        .map((batch) => ({
+          batchNo: "",
+          availableQty: Number(batch.qty) || 0,
+          expDate: null,
+          batchCost: batch.batchCost,
+        }));
+
+      const sortedBatches = [...sortedActualBatches, ...noBatchItems];
+
+      // Calculate totals
+      const totalBatchQty = sortedActualBatches.reduce(
+        (sum, b) => sum + b.availableQty,
+        0
+      );
+      const noBatchQty = noBatchItems.reduce(
+        (sum, b) => sum + b.availableQty,
+        0
+      );
+      const transferQty = qty;
+
+      // Generate scenario message
+      let scenarioMessage = "";
+      if (transferQty <= totalBatchQty) {
+        scenarioMessage = `Transfer can be completed using available batches. ${transferQty} from batches, 0 from "No Batch".`;
+      } else {
+        const remainingQty = transferQty - totalBatchQty;
+        scenarioMessage = `Transfer requires ${totalBatchQty} from batches and ${remainingQty} from "No Batch" items.`;
+      }
+      
+      // Extract UOM from itemRemark1 if docUom is missing
+      // itemRemark1 format: "fefo-UOM" or "specific-UOM"
+      let itemUom = cartItem.docUom;
+      if (!itemUom && (cartItem.itemRemark1 || cartItem.ordMemo1)) {
+        const remark = cartItem.itemRemark1 || cartItem.ordMemo1;
+        if (remark && remark.includes("-")) {
+          const parts = remark.split("-");
+          // The last part is usually the UOM if format is fefo-UOM or specific-UOM
+          // Handle cases like "specific-BOTTLE" or just "fefo-PCS"
+          if (parts.length > 1) {
+            itemUom = parts[parts.length - 1];
+          }
+        }
+      }
+
+      // Prepare batch data for dialog (store cart item index for updating)
+      setBatchDialogData({
+        cartIndex: index, // Store cart index to identify which cart item to update
+        item: {
+          stockCode: cartItem.reqdItemcode,
+          stockName: cartItem.reqdItemdesc,
+          docUom: itemUom || "PCS", // Fallback to PCS only if absolutely no UOM found
+          Qty: qty,
+        },
+        batches: sortedBatches,
+        transferQty: transferQty,
+        totalBatchQty: totalBatchQty,
+        noBatchQty: noBatchQty,
+        scenarioMessage: scenarioMessage,
+        isCartItem: true, // Flag to indicate this is editing a cart item
+      });
+      setShowBatchDialog(true);
+      
+    } catch (error) {
+      console.error("Error fetching batches:", error);
+      toast.error("Failed to fetch batch information");
+    } finally {
+      // Use unique key combining index and itemcode to prevent loader conflicts for duplicate items
+      const loaderKey = `${index}-${cartItem.reqdItemcode}`;
+      setItemBatchLoading(prev => ({ ...prev, [loaderKey]: false }));
+    }
   };
 
   if (pageLoading) {
@@ -2565,6 +3083,9 @@ function AddPR() {
                 </div>
 
                 {/* Items Table */}
+                {/* COMMENTED OUT: Outlets should not be able to select batches when creating PR */}
+                {/* Batch selection will be done by HQ during approval */}
+                {/* Only allow batch selection in approval mode (HQ users) */}
                 <ItemTable
                   data={stockList}
                   loading={loading}
@@ -2572,7 +3093,7 @@ function AddPR() {
                   onPriceChange={handlePriceChange}
                   onExpiryDateChange={(e, index) => handleExpiryDateChange(e, index)}
                   onAddToCart={addToCart}
-                  onBatchSelection={urlStatus != 7 ? handleBatchSelection : null}
+                  onBatchSelection={approvalMode ? handleBatchSelection : null}
                   onRemoveBatchSelection={(index) => {
                     setStockList(prev => prev.map((item, idx) => 
                       idx === index ? { ...item, selectedBatches: null } : item
@@ -2869,9 +3390,61 @@ function AddPR() {
                             >
                               Preview
                             </Button>
+                            {/* Add Edit Batch button for approval mode */}
+                            {/* HQ can edit batch selection during approval - this allows HQ to assign specific batches */}
+                            {/* Hide batch selection buttons if PR is already Approved or Rejected */}
+                            {approvalMode && formData.reqStatus !== "Approved" && formData.reqStatus !== "Rejected" && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditBatchSelection(index, item)}
+                                  className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                                  disabled={itemBatchLoading[`${index}-${item.reqdItemcode}`]}
+                                  title="Edit batch selection"
+                                >
+                                  {itemBatchLoading[`${index}-${item.reqdItemcode}`] ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    "Edit Batch"
+                                  )}
+                                </Button>
+                                {/* Add Revert to FEFO button for specific batch items */}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRevertToFEFO(index, item)}
+                                  className="h-6 px-2 text-xs text-orange-600 hover:text-orange-800"
+                                  title="Revert to FEFO mode"
+                                >
+                                  Revert to FEFO
+                                </Button>
+                              </>
+                            )}
                           </div>
                         ) : (
-                          <Badge className="bg-blue-100 text-blue-800">FEFO</Badge>
+                          <div className="flex items-center space-x-2">
+                            <Badge className="bg-blue-100 text-blue-800">FEFO</Badge>
+                            {/* Add Select Batch button for FEFO items in approval mode */}
+                            {/* HQ can change FEFO items to specific batch selection during approval */}
+                            {/* Hide batch selection buttons if PR is already Approved or Rejected */}
+                            {approvalMode && formData.reqStatus !== "Approved" && formData.reqStatus !== "Rejected" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditBatchSelection(index, item)}
+                                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-800"
+                                disabled={itemBatchLoading[`${index}-${item.reqdItemcode}`]}
+                                title="Select specific batches"
+                              >
+                                {itemBatchLoading[`${index}-${item.reqdItemcode}`] ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  "Select Batch"
+                                )}
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                     )}
@@ -3076,6 +3649,7 @@ function AddPR() {
         onBatchSelectionSubmit={handleBatchSelectionSubmit}
         itemcode={batchDialogData?.item?.stockCode || ""}
         itemdesc={batchDialogData?.item?.stockName || ""}
+        isCartItem={batchDialogData?.isCartItem || false}
       />
 
       {/* Transfer Preview Modal */}

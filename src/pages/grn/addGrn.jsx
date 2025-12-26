@@ -55,6 +55,7 @@ import {
   format_Date,
   queryParamsGenerate,
   getConfigValue,
+  normalizeExpDate,
 } from "@/utils/utils";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
@@ -94,6 +95,7 @@ const calculateDefaultExpiryDate = () => {
   expiryDate.setDate(currentDate.getDate() + defaultDays);
   return expiryDate.toISOString().split("T")[0]; // Return in YYYY-MM-DD format
 };
+
 
 const EditDialog = memo(
   ({
@@ -1848,6 +1850,8 @@ function AddGrn({ docData }) {
         // Process each batch separately
         for (const batch of batchDetails) {
           // Check if this specific batch already exists
+          // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+          const normalizedExpDate = normalizeExpDate(batch.expDate);
           const batchCheckFilter = {
             where: {
               and: [
@@ -1855,6 +1859,7 @@ function AddGrn({ docData }) {
                 { siteCode: userDetails.siteCode },
                 { uom: d.itemUom },
                 { batchNo: batch.batchNo },
+                ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
               ],
             },
           };

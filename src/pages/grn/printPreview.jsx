@@ -250,9 +250,12 @@ const DOCUMENT_CONFIGS = {
     title: 'Stock Usage Memo Print',
     docType: 'SUM',
     fields: {
-      docNo: 'Adjustment Stock No.',
-      docDate: 'Adjustment Stock Date',
-      remarks: ['Remark 1', 'Remark 2']
+      docNo: 'SUM No.',
+      docDate: 'SUM Date',
+      docRef1: 'Ref 1',
+      docRef2: 'Ref 2',
+      supply: 'Supply',
+      remarks: ['Remark 1']
     }
   },
   'pr': {
@@ -610,7 +613,12 @@ function PrintPreview({
     // For PR, use reqNo and reqDate instead of docNo and docDate
     const docNo = documentType === 'pr' ? (data?.reqNo || data?.docNo) : data?.docNo;
     const docDate = documentType === 'pr' ? (data?.reqDate || data?.docDate) : data?.docDate;
-    const supplier = documentType === 'pr' ? (data?.supplierName || data?.suppCode || data?.supplyNo) : data?.supplyNo;
+    // For SUM, supply field should use supplyNo, for PR use supplierName/suppCode, for others use supplyNo
+    const supplier = documentType === 'pr' 
+      ? (data?.supplierName || data?.suppCode || data?.supplyNo) 
+      : documentType === 'sum'
+      ? (data?.supplyNo || data?.supplyDesc || "-")
+      : data?.supplyNo;
     
     return (
       <div className="grid grid-cols-2 text-sm mb-4">
@@ -627,6 +635,9 @@ function PrintPreview({
           )}
           {fields.supplier && showSupplier && (
             <p><span className="w-32 inline-block">{fields.supplier}</span>: {supplier || "-"}</p>
+          )}
+          {fields.supply && (
+            <p><span className="w-32 inline-block">{fields.supply}</span>: {supplier || "-"}</p>
           )}
           {fields.fromStore && showStoreInfo && (
             <p><span className="w-32 inline-block">{fields.fromStore}</span>: {getStoreName(data?.fstoreNo)}</p>
@@ -662,7 +673,12 @@ function PrintPreview({
     // For PR, use reqNo instead of docNo
     const docNo = documentType === 'pr' ? (documentData?.reqNo || documentData?.docNo) : documentData?.docNo;
     const docDate = documentType === 'pr' ? (documentData?.reqDate || documentData?.docDate) : documentData?.docDate;
-    const supplier = documentType === 'pr' ? (documentData?.supplierName || documentData?.suppCode || documentData?.supplyNo) : documentData?.supplyNo;
+    // For SUM, supply field should use supplyNo, for PR use supplierName/suppCode, for others use supplyNo
+    const supplier = documentType === 'pr' 
+      ? (documentData?.supplierName || documentData?.suppCode || documentData?.supplyNo) 
+      : documentType === 'sum'
+      ? (documentData?.supplyNo || documentData?.supplyDesc || "-")
+      : documentData?.supplyNo;
     
     const baseHeaders = [
       titles ? [titles.companyHeader1] : ["Company:", userDetails?.siteName],
@@ -683,6 +699,9 @@ function PrintPreview({
     }
     if (config.fields.supplier && showSupplier) {
       baseHeaders.push([config.fields.supplier, supplier || "-"]);
+    }
+    if (config.fields.supply) {
+      baseHeaders.push([config.fields.supply, supplier || "-"]);
     }
          if (config.fields.fromStore && showStoreInfo) {
        baseHeaders.push([config.fields.fromStore, getStoreName(documentData?.fstoreNo)]);

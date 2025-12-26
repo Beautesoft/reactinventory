@@ -2266,6 +2266,7 @@ function AddAdj({ docData }) {
     return defaultDate.toISOString().split('T')[0];
   };
 
+
   // Helper function to get processed batch details
   const getProcessedBatchDetails = (processedItem) => {
     let batchDetails = [];
@@ -2376,14 +2377,7 @@ function AddAdj({ docData }) {
     try {
       for (let i = 0; i < stktrnsRecords.length; i++) {
         const stktrnRecord = stktrnsRecords[i];
-        const processedItem = processedDetails[i];
         const trimmedItemCode = stktrnRecord.itemcode.replace(/0000$/, "");
-
-        console.log(`🔍 Processing item ${i + 1}/${stktrnsRecords.length}:`, {
-          itemCode: trimmedItemCode,
-          stktrnId: stktrnRecord.id,
-          transferType: processedItem?.transferType
-        });
 
         if (!stktrnRecord.id) {
           console.warn(
@@ -2391,6 +2385,24 @@ function AddAdj({ docData }) {
           );
           continue;
         }
+
+        // Find matching item by itemcode and uom only (groupedDetails contains all batches for the item)
+        const processedItem = processedDetails.find(
+          (item) =>
+            item.itemcode === trimmedItemCode &&
+            item.docUom === stktrnRecord.itemUom
+        );
+
+        if (!processedItem) {
+          console.warn(`No matching processed item found for ${stktrnRecord.itemcode} (${stktrnRecord.itemUom}), skipping Stktrnbatches creation`);
+          continue;
+        }
+
+        console.log(`🔍 Processing item ${i + 1}/${stktrnsRecords.length}:`, {
+          itemCode: trimmedItemCode,
+          stktrnId: stktrnRecord.id,
+          transferType: processedItem?.transferType
+        });
 
         // Get batch details using the helper function
         const batchDetails = getProcessedBatchDetails(processedItem);
@@ -2442,6 +2454,8 @@ function AddAdj({ docData }) {
           });
 
           // Check if this specific batch already exists
+          // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+          const normalizedExpDate = normalizeExpDate(batch.expDate);
           const batchCheckFilter = {
             where: {
               and: [
@@ -2449,6 +2463,7 @@ function AddAdj({ docData }) {
                 { siteCode: userDetails.siteCode },
                 { uom: processedItem.docUom },
                 { batchNo: batch.batchNo },
+                ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
               ],
             },
           };
@@ -2576,23 +2591,27 @@ function AddAdj({ docData }) {
     const grouped = new Map();
 
     cartItems.forEach((item) => {
+      // Group by itemcode+uom only (transferType preserved in item object for batch selection logic)
+      const transferType = (item.transferType || "fefo").toLowerCase();
       const key = `${item.itemcode}-${item.docUom}`;
 
       if (!grouped.has(key)) {
         grouped.set(key, {
           ...item,
+          transferType: transferType, // Preserve normalized transferType
           docQty: Number(item.docQty) || 0, // Can be positive or negative for adjustments
           docAmt: Number(item.docAmt) || 0,
           batchDetails: { individualBatches: [] },
           fefoBatches: item.fefoBatches || [], // Preserve fefoBatches
           // Preserve selectedBatches and transferType if present
           selectedBatches: item.selectedBatches,
-          transferType: item.transferType,
+          docLinenos: [item.docLineno], // Track all line numbers for audit
         });
       } else {
         const existing = grouped.get(key);
         existing.docQty += Number(item.docQty) || 0; // Sum signed quantities (can be positive or negative)
         existing.docAmt += Number(item.docAmt) || 0;
+        existing.docLinenos.push(item.docLineno); // Track line numbers
         
         // Merge fefoBatches if present
         if (item.fefoBatches?.length) {
