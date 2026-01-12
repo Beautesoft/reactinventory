@@ -208,9 +208,9 @@ export function AppSidebar() {
 
     // Stock Take is always available for all users
     const alwaysAvailableItems = [
-      // { title: "Stock Take", 
-      //   url: "/stock-take", 
-      //   icon: FiEdit }
+      { title: "Stock Take", 
+        url: "/stock-take", 
+        icon: FiEdit }
     ];
 
     return [

@@ -152,10 +152,8 @@ function StockTake() {
 
   const handleTabChange = (value) => {
     let status = null;
-    if (value === "saved") status = 0;
-    else if (value === "submitted") status = 1;
-    else if (value === "approved") status = 2;
-    else if (value === "rejected") status = 3;
+    if (value === "open") status = 0;
+    else if (value === "posted") status = 1;
     
     setActiveTab(value);
     setPagination((prev) => ({
@@ -244,17 +242,11 @@ function StockTake() {
                 <TabsTrigger className="cursor-pointer" value="all">
                   All
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="saved">
-                  Saved
+                <TabsTrigger className="cursor-pointer" value="open">
+                  Open
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="submitted">
-                  Submitted
-                </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="approved">
-                  Approved
-                </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="rejected">
-                  Rejected
+                <TabsTrigger className="cursor-pointer" value="posted">
+                  Posted
                 </TabsTrigger>
               </TabsList>
 
@@ -269,16 +261,10 @@ function StockTake() {
             <TabsContent value="all">
               <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
-            <TabsContent value="saved">
+            <TabsContent value="open">
               <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
-            <TabsContent value="submitted">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
-            </TabsContent>
-            <TabsContent value="approved">
-              <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
-            </TabsContent>
-            <TabsContent value="rejected">
+            <TabsContent value="posted">
               <GoodsReceiveTable data={goodsData} isLoading={isLoading} type="tke" supplierOptions={supplierOptions} />
             </TabsContent>
           </Tabs>

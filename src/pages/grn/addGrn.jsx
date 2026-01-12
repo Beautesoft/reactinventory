@@ -2998,6 +2998,7 @@ function AddGrn({ docData }) {
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
                 onClick={() => navigateTo("/goods-receive-note?tab=all")}
+                disabled={saveLoading || postLoading}
               >
                 Cancel
               </Button>

@@ -111,8 +111,8 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
               );
               
               const stockCount = response.length;
-              const totalSystemQty = response.reduce((sum, item) => sum + (parseFloat(item.systemQty) || 0), 0);
-              const totalCountedQty = response.reduce((sum, item) => sum + (parseFloat(item.trnQty) || 0), 0);
+              const totalSystemQty = response.reduce((sum, item) => sum + (parseFloat(item.docTtlqty) || 0), 0);
+              const totalCountedQty = response.reduce((sum, item) => sum + (parseFloat(item.docQty) || 0), 0);
               const variance = totalCountedQty - totalSystemQty;
               
               return {
@@ -451,9 +451,9 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                         }`}
                       >
                         {item.docStatus === 2 ? "Approved" 
-                         : item.docStatus === 1 ? "Submitted" 
+                         : item.docStatus === 1 ? "Posted" 
                          : item.docStatus === 3 ? "Rejected" 
-                         : "Saved"}
+                         : "Open"}
                       </TableCell>
                       <TableCell className="text-center">
                         <PrinterIcon

@@ -5636,6 +5636,7 @@ function AddGto({ docData }) {
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
                 onClick={() => navigateTo("/goods-transfer-out")}
+                disabled={saveLoading || postLoading}
               >
                 Cancel
               </Button>
