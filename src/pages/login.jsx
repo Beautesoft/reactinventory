@@ -1,7 +1,7 @@
-import React, { use, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 // import { useAuth } from "@/contexts/AuthContext";
 import useAuth from "@/hooks/useAuth";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ const Login = () => {
   const [selectedSalon, setSelectedSalon] = useState({});
   const [salon, setSalon] = useState("");
   const [salonDetail, setSalonDetail] = useState(null);
+  const [isSiteListLoading, setIsSiteListLoading] = useState(true);
 
   // Function to fetch user authorizations
   const fetchUserAuthorizations = async (userCode) => {
@@ -87,6 +88,7 @@ const Login = () => {
   }, []);
 
   const getSiteList = async () => {
+    setIsSiteListLoading(true);
     try {
       const response = await axios.get(
         `${window.APP_CONFIG?.API_BASE_URL}/ItemSitelists`
@@ -100,6 +102,8 @@ const Login = () => {
       setSalonOptions(sites);
     } catch (err) {
       toast.error(err.message || "sitesList failed");
+    } finally {
+      setIsSiteListLoading(false);
     }
   };
 
@@ -215,25 +219,28 @@ const Login = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 h-screen w-full">
-      <div className="hidden lg:flex ml-[50px] items-center justify-content-center ">
+    <div className="grid grid-cols-1 lg:grid-cols-2 h-screen w-full bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="hidden lg:flex ml-[50px] items-center justify-center bg-white/50">
         <img
-          className="w-[520px] h-[520px] object-contain "
+          className="w-[520px] h-[520px] object-contain drop-shadow-lg"
           src={blogo}
           alt="Logo"
         />
       </div>
 
-      <div className="flex min-h-screen items-center justify-center p-8 -mt-60">
-        <div className="w-full max-w-lg space-y-8">
+      <div className="flex min-h-screen items-center justify-center px-8 pt-12 pb-16 bg-white/30 lg:border-l lg:border-slate-200/60">
+        {isSiteListLoading ? (
+          <div className="flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/80 px-12 py-10 shadow-sm border border-slate-200/50">
+            <Loader2 className="h-12 w-12 animate-spin text-slate-500" />
+            <p className="text-sm text-slate-600 font-medium">Loading outlets...</p>
+          </div>
+        ) : (
+        <div className="w-full max-w-lg space-y-8 rounded-2xl bg-white/90 px-8 py-10 shadow-lg shadow-slate-200/50 border border-slate-200/60 backdrop-blur-sm">
           <div className="text-center">
-            {/* <div className="text-3xl font-bold">
-              <img src={bslogo} alt="Logo" className="w-10 h-10" />
-              <p className="text-[#4c8bf5]">Inventory</p>
-            </div> */}
-            <div className="flex justify-center mt-5">
-              <img src={bslogo} alt="logo" className="w-72" />
+            <div className="flex justify-center">
+              <img src={bslogo} alt="logo" className="w-72 drop-shadow-md" />
             </div>
+            <p className="mt-4 text-slate-500 text-sm font-medium">Sign in to your account</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -311,7 +318,7 @@ const Login = () => {
               </div>
             )}
 
-            <Button type="submit" className="w-full h-12 text-lg cursor-pointer" disabled={isLoading}>
+            <Button type="submit" className="w-full h-12 text-lg cursor-pointer transition-all hover:shadow-md" disabled={isLoading}>
               {isLoading ? "Logging in..." : "Login"}
             </Button>
           </form>
@@ -319,6 +326,7 @@ const Login = () => {
           {/* Version Stamp */}
           <VersionStamp />
         </div>
+        )}
       </div>
     </div>
   );

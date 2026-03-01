@@ -25,7 +25,6 @@ import { Separator } from "@/components/ui/separator";
 import { Users, Shield, RefreshCw, UserPlus, Save } from "lucide-react";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
-import { formatCurrentDate } from "@/utils/utils";
 
 const UserAuthorization = () => {
   const [userList, setUserList] = useState([]);
@@ -76,10 +75,10 @@ const UserAuthorization = () => {
     }
   };
 
-  // Filter function to show only required forms
+  // Filter function: show all forms except excluded (to be released later)
   const filterRequiredForms = (authData) => {
-    const requiredFormCodes = ["F10001", "F10002", "F10003", "F10004", "F10009", "F10011","F10005"];
-    return authData.filter(auth => requiredFormCodes.includes(auth.Code));
+    const excludedFormCodes = ["F10006", "F10007", "F10013","F10008"];
+    return authData.filter(auth => !excludedFormCodes.includes(auth.Code));
   };
 
   // Fetch user authorizations
@@ -161,7 +160,7 @@ const UserAuthorization = () => {
     // Save to API
     try {
       await saveAuthorization(selectedUser.itemCode, code, active);
-      toast.success("Authorization updated successfully");
+      toast.success("Authorization updated successfully. Please logout and login again for changes to take effect.");
     } catch (error) {
       toast.error("Failed to update authorization");
       // Revert local state on error
@@ -338,23 +337,13 @@ const UserAuthorization = () => {
 
               {/* Summary */}
               <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-blue-900">
-                      Access Summary
-                    </p>
-                    <p className="text-sm text-blue-700">
-                      {userAuthorizations.filter(auth => auth.Active === "Y").length} of {userAuthorizations.length} forms authorized
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-blue-900">
-                      Last Updated
-                    </p>
-                    <p className="text-sm text-blue-700">
-                      {formatCurrentDate()}
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-sm font-medium text-blue-900">
+                    Access Summary
+                  </p>
+                  <p className="text-sm text-blue-700">
+                    {userAuthorizations.filter(auth => auth.Active === "Y").length} of {userAuthorizations.length} forms authorized
+                  </p>
                 </div>
               </div>
             </div>

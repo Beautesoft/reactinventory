@@ -29,7 +29,8 @@ export default defineConfig({
     host: '0.0.0.0',    // Expose to all network interfaces
     port: 3000,         // Specify port number
     // strictPort: true,   // Exit if port is already in use
-    // https: false,       // Enable/disable HTTPS
+    https: false,       // Enable/disable HTTPS
+    secure: false
     // open: true,         // Auto-open in browser
     // proxy: {            // API Proxy configuration
     //   '/api': {

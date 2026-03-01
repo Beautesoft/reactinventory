@@ -447,7 +447,7 @@ export const hasUserAuthorizationByName = (authName) => {
   return auth && auth.Active === "Y";
 };
 
-// Menu item to authorization code mapping
+// Menu item to authorization code mapping (aligned with API form codes)
 export const MENU_AUTH_MAPPING = {
   "Goods Receive Note": "F10001",
   "Goods Transfer Out": "F10002",
@@ -455,9 +455,12 @@ export const MENU_AUTH_MAPPING = {
   "Goods Return Note": "F10004",
   "Stock Adjustment": "F10005",
   "Stock Usage Memo": "F10010",
-  "Stock Take": "F10011",
+  "Stock Take": "F10015",
   "Stock Balance": "F10009",
-  "Stock Movement": "F10011",
+  "Stock Balance Report": "F10014",
+  "Stock Movement": "F10013",
+  "Stock Movement Report": "F10011",
+  "Purchase Requisition": "F10012",
 };
 
 export const checkMenuAuthorization = (menuTitle) => {

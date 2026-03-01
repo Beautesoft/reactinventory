@@ -1859,7 +1859,7 @@ function AddGrn({ docData }) {
                 { siteCode: userDetails.siteCode },
                 { uom: d.itemUom },
                 { batchNo: batch.batchNo },
-                ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
+                ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
               ],
             },
           };

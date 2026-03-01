@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
-import { CalendarDays, Package, ShoppingCart, TrendingUp, AlertTriangle, CheckCircle, Clock, DollarSign, FileText, Loader2 } from "lucide-react";
+import { Layers, Package, ShoppingCart, TrendingUp, AlertTriangle, CheckCircle, Clock, DollarSign, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,9 +14,9 @@ function DashBoard() {
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
     totalStockItems: 0,
-    pendingOrders: 0,
-    monthlyTransactions: 0,
-    recentActivities: 0,
+    pendingDocuments: 0,
+    last30DaysTransactions: 0,
+    inStockCount: 0,
     lowStockItems: [],
     recentTransactions: [],
     stockBalance: [],
@@ -40,22 +40,31 @@ function DashBoard() {
       const stockResponse = await apiService1.get(`api/GetInvitems${stockQuery}`);
       const stockItems = stockResponse?.result || stockResponse || [];
 
-      // Fetch recent stock transfers (last 30 days) from Stktrn
+      // Fetch transaction count (last 30 days) and recent list from Stktrns
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const recentFilter = {
+      const dateFilter = {
         where: {
           and: [
             { storeNo: userDetails.siteCode },
             { trnDate: { gte: thirtyDaysAgo.toISOString().split('T')[0] } }
           ]
-        },
-        order: ["trnPost DESC"],
-        limit: 20
+        }
       };
-      const recentResponse = await apiService.get(
-        `Stktrns?filter=${encodeURIComponent(JSON.stringify(recentFilter))}`
-      );
+
+      // Get accurate count for Last 30 Days Transactions card
+      const [countResponse, recentResponse] = await Promise.all([
+        apiService.get(`Stktrns/count?filter=${encodeURIComponent(JSON.stringify(dateFilter))}`),
+        apiService.get(
+          `Stktrns?filter=${encodeURIComponent(JSON.stringify({
+            ...dateFilter,
+            order: ["trnPost DESC"],
+            limit: 5
+          }))}`
+        )
+      ]);
+
+      const last30DaysCount = countResponse?.count ?? recentResponse?.length ?? 0;
 
       // Fetch pending documents (documents with status != 7)
       const pendingFilter = {
@@ -104,13 +113,15 @@ function DashBoard() {
           uomDescription: item.uomDescription
         }));
 
+      const inStockCount = stockItems.filter(item => Number(item.quantity || 0) > 0).length;
+
       setDashboardData({
         totalStockItems: stockItems.length,
-        pendingOrders: pendingResponse?.length || 0,
-        monthlyTransactions: recentResponse?.length || 0,
-        recentActivities: recentResponse?.length || 0,
+        pendingDocuments: pendingResponse?.length || 0,
+        last30DaysTransactions: last30DaysCount,
+        inStockCount,
         lowStockItems,
-        recentTransactions: recentResponse?.slice(0, 5) || [],
+        recentTransactions: recentResponse || [],
         stockBalance: topStockItems,
         stockItems: stockItems
       });
@@ -132,32 +143,36 @@ function DashBoard() {
       title: "Total Stock Items",
       value: dashboardData.totalStockItems.toLocaleString(),
       icon: Package,
-      trend: "+12.5%",
       color: "text-blue-600",
+      borderColor: "border-blue-500",
+      bgColor: "bg-blue-500/10",
       loading: loading
     },
     {
-      title: "Pending Orders",
-      value: dashboardData.pendingOrders.toString(),
+      title: "Pending Documents",
+      value: dashboardData.pendingDocuments.toString(),
       icon: ShoppingCart,
-      trend: "+5.2%",
       color: "text-orange-600",
+      borderColor: "border-orange-500",
+      bgColor: "bg-orange-500/10",
       loading: loading
     },
     {
-      title: "Monthly Transactions",
-      value: dashboardData.monthlyTransactions.toString(),
+      title: "Last 30 Days Transactions",
+      value: dashboardData.last30DaysTransactions.toString(),
       icon: TrendingUp,
-      trend: "+8.1%",
       color: "text-green-600",
+      borderColor: "border-green-500",
+      bgColor: "bg-green-500/10",
       loading: loading
     },
     {
-      title: "Recent Activities",
-      value: dashboardData.recentActivities.toString(),
-      icon: CalendarDays,
-      trend: "+3.1%",
+      title: "Items In Stock",
+      value: dashboardData.inStockCount.toString(),
+      icon: Layers,
       color: "text-purple-600",
+      borderColor: "border-purple-500",
+      bgColor: "bg-purple-500/10",
       loading: loading
     },
   ];
@@ -253,42 +268,39 @@ function DashBoard() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
+          <h1 className="text-2xl font-bold text-gray-900">
             Welcome back, {userDetails?.username || "User"}!
           </h1>
           <p className="text-gray-500 mt-1">
             Here's what's happening with your inventory today.
           </p>
         </div>
-        <button 
+        <Button
           onClick={fetchDashboardData}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
         >
           Refresh
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <Card key={index} className="p-6 hover:shadow-lg transition-shadow">
+            <Card key={index} className={`p-6 hover:shadow-xl transition-all duration-300 border-t-4 ${stat.borderColor} overflow-hidden`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                     {stat.title}
                   </p>
-                  <div className="flex items-baseline">
-                    <p className="text-2xl font-semibold text-gray-900">
+                  <div className="flex items-baseline mt-2">
+                    <p className="text-3xl font-bold text-gray-900">
                       {stat.loading ? "..." : stat.value}
                     </p>
-                    <span className="ml-2 text-sm font-medium text-green-600">
-                      {stat.trend}
-                    </span>
                   </div>
                 </div>
-                <div className={`p-3 rounded-lg ${stat.color} bg-opacity-10`}>
-                  <Icon className={`h-6 w-6 ${stat.color}`} />
+                <div className={`p-4 rounded-2xl ${stat.bgColor} shadow-inner`}>
+                  <Icon className={`h-8 w-8 ${stat.color}`} />
                 </div>
               </div>
             </Card>
@@ -299,17 +311,21 @@ function DashBoard() {
       {/* Dashboard sections with real data */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Stock Transfers */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Recent Stock Transfers</h2>
-            <Clock className="h-5 w-5 text-gray-400" />
+        <Card className="overflow-hidden shadow-md border border-slate-200">
+          <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-b px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white rounded-xl shadow-sm border border-slate-200">
+                <Clock className="h-5 w-5 text-blue-500" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-800">Recent Stock Transfers</h2>
+            </div>
           </div>
-          <div className="space-y-3">
+          <div className="p-6 space-y-3">
             {loading ? (
               <div className="text-center py-4 text-gray-500">Loading...</div>
             ) : dashboardData.recentTransactions.length > 0 ? (
               dashboardData.recentTransactions.map((transaction, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-100">
                   <div>
                     <p className="font-medium text-sm">{transaction.trnDocno}</p>
                     <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {format_Date(transaction.trnDate)}</p>
@@ -330,47 +346,51 @@ function DashBoard() {
         </Card>
 
            {/* Stock Balance Mini View */}
-           <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Stock Balance Overview</h2>
-          <Package className="h-5 w-5 text-blue-500" />
+           <Card className="overflow-hidden shadow-md border border-slate-200">
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white rounded-xl shadow-sm border border-blue-100">
+              <Package className="h-5 w-5 text-blue-500" />
+            </div>
+            <h2 className="text-lg font-bold text-gray-800">Stock Balance Overview</h2>
+          </div>
         </div>
-        <div className="space-y-3">
+        <div className="p-6 space-y-3">
           {loading ? (
             <div className="text-center py-4 text-gray-500">Loading...</div>
           ) : dashboardData.stockItems.length > 0 ? (
             <>
               {/* Summary Stats */}
               <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
                   <p className="text-2xl font-bold text-blue-600">{dashboardData.stockItems.length}</p>
-                  <p className="text-xs text-blue-600">Total Items</p>
+                  <p className="text-xs font-medium text-blue-600 mt-1">Total Items</p>
                 </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
+                <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
                   <p className="text-2xl font-bold text-green-600">
                     {dashboardData.stockItems.filter(item => Number(item.quantity || 0) > 0).length}
                   </p>
-                  <p className="text-xs text-green-600">In Stock</p>
+                  <p className="text-xs font-medium text-green-600 mt-1">In Stock</p>
                 </div>
-                <div className="text-center p-3 bg-orange-50 rounded-lg">
+                <div className="text-center p-4 bg-orange-50 rounded-xl border border-orange-100">
                   <p className="text-2xl font-bold text-orange-600">
                     {dashboardData.stockItems.filter(item => Number(item.quantity || 0) === 0).length}
                   </p>
-                  <p className="text-xs text-orange-600">Out of Stock</p>
+                  <p className="text-xs font-medium text-orange-600 mt-1">Out of Stock</p>
                 </div>
               </div>
 
               {/* Top 5 Stock Items Table */}
-              <div className="rounded-md border">
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-slate-100 sticky top-0">
                       <tr>
-                        <th className="text-left p-2 font-medium">Stock Code</th>
-                        <th className="text-left p-2 font-medium">Stock Name</th>
-                        <th className="text-right p-2 font-medium">Qty</th>
-                        <th className="text-right p-2 font-medium">Value</th>
-                        <th className="text-center p-2 font-medium">Batches</th>
+                        <th className="text-left p-3 font-semibold text-slate-700">Stock Code</th>
+                        <th className="text-left p-3 font-semibold text-slate-700">Stock Name</th>
+                        <th className="text-right p-3 font-semibold text-slate-700">Qty</th>
+                        <th className="text-right p-3 font-semibold text-slate-700">Value</th>
+                        <th className="text-center p-3 font-semibold text-slate-700">Batches</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -379,23 +399,23 @@ function DashBoard() {
                         .sort((a, b) => (Number(b.quantity || 0) * Number(b.item_Price || 0)) - (Number(a.quantity || 0) * Number(a.item_Price || 0)))
                         .slice(0, 5)
                         .map((item, index) => (
-                          <tr key={index} className="border-t hover:bg-gray-50">
-                            <td className="p-2 font-medium text-xs text-blue-600">{item.stockCode}</td>
-                            <td className="p-2 text-xs text-gray-600 truncate max-w-[150px]" title={item.stockName || "N/A"}>
+                          <tr key={index} className={`border-t border-slate-100 hover:bg-blue-50/50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                            <td className="p-3 font-semibold text-sm text-blue-600">{item.stockCode}</td>
+                            <td className="p-3 text-sm text-gray-600 truncate max-w-[150px]" title={item.stockName || "N/A"}>
                               {item.stockName || "N/A"}
                             </td>
-                            <td className="p-2 text-right text-xs">
+                            <td className="p-3 text-right text-sm">
                               {Number(item.quantity || 0).toLocaleString()} {item.uomDescription}
                             </td>
-                            <td className="p-2 text-right text-xs font-medium text-green-600">
+                            <td className="p-3 text-right text-sm font-semibold text-green-600">
                               {getActiveCurrency()} {((Number(item.quantity || 0) * (Number(item?.item_Price) || Number(item?.Price) || Number(item?.Cost) || 0))).toLocaleString()}
                             </td>
-                            <td className="p-2 text-center">
+                            <td className="p-3 text-center">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleBatchClick(item)}
-                                className="cursor-pointer hover:bg-blue-50 hover:text-blue-600 transition-colors duration-150 font-bold text-lg w-10 h-10 rounded-lg border-2 border-blue-300 hover:border-blue-500"
+                                className="cursor-pointer hover:bg-blue-100 hover:text-blue-600 transition-all duration-150 font-bold text-lg w-10 h-10 rounded-xl border-2 border-blue-200 hover:border-blue-500 hover:shadow-sm"
                                 title="View Batch Details"
                               >
                                 B
@@ -408,14 +428,26 @@ function DashBoard() {
                 </div>
               </div>
               
-              {/* View All Button */}
-              <div className="text-center pt-3">
-                <button 
-                  onClick={() => window.location.href = '/stock-balance-live'}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                >
-                  View Full Stock Balance →
-                </button>
+              {/* View All Button - only show when there are in-stock items, or show contextual message */}
+              <div className="text-center pt-4">
+                {dashboardData.stockItems.filter(item => Number(item.quantity || 0) > 0).length > 0 ? (
+                  <button 
+                    onClick={() => window.location.href = '/stock-balance-live'}
+                    className="text-blue-600 hover:text-blue-800 text-sm font-semibold hover:underline transition-colors"
+                  >
+                    View Full Stock Balance →
+                  </button>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-500 mb-2">No items currently in stock</p>
+                    <button 
+                      onClick={() => window.location.href = '/stock-balance-live'}
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline transition-colors"
+                    >
+                      View Full Stock Balance page →
+                    </button>
+                  </>
+                )}
               </div>
             </>
           ) : (
@@ -430,17 +462,21 @@ function DashBoard() {
       {/* Top Stock Items by Value and Stock Balance Overview in same row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Stock Items by Value */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Top Stock Items by Value</h2>
-            <DollarSign className="h-5 w-5 text-green-500" />
+        <Card className="overflow-hidden shadow-md border border-slate-200">
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white rounded-xl shadow-sm border border-green-100">
+                <DollarSign className="h-5 w-5 text-green-500" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-800">Top Stock Items by Value</h2>
+            </div>
           </div>
-          <div className="space-y-3">
+          <div className="p-6 space-y-3">
             {loading ? (
               <div className="text-center py-4 text-gray-500">Loading...</div>
             ) : dashboardData.stockBalance.length > 0 ? (
               dashboardData.stockBalance.map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 hover:bg-green-100/50 transition-colors">
                   <div>
                     <p className="font-medium text-sm">{item.stockCode}</p>
                     <p className="text-xs text-gray-600">{item.stockName}</p>
@@ -456,39 +492,54 @@ function DashBoard() {
                 </div>
               ))
             ) : (
-              <div className="text-center py-4 text-gray-500">No stock data available</div>
+              <div className="text-center py-4 text-gray-500">No items currently in stock</div>
             )}
           </div>
         </Card>
 
       {/* Low Stock Alert */}
-      <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Low Stock Alert</h2>
-            <AlertTriangle className="h-5 w-5 text-orange-500" />
+      <Card className="overflow-hidden shadow-md border border-slate-200">
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white rounded-xl shadow-sm border border-orange-100">
+                <AlertTriangle className="h-5 w-5 text-orange-500" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-800">Low Stock Alert</h2>
+            </div>
           </div>
-          <div className="space-y-3">
+          <div className="p-6 space-y-3">
             {loading ? (
               <div className="text-center py-4 text-gray-500">Loading...</div>
             ) : dashboardData.lowStockItems.length > 0 ? (
-              dashboardData.lowStockItems.map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border-l-4 border-orange-400">
+              dashboardData.lowStockItems.map((item, index) => {
+                const qty = Number(item.quantity || 0);
+                const isCritical = qty < 5;
+                return (
+                <div key={index} className={`flex items-center justify-between p-3 rounded-xl border-l-4 ${isCritical ? "bg-red-50 border-red-400" : "bg-orange-50 border-orange-400"}`}>
                   <div>
                     <p className="font-medium text-sm">{item.stockCode}</p>
                     <p className="text-xs text-gray-600">{item.stockName}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-orange-600">{item.quantity} {item.uomDescription}</p>
-                    <p className="text-xs text-gray-500">Low Stock</p>
+                    <p className={`text-sm font-semibold ${isCritical ? "text-red-600" : "text-orange-600"}`}>{item.quantity} {item.uomDescription}</p>
+                    <p className={`text-xs font-medium ${isCritical ? "text-red-500" : "text-orange-500"}`}>{isCritical ? "Critical" : "Low Stock"}</p>
                   </div>
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-4 text-gray-500">
-                <CheckCircle className="h-8 w-8 text-green-500 mx-auto mb-2" />
-                <p>All items are well stocked!</p>
-              </div>
-            )}
+              );})
+            ) : (() => {
+              const hasInStockItems = dashboardData.stockItems.some(item => Number(item.quantity || 0) > 0);
+              return hasInStockItems ? (
+                <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
+                  <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                  <p className="font-medium text-green-700">All items are well stocked!</p>
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-amber-50 rounded-xl border border-amber-200">
+                  <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto mb-2" />
+                  <p className="font-medium text-amber-800">No items currently in stock</p>
+                </div>
+              );
+            })()}
           </div>
         </Card>
      

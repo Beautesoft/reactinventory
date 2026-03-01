@@ -3130,7 +3130,7 @@ function AddRtn({ docData }) {
                     { siteCode: userDetails.siteCode },
                     { uom: item.docUom },
                     { batchNo: item.docBatchNo || "" },
-                    ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
+                    ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
                   ]
                 }
               };

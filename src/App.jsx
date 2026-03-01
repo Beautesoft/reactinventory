@@ -100,6 +100,7 @@ function App() {
                   <Route path="stock-take/add" element={<AddTake />} />
                   <Route path="stock-take/details/:docNo" element={<AddTake />} />
                   <Route path="stock-take/edit/:docNo" element={<AddTake />} />
+                  <Route path="stock-take/print/:docNo" element={<PrintPreview documentType="tke" />} />
                   
                   {/* Stock Adjustment Routes */}
                   <Route path="stock-adjustment" element={<StockAdjustment />} />

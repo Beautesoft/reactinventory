@@ -258,6 +258,15 @@ const DOCUMENT_CONFIGS = {
       remarks: ['Remark 1']
     }
   },
+  'tke': {
+    title: 'Stock Take Print',
+    docType: 'TKE',
+    fields: {
+      docNo: 'Stock Take No.',
+      docDate: 'Stock Take Date',
+      remarks: ['Remark 1']
+    }
+  },
   'pr': {
     title: 'Purchase Requisition Print',
     docType: 'PR',

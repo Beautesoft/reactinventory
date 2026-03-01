@@ -604,17 +604,21 @@ export const prApi = {
     }
   },
 
-  // Create goods transfer from approved PR (creates OPEN GTO document)
+  // Create goods transfer from approved PR (creates OPEN GTI document at destination)
   async createGoodsTransferFromPR(prData, lineItems) {
     try {
       const userDetails = JSON.parse(localStorage.getItem("userDetails"));
       const hqSiteCode = userDetails?.HQSiteCode || userDetails?.siteCode || "HQ";
       const requestingSiteCode = prData.itemsiteCode;
       
-      // 1. Get GTO document number
-      const docNo = await this.getNextTransferNumber("GTO");
+      if (!requestingSiteCode) {
+        throw new Error("Requesting site code is required to create GTI");
+      }
+      
+      // 1. Get GTI document number (for destination site)
+      const docNo = await this.getNextTransferNumber("GTI", requestingSiteCode);
       if (!docNo) {
-        throw new Error("Failed to generate GTO document number");
+        throw new Error("Failed to generate GTI document number");
       }
 
       // 2. Calculate totals
@@ -632,12 +636,12 @@ export const prApi = {
       totals.totalDisc = parseFloat(totals.totalDisc.toFixed(2));
       totals.totalAmt = parseFloat(totals.totalAmt.toFixed(2));
 
-      // 3. Create GTO header (StkMovdocHdrs) - Status 0 (Open)
-      const gtoHeader = {
+      // 3. Create GTI header (StkMovdocHdrs) - Status 0 (Open), at destination store
+      const gtiHeader = {
         docNo: docNo,
-        movCode: "TFRT",
+        movCode: "TFRF",
         movType: "TFR",
-        storeNo: hqSiteCode, // Current store (HQ)
+        storeNo: requestingSiteCode, // Document owner: destination (receiving store)
         fstoreNo: hqSiteCode, // From store (HQ)
         tstoreNo: requestingSiteCode, // To store (requesting site)
         docRef1: prData.reqNo, // Link to PR
@@ -664,8 +668,8 @@ export const prApi = {
         createDate: new Date().toISOString(),
       };
 
-      // 4. Create GTO line items (StkMovdocDtls)
-      const gtoDetails = lineItems.map((item, index) => {
+      // 4. Create GTI line items (StkMovdocDtls)
+      const gtiDetails = lineItems.map((item, index) => {
         const approvedQty = parseFloat(item.reqAppqty || item.reqdQty || 0);
         const focQty = parseFloat(item.reqdFocqty || 0);
         const totalQty = approvedQty + focQty;
@@ -843,7 +847,7 @@ export const prApi = {
 
         return {
           docNo: docNo,
-          movCode: "TFRT",
+          movCode: "TFRF",
           movType: "TFR",
           docLineno: index + 1,
           docDate: moment().format("YYYY-MM-DD"),
@@ -881,18 +885,18 @@ export const prApi = {
         };
       });
 
-      // 5. Save GTO header and details
-      await apiService.post("StkMovdocHdrs", gtoHeader);
-      if (gtoDetails.length > 0) {
-        await apiService.post("StkMovdocDtls", gtoDetails);
+      // 5. Save GTI header and details
+      await apiService.post("StkMovdocHdrs", gtiHeader);
+      if (gtiDetails.length > 0) {
+        await apiService.post("StkMovdocDtls", gtiDetails);
       }
 
-      console.log(`✅ Created Open GTO document: ${docNo} with ${gtoDetails.length} items`);
+      console.log(`✅ Created Open GTI document: ${docNo} with ${gtiDetails.length} items at destination ${requestingSiteCode}`);
 
       return {
         success: true,
         docNo: docNo,
-        message: `GTO document ${docNo} created successfully (Open status)`
+        message: `GTI document ${docNo} created successfully (Open status) at destination`
       };
     } catch (error) {
       console.error("Error creating goods transfer from PR:", error);
@@ -901,11 +905,11 @@ export const prApi = {
   },
 
   // Get next transfer number
-  async getNextTransferNumber(transferType) {
+  // siteCodeOverride: when creating GTI from PR, pass requestingSiteCode so doc number is for destination site
+  async getNextTransferNumber(transferType, siteCodeOverride = null) {
     try {
       const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-      // Use HQ site code for GTO creation from PR approval
-      const siteCode = userDetails?.HQSiteCode || userDetails?.siteCode;
+      const siteCode = siteCodeOverride ?? userDetails?.HQSiteCode ?? userDetails?.siteCode;
       
       // Map transfer types to control descriptions
       const controlDescriptionMap = {

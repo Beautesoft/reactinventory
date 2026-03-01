@@ -42,6 +42,7 @@ import {
   Loader2,
   Package,
   Info,
+  Printer,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import moment from "moment";
@@ -75,6 +76,7 @@ import useDebounce from "@/hooks/useDebounce";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
+import { printStockTakeList } from "./printStockTakeList";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -86,6 +88,76 @@ const calculateTotals = (cartData) => {
     }),
     { totalQty: 0, totalAmt: 0, systemQty: 0, variance: 0 }
   );
+};
+
+const getBatchDetailsForDisplay = (item) => {
+  if (!item) return [];
+
+  if (item.batchBreakdown && item.batchBreakdown.length > 0) {
+    return item.batchBreakdown.map((batch) => ({
+      batchNo: batch.batchNo || "",
+      expDate: batch.expDate || null,
+      qty: Number(batch.countedQty ?? batch.quantity ?? 0),
+    }));
+  }
+
+  if (item.ordMemo1 === "specific" && item.ordMemo2) {
+    const batchParts = item.ordMemo2.split(",").filter(Boolean);
+    const expDateParts = item.ordMemo4 ? item.ordMemo4.split(",") : [];
+
+    const batchDetails = batchParts.map((batch, index) => {
+      const [batchNo, qty] = batch.split(":");
+      let expDate = null;
+
+      if (expDateParts[index]) {
+        const parts = expDateParts[index].split(":");
+        if (parts.length > 1) {
+          const expDateStr = parts.slice(0, -1).join(":");
+          if (expDateStr && expDateStr !== "null" && expDateStr !== "undefined") {
+            expDate = expDateStr;
+          }
+        }
+      }
+
+      return {
+        batchNo: batchNo || "",
+        expDate,
+        qty: Number(qty) || 0,
+      };
+    });
+
+    const noBatchQty = Number(item.ordMemo3 || 0);
+    if (noBatchQty) {
+      batchDetails.push({
+        batchNo: "",
+        expDate: null,
+        qty: noBatchQty,
+      });
+    }
+
+    return batchDetails;
+  }
+
+  if (item.docBatchNo) {
+    return [{
+      batchNo: item.docBatchNo || "",
+      expDate: item.docExpdate || null,
+      qty: Number(item.docQty) || 0,
+    }];
+  }
+
+  return [];
+};
+
+// Calculate display variance: if onHandQty is negative, treat as 0 (ignore negative)
+// If onHandQty is negative: variance = countedQty (display what user entered)
+// If onHandQty is positive or zero: variance = countedQty - onHandQty
+const calculateDisplayVariance = (countedQty, onHandQty) => {
+  const counted = parseFloat(countedQty) || 0;
+  const onHand = parseFloat(onHandQty) || 0;
+  // If onHand is negative, ignore it and show countedQty as difference
+  // If onHand is positive or zero, show countedQty - onHandQty
+  return onHand < 0 ? counted : counted - onHand;
 };
 
 // Batch Selection Dialog Component for Stock Take
@@ -124,35 +196,30 @@ const StockTakeBatchSelectionDialog = memo(
     // Initialize with existing batch breakdown if available
     useEffect(() => {
       if (showBatchDialog && batchBreakdown && batchBreakdown.length > 0) {
-        // Find batches with counted quantity > 0
-        const batchesWithQty = batchBreakdown.filter((b) => (b.countedQty || 0) > 0);
-        
-        if (batchesWithQty.length > 0) {
-          // Separate batches with batch numbers and "No Batch"
-          const existingBatches = batchesWithQty.filter((b) => b.batchNo !== "");
-          const existingNoBatch = batchesWithQty.find((b) => b.batchNo === "");
+        // Mandatory: pre-select ALL batches and require quantity (can be 0)
+        const allBatches = batchBreakdown.filter((b) => b.batchNo !== "");
+        const noBatchEntry = batchBreakdown.find((b) => b.batchNo === "");
           
-          if (existingBatches.length > 0) {
+        if (allBatches.length > 0) {
             // Map to ensure we have all required fields from batchBreakdown
-            setSelectedBatches(existingBatches.map((b) => {
-              return {
+          setSelectedBatches(allBatches.map((b) => ({
                 batchNo: b.batchNo,
                 expDate: b.expDate || null,
                 availableQty: b.availableQty || 0,
-              };
-            }));
+          })));
+
             const quantities = {};
-            existingBatches.forEach((b) => {
+          allBatches.forEach((b) => {
               const batchKey = getBatchKey(b);
+            // Preserve existing countedQty if present; otherwise default to 0
               quantities[batchKey] = b.countedQty || 0;
             });
             setBatchQuantities(quantities);
           }
           
-          if (existingNoBatch) {
+        if (noBatchEntry !== undefined) {
             setNoBatchSelected(true);
-            setNoBatchQuantity(existingNoBatch.countedQty || 0);
-          }
+          setNoBatchQuantity(noBatchEntry.countedQty || 0);
         }
       }
     }, [showBatchDialog, batchBreakdown]);
@@ -173,22 +240,14 @@ const StockTakeBatchSelectionDialog = memo(
       
       if (isSelected) {
         setSelectedBatches((prev) => [...prev, batch]);
-        // Auto-set counted quantity to available quantity when checkbox is checked
-        // User can then adjust it if needed
-        const initialQty = batch.availableQty || 0;
+        // Mandatory mode: do NOT auto-fill from availableQty; default to 0 if unset
         setBatchQuantities((prev) => ({
           ...prev,
-          [batchKey]: initialQty,
+          [batchKey]: prev[batchKey] ?? 0,
         }));
       } else {
-        setSelectedBatches((prev) =>
-          prev.filter((b) => getBatchKey(b) !== batchKey)
-        );
-        setBatchQuantities((prev) => {
-          const newQuantities = { ...prev };
-          delete newQuantities[batchKey];
-          return newQuantities;
-        });
+        // Mandatory mode: do not allow unselecting batches
+        return;
       }
     };
 
@@ -385,6 +444,7 @@ const StockTakeBatchSelectionDialog = memo(
                                   onCheckedChange={(checked) =>
                                     handleBatchSelection(batch, checked)
                                   }
+                                  disabled
                                 />
                               </TableCell>
                               <TableCell className="font-medium">
@@ -428,6 +488,7 @@ const StockTakeBatchSelectionDialog = memo(
                             <Checkbox
                               checked={noBatchSelected}
                               onCheckedChange={handleNoBatchSelection}
+                              disabled
                             />
                           </TableCell>
                           <TableCell className="font-medium">No Batch</TableCell>
@@ -480,6 +541,70 @@ const StockTakeBatchSelectionDialog = memo(
 );
 
 StockTakeBatchSelectionDialog.displayName = "StockTakeBatchSelectionDialog";
+
+const StockTakeBatchPreviewModal = memo(
+  ({ showPreviewModal, setShowPreviewModal, previewItem }) => {
+    if (!previewItem) return null;
+
+    const batchDetails = getBatchDetailsForDisplay(previewItem);
+    const itemCode = previewItem.itemcode || previewItem.stockCode || "";
+    const itemDesc = previewItem.itemdesc || previewItem.stockName || "";
+
+    return (
+      <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Batch Details</DialogTitle>
+            <div className="text-sm text-muted-foreground">
+              Item: {itemCode} {itemDesc ? `- ${itemDesc}` : ""}
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {batchDetails.length > 0 ? (
+              <div className="border rounded-md overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left p-2 font-medium">Batch No</th>
+                      <th className="text-right p-2 font-medium">Qty</th>
+                      <th className="text-left p-2 font-medium">Expiry Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchDetails.map((batch, index) => (
+                      <tr key={index} className="border-t">
+                        <td className="p-2 font-medium">
+                          {batch.batchNo || "No Batch"}
+                        </td>
+                        <td className="p-2 text-right">{batch.qty || 0}</td>
+                        <td className="p-2 text-xs">
+                          {batch.expDate ? format_Date(batch.expDate) : "No Expiry"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 text-center py-4">
+                No batch information found.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreviewModal(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+);
+
+StockTakeBatchPreviewModal.displayName = "StockTakeBatchPreviewModal";
 
 const EditDialog = memo(
   ({ showEditDialog, setShowEditDialog, editData, onEditCart, onSubmit }) => (
@@ -680,6 +805,15 @@ function AddTake({ docData }) {
     loading: false,
   });
 
+  // Batch preview modal state (Selected Items)
+  const [showBatchPreviewModal, setShowBatchPreviewModal] = useState(false);
+  const [previewBatchItem, setPreviewBatchItem] = useState(null);
+
+  const openBatchPreview = (item) => {
+    setPreviewBatchItem(item);
+    setShowBatchPreviewModal(true);
+  };
+
   // Function to check if user can edit based on status and permissions
   const canEdit = () => {
     if (!stockHdrs.docNo) {
@@ -752,32 +886,49 @@ function AddTake({ docData }) {
       toast.error("Please select at least one item to proceed");
       return;
     }
+    setSearchValue("");
 
-    // Filter originalStockList to only include selected items (not filtered stockList)
-    // This ensures all selected items are included even if they're filtered out by search/filters
-    const selectedStockList = originalStockList.filter(
-      (item) => item.isActive === "True" && selectedItems.has(item.stockCode)
-    );
+    // Set loading state to show loader
+    setLoading(true);
+console.log(selectedItems, "selectedItems1");
+console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
-    if (selectedStockList.length === 0) {
-      toast.error("Selected items not found in current stock list");
-      return;
-    }
+    // Use setTimeout to allow UI to update and show loader before processing
+    setTimeout(() => {
+      console.log(selectedItems, "selectedItems2");
+      console.log(filteredStockTakeItems , "filteredStockTakeItems2");
 
-    // Preserve original item order
-    setOriginalItemOrder([...selectedStockList]);
+      // Filter originalStockList to only include selected items (not filtered stockList)
+      // This ensures all selected items are included even if they're filtered out by search/filters
+      const selectedStockList = originalStockList.filter(
+        (item) => item.isActive === "True" && selectedItems.has(item.stockCode)
+      );
+      console.log(selectedStockList, "selectedStockList1");
 
-    // Reset pagination for Step 2
-    setItemFilter((prev) => ({
-      ...prev,
-      skip: 0,
-    }));
+      if (selectedStockList.length === 0) {
+        setLoading(false);
+        toast.error("Selected items not found in current stock list");
+        return;
+      }
 
-    // Convert selected items to stockTakeItems format
-    const itemsForEntry = selectedStockList.map((item) => {
-      // Check if this item exists in cartData (for editing existing documents)
-      // Handle both new format (ONE entry per item with ordMemo) and old format (multiple entries per item)
-      const existingItems = cartData.filter(
+      // Preserve original item order
+      setOriginalItemOrder([...selectedStockList]);
+
+      // Reset pagination for Step 2
+      setItemFilter((prev) => ({
+        ...prev,
+        skip: 0,
+      }));
+
+      // Clear search value when transitioning to Step 2
+      // This ensures all selected items are shown initially, not filtered by Step 1 search
+      
+
+      // Convert selected items to stockTakeItems format
+      const itemsForEntry = selectedStockList.map((item) => {
+        // Check if this item exists in cartData (for editing existing documents)
+        // Handle both new format (ONE entry per item with ordMemo) and old format (multiple entries per item)
+        const existingItems = cartData.filter(
         (cartItem) => cartItem.itemcode === item.stockCode
       );
 
@@ -854,23 +1005,24 @@ function AddTake({ docData }) {
         totalSystemQty = parseFloat(firstItem.docTtlqty) || 0;
       }
 
-      return {
-        ...item,
-        onHandQty: parseFloat(item.quantity) || 0,
-        countedQty: totalCountedQty,
-        variance: totalCountedQty - totalSystemQty,
-        confirmUpdate: true,
-        batchBreakdown: batchBreakdown,
-        hasBatchBreakdown: hasBatchBreakdown,
-        batchNo: firstItem.docBatchNo || "",
-        expiryDate: firstItem.docExpdate || null,
-        remarks: firstItem.itemRemark || item.remarks || "",
-      };
-    });
+        return {
+          ...item,
+          onHandQty: parseFloat(item.quantity) || 0,
+          countedQty: totalCountedQty,
+          variance: calculateDisplayVariance(totalCountedQty, totalSystemQty),
+          confirmUpdate: true,
+          batchBreakdown: batchBreakdown,
+          hasBatchBreakdown: hasBatchBreakdown,
+          batchNo: firstItem.docBatchNo || "",
+          expiryDate: firstItem.docExpdate || null,
+          remarks: firstItem.itemRemark || item.remarks || "",
+        };
+      });
 
-    setStockTakeItems(itemsForEntry);
-    setLoading(false); // Ensure loading is false after setting items
-    setWorkflowStep(2);
+      setStockTakeItems(itemsForEntry);
+      setLoading(false); // Ensure loading is false after setting items
+      setWorkflowStep(2);
+    }, 50); // Small delay to allow UI to update and show loader
   };
 
   // Handle quantity change in Step 2
@@ -884,7 +1036,7 @@ function AddTake({ docData }) {
       updated[index] = {
         ...updated[index],
         countedQty: newQty,
-        variance: newQty - onHandQty,
+        variance: calculateDisplayVariance(newQty, onHandQty),
       };
       
       // If quantity changed significantly, clear batch breakdown (user needs to re-select)
@@ -916,6 +1068,18 @@ function AddTake({ docData }) {
 
   // Handle removal of item from Step 2
   const handleRemoveItem = (index) => {
+    // Get the stockCode of the item being removed
+    const itemToRemove = stockTakeItems[index];
+    if (itemToRemove && itemToRemove.stockCode) {
+      // Remove from selectedItems Set in Step 1
+      setSelectedItems((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(itemToRemove.stockCode);
+        return newSet;
+      });
+    }
+    
+    // Remove from stockTakeItems
     setStockTakeItems((prev) => {
       const updated = prev.filter((_, i) => i !== index);
       return updated;
@@ -936,25 +1100,37 @@ function AddTake({ docData }) {
     if (getConfigValue("BATCH_NO") === "Yes") {
       for (const item of confirmedItems) {
         if (item.countedQty > 0) {
-          // If batch functionality is enabled and item has counted quantity
-          // Check if batch breakdown is required
-          const hasBatchBreakdown = item.hasBatchBreakdown && item.batchBreakdown && item.batchBreakdown.length > 0;
-          
-          if (hasBatchBreakdown) {
-            const totalBatchQty = item.batchBreakdown.reduce(
-              (sum, batch) => sum + (batch.countedQty || 0),
-              0
+          // If batch functionality is enabled and item has counted quantity,
+          // enforce that batch selection has been completed and is consistent.
+          const hasValidBatchBreakdown =
+            item.hasBatchBreakdown &&
+            item.batchBreakdown &&
+            item.batchBreakdown.length > 0;
+
+          // Mandatory: user must complete batch selection for any counted item
+          if (!hasValidBatchBreakdown) {
+            toast.error(
+              `Batch selection is mandatory for item ${item.stockCode}. Please click "Select Batch" and assign quantities (or confirm 'No Batch').`
             );
-            
-            // Allow small floating point differences (0.01)
-            if (Math.abs(totalBatchQty - item.countedQty) > 0.01) {
-              toast.error(
-                `Batch breakdown total (${totalBatchQty.toFixed(2)}) does not match counted quantity (${item.countedQty.toFixed(2)}) for item ${item.stockCode}. Please adjust batch quantities.`
-              );
-              return null;
-            }
+            return null;
           }
-          // Note: If no batch breakdown exists, system will use single entry (backward compatibility)
+
+          const totalBatchQty = item.batchBreakdown.reduce(
+            (sum, batch) => sum + (batch.countedQty || 0),
+            0
+          );
+
+          // Allow small floating point differences (0.01)
+          if (Math.abs(totalBatchQty - item.countedQty) > 0.01) {
+            toast.error(
+              `Batch breakdown total (${totalBatchQty.toFixed(
+                2
+              )}) does not match counted quantity (${item.countedQty.toFixed(
+                2
+              )}) for item ${item.stockCode}. Please adjust batch quantities.`
+            );
+            return null;
+          }
         }
       }
     }
@@ -1186,7 +1362,32 @@ function AddTake({ docData }) {
       );
 
       if (!response || response.length === 0) {
-        toast.warning("No batch information found for this item. You can still proceed with 'No Batch' option.");
+        toast.warning(
+          "No batch information found for this item. Proceeding with 'No Batch' using the counted quantity."
+        );
+
+        // Mark batch selection as completed using a single 'No Batch' entry
+        setStockTakeItems((prev) => {
+          const updated = [...prev];
+          const existing = updated[index];
+          if (!existing) return prev;
+
+          const noBatchEntry = {
+            batchNo: "",
+            availableQty: Number(existing.onHandQty || 0),
+            countedQty: Number(existing.countedQty || 0),
+            expDate: null,
+          };
+
+          updated[index] = {
+            ...existing,
+            hasBatchBreakdown: true,
+            batchBreakdown: [noBatchEntry],
+          };
+
+          return updated;
+        });
+
         setBatchSelectionDialog((prev) => ({
           ...prev,
           batches: [],
@@ -1386,6 +1587,86 @@ function AddTake({ docData }) {
     debouncedSearchValue,
   ]);
 
+  // Filter stockTakeItems for Step 2 (apply filters to selected items only)
+  const filteredStockTakeItems = useMemo(() => {
+    if (workflowStep !== 2 || !stockTakeItems || stockTakeItems.length === 0) {
+      return stockTakeItems;
+    }
+
+    let filtered = [...stockTakeItems];
+
+    // Department filter
+    if (itemFilter.whereArray.department.length > 0) {
+      filtered = filtered.filter((item) => {
+        const itemDepartment = item.Department || item.department;
+        return itemFilter.whereArray.department.includes(itemDepartment);
+      });
+    }
+
+    // Brand filter
+    if (itemFilter.whereArray.brand.length > 0) {
+      filtered = filtered.filter((item) => {
+        const itemBrand = item.Brand || item.brand;
+        const itemBrandCode = item.BrandCode || item.brandCode;
+        return itemFilter.whereArray.brand.some(
+          (brand) => brand === itemBrand || brand === itemBrandCode
+        );
+      });
+    }
+
+    // Range filter
+    if (itemFilter.whereArray.range.length > 0) {
+      filtered = filtered.filter((item) => {
+        const itemRange = item.Range || item.range;
+        const itemRangeCode = item.RangeCode || item.rangeCode;
+        return itemFilter.whereArray.range.some(
+          (range) => range === itemRange || range === itemRangeCode
+        );
+      });
+    }
+
+    // Search filter - apply to stockTakeItems
+    // Use searchValue instead of debouncedSearchValue for immediate effect when transitioning
+    if (searchValue && searchValue.trim()) {
+      const searchLower = searchValue.toLowerCase().trim();
+      filtered = filtered.filter((item) => {
+        const stockCode = (item.stockCode || item.itemcode || "").toLowerCase();
+        const stockName = (item.stockName || item.itemdesc || "").toLowerCase();
+        const brandCode = (item.brandCode || item.BrandCode || "").toLowerCase();
+        const brand = (item.brand || item.Brand || "").toLowerCase();
+        const range = (item.range || item.Range || "").toLowerCase();
+        const rangeCode = (item.rangeCode || item.RangeCode || "").toLowerCase();
+        const barCode = (item.barCode || item.barcode || "").toLowerCase();
+        const linkCode = (item.linkCode || "").toLowerCase();
+        const uom = (item.uom || item.itemUom || item.uomDescription || "").toLowerCase();
+        
+        return (
+          stockCode.includes(searchLower) ||
+          stockName.includes(searchLower) ||
+          brandCode.includes(searchLower) ||
+          brand.includes(searchLower) ||
+          range.includes(searchLower) ||
+          rangeCode.includes(searchLower) ||
+          barCode.includes(searchLower) ||
+          linkCode.includes(searchLower) ||
+          uom.includes(searchLower)
+        );
+      });
+    }
+
+    return filtered;
+  }, [
+    workflowStep,
+    stockTakeItems,
+    itemFilter.whereArray.department.length,
+    itemFilter.whereArray.department.join(","),
+    itemFilter.whereArray.brand.length,
+    itemFilter.whereArray.brand.join(","),
+    itemFilter.whereArray.range.length,
+    itemFilter.whereArray.range.join(","),
+    searchValue, // Changed from debouncedSearchValue for immediate effect when transitioning
+  ]);
+
   // Add apply filters function
   const handleApplyFilters = () => {
     setItemFilter((prev) => ({
@@ -1574,17 +1855,28 @@ function AddTake({ docData }) {
           totalCountedQty = parseFloat(firstItem.docQty) || 0;
           totalSystemQty = parseFloat(firstItem.docTtlqty) || 0;
         }
-        // No batch
+        // No batch - or "No Batch only" saved in ordMemo3 (Phase 1: recognize as completed batch selection)
         else {
           totalCountedQty = parseFloat(firstItem.docQty) || 0;
           totalSystemQty = parseFloat(firstItem.docTtlqty) || 0;
+          const noBatchQty = parseFloat(firstItem.ordMemo3) || 0;
+          if (getConfigValue("BATCH_NO") === "Yes" && (noBatchQty > 0 || totalCountedQty > 0)) {
+            const qty = noBatchQty > 0 ? noBatchQty : totalCountedQty;
+            hasBatchBreakdown = true;
+            batchBreakdown = [{
+              batchNo: "",
+              availableQty: parseFloat(firstItem.docTtlqty) || 0,
+              countedQty: qty,
+              expDate: null,
+            }];
+          }
         }
 
         return {
           ...item,
           onHandQty: parseFloat(item.quantity) || 0,
           countedQty: totalCountedQty,
-          variance: totalCountedQty - totalSystemQty,
+          variance: calculateDisplayVariance(totalCountedQty, totalSystemQty),
           confirmUpdate: true,
           batchBreakdown: batchBreakdown,
           hasBatchBreakdown: hasBatchBreakdown,
@@ -1598,6 +1890,29 @@ function AddTake({ docData }) {
       setWorkflowStep(2);
     }
   }, [urlDocNo, cartData, stockList, stockHdrs.docStatus, workflowStep]);
+
+  // Adjust pagination when items are deleted in Step 2
+  useEffect(() => {
+    // Only adjust pagination in Step 2
+    if (workflowStep !== 2 || !stockTakeItems || stockTakeItems.length === 0) {
+      return;
+    }
+
+    const totalItems = filteredStockTakeItems.length;
+    const limit = itemFilter.limit;
+    const currentSkip = itemFilter.skip;
+    const totalPages = Math.ceil(totalItems / limit);
+
+    // If current skip is beyond available items, adjust to last page
+    if (totalPages > 0 && currentSkip >= totalItems) {
+      const lastPage = Math.max(1, totalPages);
+      const newSkip = (lastPage - 1) * limit;
+      setItemFilter((prev) => ({
+        ...prev,
+        skip: newSkip,
+      }));
+    }
+  }, [filteredStockTakeItems.length, workflowStep, itemFilter.skip, itemFilter.limit]);
 
   const getStockHdr = async (filter) => {
     try {
@@ -1933,7 +2248,7 @@ function AddTake({ docData }) {
               batchNo: batch.batchNo,
               countedQty: batch.quantity,
               availableQty: matchingBatch?.qty || 0,
-              expDate: matchingBatch?.expDate || batch.expDate || null,
+              expDate: normalizeExpDate(matchingBatch?.expDate || batch.expDate) || null,
             };
           });
 
@@ -1962,7 +2277,26 @@ function AddTake({ docData }) {
         return null;
       }
     }
-    
+
+    // Phase 2: "No Batch" only stored in ordMemo3 (ordMemo1/ordMemo2 empty) - return batchState so cart has batchDetails
+    const noBatchQty = Number(cartItem.ordMemo3) || 0;
+    if (noBatchQty > 0) {
+      const totalQty = parseFloat(cartItem.docQty) || 0;
+      return {
+        batchNo: cartItem.docBatchNo || "",
+        expDate: cartItem.docExpdate || null,
+        batchTransferQty: 0,
+        noBatchTransferQty: noBatchQty,
+        totalTransferQty: totalQty,
+        batchDetails: [{
+          batchNo: "",
+          countedQty: noBatchQty,
+          availableQty: parseFloat(cartItem.docTtlqty) || 0,
+          expDate: null,
+        }],
+      };
+    }
+
     // Fallback: Single batch from docBatchNo (backward compatibility)
     if (cartItem.docBatchNo) {
       return {
@@ -2301,13 +2635,31 @@ function AddTake({ docData }) {
   const normalizeExpDate = (expDate) => {
     if (!expDate) return null;
     
-    // Handle ISO date format (e.g., "2026-10-15T00:00:00.000Z")
-    if (expDate.includes("T") || expDate.includes("Z")) {
-      return new Date(expDate).toISOString().split('T')[0];
+    // SQL Server converts NULL dates to "1900-01-01" - treat this as null
+    // Check various formats of 1900-01-01 first
+    const dateStr = typeof expDate === 'string' ? expDate.trim() : String(expDate);
+    if (dateStr === "1900-01-01" || 
+        dateStr === "1900-01-01T00:00:00.000Z" || 
+        dateStr === "1900-01-01T00:00:00Z" ||
+        dateStr.startsWith("1900-01-01")) {
+      return null;
     }
     
-    // If already in YYYY-MM-DD format, return as is
+    // Handle ISO date format (e.g., "2026-10-15T00:00:00.000Z")
+    if (expDate.includes("T") || expDate.includes("Z")) {
+      try {
+        const normalized = new Date(expDate).toISOString().split('T')[0];
+        // Check again after conversion
+        if (normalized === "1900-01-01") return null;
+        return normalized;
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    // If already in YYYY-MM-DD format, return as is (unless it's 1900-01-01)
     if (expDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      if (expDate === "1900-01-01") return null;
       return expDate;
     }
     
@@ -2318,7 +2670,10 @@ function AddTake({ docData }) {
         const day = parts[0].padStart(2, "0");
         const month = parts[1].padStart(2, "0");
         const year = parts[2];
-        return `${year}-${month}-${day}`;
+        const dateStr = `${year}-${month}-${day}`;
+        // Check if result is 1900-01-01
+        if (dateStr === "1900-01-01") return null;
+        return dateStr;
       }
     }
     
@@ -2488,7 +2843,7 @@ function AddTake({ docData }) {
 
                   return {
                     batchNo: batch.batchNo || "",
-                    expDate: matchingBatch?.expDate || batch.expDate || null,
+                    expDate: normalizeExpDate(matchingBatch?.expDate || batch.expDate) || null,
                     variance: variance,
                     countedQty: batch.countedQty,
                     systemQty: systemQty,
@@ -2510,7 +2865,7 @@ function AddTake({ docData }) {
 
                 return {
                   batchNo: batch.batchNo || "",
-                  expDate: batch.expDate || item.docExpdate || null,
+                  expDate: normalizeExpDate(batch.expDate || item.docExpdate) || null,
                   variance: variance,
                   countedQty: batch.countedQty,
                   systemQty: systemQty,
@@ -2583,7 +2938,7 @@ function AddTake({ docData }) {
 
               return {
                 batchNo: batch.batchNo || "",
-                expDate: expiryMap.get(batch.countedQty) || item.docExpdate || null,
+                expDate: normalizeExpDate(expiryMap.get(batch.countedQty) || item.docExpdate) || null,
                 variance: variance,
                 countedQty: batch.countedQty,
                 systemQty: 0,
@@ -2881,6 +3236,8 @@ function AddTake({ docData }) {
               const normalizedExpDate = normalizeExpDate(batch.expDate);
 
               // Check if this specific batch exists in ItemBatches
+              // IMPORTANT: Do NOT include expDate in filter when it's null
+              // Backend converts null to "1900-01-01", which prevents matching existing NULL expDate records
               const batchCheckFilter = {
                 where: {
                   and: [
@@ -2888,7 +3245,10 @@ function AddTake({ docData }) {
                     { siteCode: userDetails.siteCode },
                     { uom: group.itemUom },
                     { batchNo: batch.batchNo || "" },
-                    ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []),
+                    // Only include expDate if it's not null AND expiry tracking is enabled
+                    ...(normalizedExpDate && getConfigValue('EXPIRY_DATE') === "Yes" 
+                      ? [{ expDate: normalizedExpDate }] 
+                      : []),
                   ],
                 },
               };
@@ -3032,12 +3392,13 @@ function AddTake({ docData }) {
     const value = e.target.value;
     setSearchValue(value); // Update the search value state
     
-    // Reset workflow to Step 1 when search changes
-    if (workflowStep > 1) {
-      setWorkflowStep(1);
-      setStockTakeItems([]);
-      setSelectedItems(new Set());
-    }
+    // Reset pagination when search changes (both Step 1 and Step 2)
+    // In Step 2, search filters selected items only (via filteredStockTakeItems)
+    // Do NOT reset workflow - let search filter work in current step
+    setItemFilter((prev) => ({
+      ...prev,
+      skip: 0,
+    }));
   };
   const showError = (message) => {
     toast.error(message, {
@@ -3373,21 +3734,8 @@ function AddTake({ docData }) {
             toast.warning("Stock Take posted but failed to update stock quantities");
           }
 
-          // Create Stock Adjustment document when posted
-          try {
-            const adjustmentDocNo = await createStockAdjustmentFromStockTake(docNo);
-            if (adjustmentDocNo) {
-              message = `Stock Take posted and Stock Adjustment ${adjustmentDocNo} created successfully`;
-              toast.success(`Stock Adjustment ${adjustmentDocNo} created successfully`);
-            } else {
-              message = "Stock Take posted (no variances found for adjustment)";
-              toast.info("No variances found - no adjustment document needed");
-            }
-          } catch (adjustmentError) {
-            console.error("Error creating adjustment:", adjustmentError);
-            message = "Stock Take posted but failed to create adjustment document";
-            toast.error("Failed to create adjustment document: " + adjustmentError.message);
-          }
+          // Stock Take posting already updates stock via TKE; no auto ADJ to avoid double adjustment
+          message = "Stock Take posted successfully";
         } else {
           // Update existing document to posted status
           const updateResponse = await postStockHdr(data, "update");
@@ -3404,21 +3752,8 @@ function AddTake({ docData }) {
               toast.warning("Stock Take posted but failed to update stock quantities");
             }
 
-            // Create Stock Adjustment document when posted
-            try {
-              const adjustmentDocNo = await createStockAdjustmentFromStockTake(docNo);
-              if (adjustmentDocNo) {
-                message = `Stock Take posted and Stock Adjustment ${adjustmentDocNo} created successfully`;
-                toast.success(`Stock Adjustment ${adjustmentDocNo} created successfully`);
-              } else {
-                message = "Stock Take posted (no variances found for adjustment)";
-                toast.info("No variances found - no adjustment document needed");
-              }
-            } catch (adjustmentError) {
-              console.error("Error creating adjustment:", adjustmentError);
-              message = "Stock Take posted but failed to create adjustment document";
-              toast.error("Failed to create adjustment document: " + adjustmentError.message);
-            }
+            // Stock Take posting already updates stock via TKE; no auto ADJ to avoid double adjustment
+            message = "Stock Take posted successfully";
           } else {
             throw new Error("Failed to update Stock Take status");
           }
@@ -3456,6 +3791,24 @@ function AddTake({ docData }) {
   const navigateTo = (path) => {
     navigate(path);
   };
+
+  // Print handler for stock take list
+  const handlePrintStockTakeList = (printAll = false) => {
+    // Get items to print - either selected or all
+    const itemsToPrint = printAll
+      ? stockList.filter((item) => item.isActive === "True")
+      : stockList.filter(
+          (item) => item.isActive === "True" && selectedItems.has(item.stockCode)
+        );
+
+    // Use the imported print function
+    printStockTakeList(itemsToPrint, userDetails, toast);
+  };
+
+  const isSubmitting = saveLoading || postLoading;
+  const showActionButtons =
+    (workflowStep === 2 && (!stockHdrs.docNo || stockHdrs.docStatus === 0)) ||
+    isSubmitting;
 
   return (
     <>
@@ -3503,22 +3856,20 @@ function AddTake({ docData }) {
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
                 onClick={() => navigateTo("/stock-take?tab=all")}
-                disabled={saveLoading || postLoading}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
               
               {/* Save and Post buttons - show only in Step 2 when creating new or when status is Open */}
-              {workflowStep === 2 &&
-                (!stockHdrs.docNo || stockHdrs.docStatus === 0) && (
+              {showActionButtons && (
                   <>
                     <Button
                       onClick={(e) => {
                         onSubmit(e, "save");
                       }}
                       disabled={
-                        saveLoading ||
-                        postLoading ||
+                        isSubmitting ||
                         stockTakeItems.filter(
                           (item) => item.confirmUpdate
                         ).length === 0
@@ -3540,8 +3891,7 @@ function AddTake({ docData }) {
                         onSubmit(e, "submit");
                       }}
                       disabled={
-                        saveLoading ||
-                        postLoading ||
+                        isSubmitting ||
                         stockTakeItems.filter(
                           (item) => item.confirmUpdate
                         ).length === 0
@@ -3799,8 +4149,34 @@ function AddTake({ docData }) {
                               Select items for stock take
                             </p>
                           </div>
-                          <div className="text-sm text-gray-600">
-                            Selected: {selectedItems.size} / {stockList.filter(item => item.isActive === "True").length}
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm text-gray-600">
+                              Selected: {selectedItems.size} / {stockList.filter(item => item.isActive === "True").length}
+                            </div>
+                            
+                            {/* Print buttons */}
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePrintStockTakeList(false)}
+                                disabled={selectedItems.size === 0}
+                                className="flex items-center gap-2"
+                              >
+                                <Printer className="w-4 h-4" />
+                                Print Selected ({selectedItems.size})
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePrintStockTakeList(true)}
+                                disabled={stockList.filter(item => item.isActive === "True").length === 0}
+                                className="flex items-center gap-2"
+                              >
+                                <Printer className="w-4 h-4" />
+                                Print All
+                              </Button>
+                            </div>
                           </div>
                         </div>
                         <div className="rounded-md border shadow-sm">
@@ -3959,10 +4335,10 @@ function AddTake({ docData }) {
                           <div className="text-sm text-gray-600">
                             Confirmed:{" "}
                             {
-                              stockTakeItems.filter((item) => item.confirmUpdate)
+                              filteredStockTakeItems.filter((item) => item.confirmUpdate)
                                 .length
                             }{" "}
-                            / {stockTakeItems.length}
+                            / {filteredStockTakeItems.length}
                           </div>
                         </div>
                         <div className="rounded-md border shadow-sm">
@@ -4002,15 +4378,29 @@ function AddTake({ docData }) {
                                     </div>
                                   </TableCell>
                                 </TableRow>
+                              ) : filteredStockTakeItems.length === 0 ? (
+                                <TableRow>
+                                  <TableCell
+                                    colSpan={getConfigValue("BATCH_NO") === "Yes" ? 10 : 9}
+                                    className="text-center py-10"
+                                  >
+                                    <div className="flex flex-col items-center gap-2 text-gray-500">
+                                      <FileText size={40} />
+                                      <p>No itemsoooo match the current filters.</p>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
                               ) : (
-                                stockTakeItems
+                                filteredStockTakeItems
                                   .slice(
                                     itemFilter.skip,
                                     itemFilter.skip + itemFilter.limit
                                   )
                                   .map((item, index) => {
-                                    // Calculate actual index in the full stockTakeItems array
-                                    const actualIndex = itemFilter.skip + index;
+                                    // Find original index in stockTakeItems array by stockCode
+                                    const actualIndex = stockTakeItems.findIndex(
+                                      (originalItem) => originalItem.stockCode === item.stockCode
+                                    );
                                     const variance = item.variance || 0;
                                     const varianceStyle =
                                       variance > 0
@@ -4071,9 +4461,11 @@ function AddTake({ docData }) {
                                               onClick={() => handleOpenBatchDialog(item, actualIndex)}
                                               disabled={!canEdit() || !item.countedQty || item.countedQty === 0}
                                               className="w-full"
+                                              title="Mandatory"
                                             >
                                               <Package className="w-4 h-4 mr-1" />
-                                              {item.hasBatchBreakdown ? "Edit Batch" : "Select Batch"}
+                                              {item.hasBatchBreakdown ? "Edit Batch" : "Select Batch"}{" "}
+                                              <span className="text-red-500">*</span>
                                             </Button>
                                             {item.hasBatchBreakdown && item.batchBreakdown && (
                                               <div className="text-xs text-gray-600 mt-1">
@@ -4136,7 +4528,7 @@ function AddTake({ docData }) {
                             Math.ceil(itemFilter.skip / itemFilter.limit) + 1
                           }
                           totalPages={Math.ceil(
-                            stockTakeItems.length / itemFilter.limit
+                            filteredStockTakeItems.length / itemFilter.limit
                           )}
                           onPageChange={handlePageChange}
                         />
@@ -4180,10 +4572,7 @@ function AddTake({ docData }) {
                        Variance
                      </TableHead>
                     {getConfigValue('BATCH_NO') === "Yes" && (
-                      <>
-                        <TableHead>Batch No</TableHead>
-                        <TableHead>Expiry Date</TableHead>
-                      </>
+                      <TableHead>Batch Details</TableHead>
                     )}
                     <TableHead>Remarks</TableHead>
                     {(!stockHdrs.docNo || stockHdrs.docStatus === 0) && (
@@ -4194,16 +4583,16 @@ function AddTake({ docData }) {
                 <TableBody>
                                      {loading ? (
                      <TableSpinner
-                       colSpan={getConfigValue('BATCH_NO') === "Yes" ? 10 : 8}
+                       colSpan={getConfigValue('BATCH_NO') === "Yes" ? 9 : 8}
                      />
                    ) : cartData.length === 0 ? (
                      <TableRow>
-                       <TableCell
-                         colSpan={
-                           getConfigValue('BATCH_NO') === "Yes" ? 10 : 8
-                         }
-                         className="text-center py-10"
-                       >
+                      <TableCell
+                        colSpan={
+                          getConfigValue('BATCH_NO') === "Yes" ? 9 : 8
+                        }
+                        className="text-center py-10"
+                      >
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -4212,7 +4601,11 @@ function AddTake({ docData }) {
                     </TableRow>
                   ) : (
                     <>
-                      {cartData.map((item, index) => (
+                      {cartData.map((item, index) => {
+                        const batchDetails = getBatchDetailsForDisplay(item);
+                        const hasBatchDetails = batchDetails.length > 0;
+
+                        return (
                         <TableRow
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
@@ -4239,12 +4632,19 @@ function AddTake({ docData }) {
                              {((parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0)).toFixed(2)}
                            </TableCell>
                           {getConfigValue('BATCH_NO') === "Yes" && (
-                            <>
-                              <TableCell>{item?.docBatchNo ?? "-"}</TableCell>
-                              <TableCell>
-                                {format_Date(item.docExpdate)}
-                              </TableCell>
-                            </>
+                            <TableCell>
+                              {hasBatchDetails ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openBatchPreview(item)}
+                                  className="h-7 px-2 text-blue-600 hover:text-blue-700"
+                                >
+                                  <Info className="h-4 w-4 mr-1" />
+                                  View
+                                </Button>
+                              ) : "-"}
+                            </TableCell>
                           )}
                           <TableCell>{item.itemRemark}</TableCell>
 
@@ -4271,11 +4671,12 @@ function AddTake({ docData }) {
                             </TableCell>
                           )}
                         </TableRow>
-                      ))}
+                        );
+                      })}
                                              {/* Totals Row */}
                        <TableRow className="bg-slate-100 font-medium">
                          <TableCell
-                           colSpan={3}
+                           colSpan={4}
                            className="text-right text-slate-700"
                          >
                            Totals:
@@ -4292,11 +4693,12 @@ function AddTake({ docData }) {
                              return sum + variance;
                            }, 0).toFixed(2)}
                          </TableCell>
-                         {getConfigValue('BATCH_NO') === "Yes" ? (
-                           <TableCell colSpan={4} />
-                         ) : (
-                           <TableCell colSpan={2} />
-                         )}
+                        <TableCell
+                          colSpan={
+                            (getConfigValue('BATCH_NO') === "Yes" ? 2 : 1) +
+                            ((!stockHdrs.docNo || stockHdrs.docStatus === 0) ? 1 : 0)
+                          }
+                        />
                        </TableRow>
                     </>
                   )}
@@ -4382,6 +4784,11 @@ function AddTake({ docData }) {
           itemdesc={batchSelectionDialog.item?.stockName || ""}
         />
       )}
+      <StockTakeBatchPreviewModal
+        showPreviewModal={showBatchPreviewModal}
+        setShowPreviewModal={setShowBatchPreviewModal}
+        previewItem={previewBatchItem}
+      />
     </>
   );
 }

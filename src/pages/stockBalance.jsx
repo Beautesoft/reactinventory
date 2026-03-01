@@ -357,17 +357,17 @@ function StockBalance() {
 
   return (
     <>
+      {initialLoading ? (
+        <div className="flex flex-col items-center justify-center h-screen">
+          <Loader2 className="w-8 h-8 text-gray-500 animate-spin" />
+          <span className="text-gray-600 ml-4 text-sm">Loading...</span>
+        </div>
+      ) : (
       <div className="h-screen w-full mt-6 light">
         <div className="ml-2 mb-7">
           <h1 className="text-2xl font-bold text-gray-900">
             Stock Balance
           </h1>
-          {isLoading && (
-            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Loading data...</span>
-            </div>
-          )}
         </div>
 
           <Tabs
@@ -450,6 +450,7 @@ function StockBalance() {
           onPageChange={handlePageChange}
         />
       </div>
+      )}
 
       {/* Batch Details Modal */}
       <Dialog open={showBatchModal} onOpenChange={setShowBatchModal}>

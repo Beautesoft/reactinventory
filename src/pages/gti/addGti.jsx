@@ -3333,7 +3333,7 @@ function AddGti({ docData }) {
               { uom: stktrnItem.itemUom },
               { siteCode: stockHdrs.tstoreNo },
               { batchNo: destBatchNo },
-              ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
+              ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
             ],
           },
         };
@@ -3447,7 +3447,7 @@ function AddGti({ docData }) {
             { uom: stktrnItem.itemUom },
             { siteCode: stockHdrs.tstoreNo },
             { batchNo: stktrnItem.itemBatch },
-            ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
+            ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
           ],
         },
       };
@@ -3863,7 +3863,7 @@ function AddGti({ docData }) {
             { uom: stktrnItem.itemUom },
             { siteCode: stktrnItem.storeNo },
             { batchNo: stktrnItem.itemBatch }, // Filter by specific batch
-            ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
+            ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
           ],
         },
       };

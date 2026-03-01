@@ -2458,9 +2458,9 @@ function AddPR() {
       const shouldCreateTransfer = formData.suppCode === "HQ";
       const result = await prApi.approvePRWithQuantities(reqNo, cartData, shouldCreateTransfer);
       
-      // Show appropriate success message based on whether GTO was created
+      // Show appropriate success message based on whether GTI was created
       if (shouldCreateTransfer && result?.docNo) {
-        toast.success(`Purchase Requisition approved and GTO document ${result.docNo} created successfully (Open status)`);
+        toast.success(`Purchase Requisition approved and GTI document ${result.docNo} created successfully (Open status) at destination`);
       } else {
         toast.success("Purchase Requisition approved successfully");
       }
@@ -3539,7 +3539,7 @@ function AddPR() {
               <>
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                   <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> This will automatically create a GTO (Goods Transfer Out) from HQ to the requesting site.
+                    <strong>Note:</strong> This will automatically create a GTI (Goods Transfer In) at the requesting site for goods from HQ.
                   </p>
                 </div>
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">

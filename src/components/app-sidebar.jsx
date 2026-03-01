@@ -78,140 +78,53 @@ export function AppSidebar() {
   const getFilteredNavMain = () => {
     const userAuths = getUserAuthorizations();
     
+    // Operations (non-report) items for Stock Control, gated by authorization (incl. Stock Take F10015)
+    const operationsItems = [
+      { title: "Goods Receive Note", url: "/goods-receive-note", icon: FiClipboard },
+      { title: "Goods Transfer Out", url: "/goods-transfer-out", icon: FiArrowRightCircle },
+      { title: "Goods Transfer In", url: "/goods-transfer-in", icon: FiArrowLeftCircle },
+      { title: "Goods Return Note", url: "/goods-return-note", icon: FiRotateCw },
+      { title: "Stock Adjustment", url: "/stock-adjustment", icon: FiEdit },
+      { title: "Stock Usage Memo", url: "/stock-usage-memo", icon: FiFileText },
+      { title: "Stock Balance", url: "/stock-balance-live", icon: FiLayers },
+      { title: "Purchase Requisition", url: "/purchase-requisition", icon: FiShoppingBag },
+      { title: "Stock Take", url: "/stock-take", icon: FiEdit },
+    ].filter(item => hasAuthorization(item.title));
+
+    // Report items (shown under Reports compartment)
+    const reportItems = [
+      { title: "Stock Balance Report", url: "/stock-balance", icon: FiBarChart2 },
+      { title: "Stock Movement Report", url: "/stock-movement", icon: FiTrendingUp },
+    ].filter(item => hasAuthorization(item.title));
+
     // If no authorizations found, show all menu items (fallback)
     if (!userAuths || userAuths.length === 0) {
+      const fallbackStockControlItems = [
+        { title: "Goods Receive Note", url: "/goods-receive-note", icon: FiClipboard },
+        { title: "Goods Transfer Out", url: "/goods-transfer-out", icon: FiArrowRightCircle },
+        { title: "Goods Transfer In", url: "/goods-transfer-in", icon: FiArrowLeftCircle },
+        { title: "Goods Return Note", url: "/goods-return-note", icon: FiRotateCw },
+        { title: "Stock Adjustment", url: "/stock-adjustment", icon: FiEdit },
+        { title: "Stock Usage Memo", url: "/stock-usage-memo", icon: FiFileText },
+        { title: "Stock Balance", url: "/stock-balance-live", icon: FiLayers },
+        { title: "Stock Take", url: "/stock-take", icon: FiEdit },
+      ];
+      const fallbackReportItems = [
+        { title: "Stock Balance Report", url: "/stock-balance", icon: FiBarChart2 },
+        { title: "Stock Movement Report", url: "/stock-movement", icon: FiTrendingUp },
+      ];
       return [
-        {
-          title: "Dashboard",
-          url: "/dashboard",
-          icon: SquareTerminal,
-          isActive: true,
-        },
-        {
-          title: "Stock Control ",
-          url: "#",
-          icon: Bot,
-          items: [
-            {
-              title: "Goods Receive Note",
-              url: "/goods-receive-note",
-              icon: FiClipboard,
-            },
-            {
-              title: "Goods Transfer Out",
-              url: "/goods-transfer-out",
-              icon: FiArrowRightCircle,
-            },
-            {
-              title: "Goods Transfer In",
-              url: "/goods-transfer-in",
-              icon: FiArrowLeftCircle,
-            },
-            {
-              title: "Goods Return Note",
-              url: "/goods-return-note",
-              icon: FiRotateCw,
-            },
-            { title: "Stock Adjustment", 
-              url: "/stock-adjustment", 
-              icon: FiEdit },
-            {
-              title: "Stock Usage Memo",
-              url: "/stock-usage-memo",
-              icon: FiFileText,
-            },
-            {
-              title: "Stock Balance",
-              url: "/stock-balance-live",
-              icon: FiLayers,
-            },
-            // Stock Take is always available for all users
-            { title: "Stock Take", 
-              url: "/stock-take", 
-              icon: FiEdit },
-          ],
-        },
-        ...(userDetails?.isSettingEnabled === "Y" ? [{
-          title: "Settings",
-          url: "/settings",
-          icon: Settings2,
-        }] : []),
-        {
-          title: "Logout",
-          url: "#",
-          icon: LogOut,
-          onClick: () => {
-            console.log("Logout clicked");
-            logout();
-          },
-        },
+        { title: "Dashboard", url: "/dashboard", icon: SquareTerminal, isActive: true },
+        { title: "Stock Control ", url: "#", icon: Bot, items: fallbackStockControlItems },
+
+        ...(fallbackReportItems.length > 0 ? [{ title: "Reports", url: "#", icon: FiBarChart2, items: fallbackReportItems }] : []),
+        ...(userDetails?.isSettingEnabled === "Y" ? [{ title: "Settings", url: "/settings", icon: Settings2 }] : []),
+        { title: "Logout", url: "#", icon: LogOut, onClick: () => { console.log("Logout clicked"); logout(); } },
+
       ];
     }
 
-    // Filter stock control items based on authorizations
-    const stockControlItems = [
-      {
-        title: "Goods Receive Note",
-        url: "/goods-receive-note",
-        icon: FiClipboard,
-      },
-      {
-        title: "Goods Transfer Out",
-        url: "/goods-transfer-out",
-        icon: FiArrowRightCircle,
-      },
-      {
-        title: "Goods Transfer In",
-        url: "/goods-transfer-in",
-        icon: FiArrowLeftCircle,
-      },
-      {
-        title: "Goods Return Note",
-        url: "/goods-return-note",
-        icon: FiRotateCw,
-      },
-      { title: "Stock Adjustment", 
-        url: "/stock-adjustment", 
-        icon: FiEdit },
-      {
-        title: "Stock Usage Memo",
-        url: "/stock-usage-memo",
-        icon: FiFileText,
-      },
-      {
-        title: "Stock Balance",
-        url: "/stock-balance-live",
-        icon: FiLayers,
-      },
-      {
-        title: "Stock Balance Report",
-        url: "/stock-balance",
-        icon: FiBarChart2,
-      },
-      {
-        title: "Stock Movement Report",
-        url: "/stock-movement",
-        icon: FiTrendingUp,
-      },
-      // Temporarily hidden - Purchase Order
-      // {
-      //   title: "Purchase Order",
-      //   url: "/purchase-order",
-      //   icon: FiShoppingCart,
-      // },
-      {
-        title: "Purchase Requisition",
-        url: "/purchase-requisition",
-        icon: FiShoppingBag,
-      },
-    ].filter(item => hasAuthorization(item.title));
-
-    // Stock Take is always available for all users
-    const alwaysAvailableItems = [
-      { title: "Stock Take", 
-        url: "/stock-take", 
-        icon: FiEdit }
-    ];
+    const stockControlItems = operationsItems;
 
     return [
       {
@@ -220,12 +133,17 @@ export function AppSidebar() {
         icon: SquareTerminal,
         isActive: true,
       },
-      // Show Stock Control if user has at least one authorization OR if Stock Take should be available
-      ...((stockControlItems.length > 0 || alwaysAvailableItems.length > 0) ? [{
+      ...((stockControlItems.length > 0) ? [{
         title: "Stock Control ",
         url: "#",
         icon: Bot,
-        items: [...stockControlItems, ...alwaysAvailableItems],
+        items: stockControlItems,
+      }] : []),
+      ...(reportItems.length > 0 ? [{
+        title: "Reports",
+        url: "#",
+        icon: FiBarChart2,
+        items: reportItems,
       }] : []),
       // Only show Settings if user has isSettingEnabled = "Y"
       ...(userDetails?.isSettingEnabled === "Y" ? [{
@@ -242,6 +160,8 @@ export function AppSidebar() {
           logout();
         },
       },
+      // { title: "Purchase Requisition", url: "/purchase-requisition", icon: FiShoppingBag },
+
     ];
   };
 

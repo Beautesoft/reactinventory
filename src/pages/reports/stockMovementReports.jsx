@@ -110,55 +110,64 @@ const StockMovementReports = () => {
     }
   };
 
+  const toArray = (response) => {
+    if (Array.isArray(response?.result)) return response.result;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response)) return response;
+    return [];
+  };
+
   const loadMasterData = async (signal) => {
     try {
+      const siteCode = JSON.parse(localStorage.getItem("userDetails"))?.siteCode || "NIL";
+
       // Load sites
       const sitesResponse = await apiService.get("ItemSitelists", { signal });
-      setSites(sitesResponse || []);
+      setSites(Array.isArray(sitesResponse) ? sitesResponse : []);
 
       // Load suppliers
-      const supplierResponse = await apiService1.get("/api/Supplier?siteCode=NIL", { signal });
-      const supplierOp = (supplierResponse?.result || supplierResponse || []).map((item) => ({
+      const supplierResponse = await apiService1.get(`/api/Supplier?siteCode=${siteCode}`, { signal });
+      const supplierOp = toArray(supplierResponse).map((item) => ({
         value: item.supplierCode || item.splyCode || '',
         label: item.supplierName || item.supplydesc || '',
       })).filter(item => item.value && item.label);
       setSuppliers(supplierOp);
 
       // Load departments
-      const deptResponse = await apiService1.get("/api/department?siteCode=NIL", { signal });
-      const deptOptions = (deptResponse?.result || deptResponse || []).map((item) => ({
+      const deptResponse = await apiService1.get(`/api/department?siteCode=${siteCode}`, { signal });
+      const deptOptions = toArray(deptResponse).map((item) => ({
         value: item.departmentCode || item.itmCode || '',
         label: item.departmentName || item.itmDesc || '',
       })).filter(item => item.value && item.label);
       setDepartments(deptOptions);
 
       // Load brands
-      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL", { signal });
-      const brandOp = (brandResponse?.result || brandResponse || []).map((item) => ({
+      const brandResponse = await apiService1.get(`/api/Brand?siteCode=${siteCode}`, { signal });
+      const brandOp = toArray(brandResponse).map((item) => ({
         value: item.brandCode || item.itmCode || '',
         label: item.brandName || item.itmDesc || '',
       })).filter(item => item.value && item.label);
       setBrands(brandOp);
 
       // Load ranges
-      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL", { signal });
-      const rangeOp = (rangeResponse?.result || []).map((item) => ({
+      const rangeResponse = await apiService1.get(`/api/Range?siteCode=${siteCode}&brandCode=NIL`, { signal });
+      const rangeOp = toArray(rangeResponse).map((item) => ({
         value: item.rangeCode,
         label: item.rangeName,
       }));
       setRanges(rangeOp);
 
       // Load items
-      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL", { signal });
-      const itemsOp = (itemResponse?.result || itemResponse || []).map((item) => ({
+      const itemResponse = await apiService1.get(`/api/StockList?siteCode=${siteCode}`, { signal });
+      const itemsOp = toArray(itemResponse).map((item) => ({
         value: item.itemCode || item.stockCode || '',
         label: item.itemName || item.stockName || '',
       })).filter(item => item.value && item.label);
       setItems(itemsOp);
 
       // Load movement codes
-      const movementCodeResponse = await apiService1.get("/api/MovementCode?siteCode=NIL", { signal });
-      const movementCodeOp = (movementCodeResponse?.result || movementCodeResponse || []).map((item) => ({
+      const movementCodeResponse = await apiService1.get(`/api/MovementCode?siteCode=${siteCode}`, { signal });
+      const movementCodeOp = toArray(movementCodeResponse).map((item) => ({
         value: item.movementCode || item.departmentCode || '',
         label: item.movementName || item.departmentName || '',
       })).filter(item => item.value && item.label);

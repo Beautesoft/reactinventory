@@ -89,39 +89,48 @@ const StockBalanceReports = () => {
     }
   };
 
+  const toArray = (response) => {
+    if (Array.isArray(response?.result)) return response.result;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response)) return response;
+    return [];
+  };
+
   const loadMasterData = async (signal) => {
     try {
+      const siteCode = JSON.parse(localStorage.getItem("userDetails"))?.siteCode || "NIL";
+
       // Load sites - using the same pattern as addGrn.jsx
       const sitesResponse = await apiService.get("ItemSitelists", { signal });
-      setSites(sitesResponse || []);
+      setSites(Array.isArray(sitesResponse) ? sitesResponse : []);
 
       // Load brands - using the correct API endpoint from ASP.NET code
-      const brandResponse = await apiService1.get("/api/Brand?siteCode=NIL", { signal });
-      const brandOp = (brandResponse.result || []).map((item) => ({
+      const brandResponse = await apiService1.get(`/api/Brand?siteCode=${siteCode}`, { signal });
+      const brandOp = toArray(brandResponse).map((item) => ({
         value: item.brandCode || item.itmCode || '',
         label: item.brandName || item.itmDesc || '',
       })).filter(item => item.value && item.label);
       setBrands(brandOp);
 
       // Load ranges - using the correct API endpoint from ASP.NET code
-      const rangeResponse = await apiService1.get("/api/Range?siteCode=NIL&brandCode=NIL", { signal });
-      const rangeOp = (rangeResponse.result || []).map((item) => ({
+      const rangeResponse = await apiService1.get(`/api/Range?siteCode=${siteCode}&brandCode=NIL`, { signal });
+      const rangeOp = toArray(rangeResponse).map((item) => ({
         value: item.rangeCode || item.itmCode || '',
         label: item.rangeName || item.itmDesc || '',
       })).filter(item => item.value && item.label);
       setRanges(rangeOp);
 
       // Load departments - using the correct API endpoint from ASP.NET code
-      const deptResponse = await apiService1.get("/api/department?siteCode=NIL", { signal });
-      const deptOptions = (deptResponse.result || []).map((item) => ({
+      const deptResponse = await apiService1.get(`/api/department?siteCode=${siteCode}`, { signal });
+      const deptOptions = toArray(deptResponse).map((item) => ({
         value: item.departmentCode || item.itmCode || '',
         label: item.departmentName || item.itmDesc || '',
       })).filter(item => item.value && item.label);
       setDepartments(deptOptions);
 
       // Load items - using the correct API endpoint from ASP.NET code
-      const itemResponse = await apiService1.get("/api/StockList?siteCode=NIL", { signal });
-      const itemsOp = (itemResponse.result || []).map((item) => ({
+      const itemResponse = await apiService1.get(`/api/StockList?siteCode=${siteCode}`, { signal });
+      const itemsOp = toArray(itemResponse).map((item) => ({
         value: item.itemCode || item.stockCode || '',
         label: item.itemName || item.stockName || '',
       })).filter(item => item.value && item.label);

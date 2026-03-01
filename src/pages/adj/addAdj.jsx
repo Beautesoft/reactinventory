@@ -2463,7 +2463,7 @@ function AddAdj({ docData }) {
                 { siteCode: userDetails.siteCode },
                 { uom: processedItem.docUom },
                 { batchNo: batch.batchNo },
-                ...(normalizedExpDate ? { expDate: normalizedExpDate } : {}), // Include expiry date if available
+                ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
               ],
             },
           };

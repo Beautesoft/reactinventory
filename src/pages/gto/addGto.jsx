@@ -2964,7 +2964,7 @@ function AddGto({ docData }) {
                             qty: fefoBatch.quantity,
                             batchcost: 0,
                             batchno: fefoBatch.batchNo,
-                            ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+                            ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
                           };
                           
                           console.log("🔍 Updating batch with payload:", JSON.stringify(batchUpdate, null, 2));
@@ -3942,7 +3942,7 @@ function AddGto({ docData }) {
           qty: -batchDetail.quantity, // Negative for source
           batchcost: 0,
           batchno: batchDetail.batchNo,
-          ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+          ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
         };
 
         await apiService.post(`ItemBatches/updateqty`, batchUpdate);
@@ -4117,7 +4117,7 @@ function AddGto({ docData }) {
             qty: batchDetail.quantity, // Positive for destination
             batchcost: 0,
             batchno: batchDetail.batchNo,
-            ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+            ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
           };
 
           await apiService.post(`ItemBatches/updateqty`, batchUpdate);
@@ -4345,7 +4345,7 @@ function AddGto({ docData }) {
       const normalizedExpDate = update.batchno && stktrnItem?.docExpdate ? normalizeExpDate(stktrnItem.docExpdate) : null;
       const updateWithExpDate = {
         ...update,
-        ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+        ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
       };
       
       await apiService.post(`ItemBatches/updateqty`, updateWithExpDate).catch(async (err) => {
@@ -4410,7 +4410,7 @@ function AddGto({ docData }) {
         // Add expDate to update payload so updateqty endpoint can find the correct batch
         const updateWithExpDate = {
           ...update,
-          ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+          ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
         };
         
         await apiService.post(`ItemBatches/updateqty`, updateWithExpDate).catch(async (err) => {
@@ -4531,7 +4531,7 @@ function AddGto({ docData }) {
           qty: qty, // Use validated quantity
           batchcost: 0,
           batchno: stktrnItem.itemBatch,
-          ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+          ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
         };
 
         await apiService
@@ -4657,7 +4657,7 @@ function AddGto({ docData }) {
           qty: qty, // Use validated quantity
           batchcost: 0,
           batchno: stktrnItem.itemBatch,
-          ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+          ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
         };
 
         await apiService
@@ -4881,7 +4881,7 @@ function AddGto({ docData }) {
                 qty: detail.qty,
                 batchcost: 0,
                 batchno: detail.batchNo,
-                ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+                ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
               };
 
               await apiService.post(`ItemBatches/updateqty`, batchUpdate).catch(async (err) => {
@@ -5225,7 +5225,7 @@ function AddGto({ docData }) {
             qty: qty,
             batchcost: 0,
             batchno: stktrnItem.itemBatch,
-            ...(normalizedExpDate ? { expdate: normalizeExpDateToISO(normalizedExpDate) } : {}),
+            ...(normalizedExpDate ? [{ expdate: normalizeExpDateToISO(normalizedExpDate) }] : []),
           };
 
           await apiService.post(`ItemBatches/updateqty`, batchUpdate).catch(async (err) => {
