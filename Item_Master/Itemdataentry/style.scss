@@ -1,0 +1,76 @@
+@import "assets/scss/abstracts/abstracts-dir.scss";
+.dataentry {
+  padding-top: 2rem;
+  .General {
+    background-color: #007bff26;
+    font-size: 20px;
+    border-radius: 5px;
+  }
+  .generalcontent {
+    .star {
+      color: red;
+    }
+
+    .date-picker input {
+      height: 1cm;
+      width: 5cm;
+    }
+    .date-picker .icon-calendar {
+      margin-top: -10px;
+    }
+    .imagecontainer .item_img img {
+      height: 6rem;
+    }
+    .imagecontainer .uploader-content {
+      height: 6rem;
+    }
+    .image-upload .image-folder {
+      display: none;
+    }
+  }
+
+  .date-picker .icon-calendar {
+    margin-top: 20px;
+    margin-right: 20px;
+  }
+}
+.package {
+  .pagination {
+    margin: 15px auto;
+    display: flex;
+    list-style: none;
+    outline: none;
+    float: right;
+  }
+  .pagination > .active > a {
+    background-color: $primary-color;
+    border-color: $primary-color;
+    color: #fff;
+  }
+  .pagination > li > a {
+    border: 1px solid $primary-color;
+    padding: 5px 10px;
+    outline: none;
+    cursor: pointer;
+  }
+  .pagination > .active > a,
+  .pagination > .active > span,
+  .pagination > .active > a:hover,
+  .pagination > .active > span:hover,
+  .pagination > .active > a:focus,
+  .pagination > .active > span:focus {
+    background-color: $primary-color;
+    border-color: $primary-color;
+    outline: none;
+  }
+  .pagination > li > a,
+  .pagination > li > span {
+    color: $primary-color;
+  }
+  .pagination > li:first-child > a,
+  .pagination > li:first-child > span,
+  .pagination > li:last-child > a,
+  .pagination > li:last-child > span {
+    border-radius: unset;
+  }
+}

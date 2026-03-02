@@ -89,6 +89,7 @@ export function AppSidebar() {
       { title: "Stock Balance", url: "/stock-balance-live", icon: FiLayers },
       { title: "Purchase Requisition", url: "/purchase-requisition", icon: FiShoppingBag },
       { title: "Stock Take", url: "/stock-take", icon: FiEdit },
+      // { title: "Item Master", url: "/item-master", icon: FiPackage },
     ].filter(item => hasAuthorization(item.title));
 
     // Report items (shown under Reports compartment)
@@ -108,6 +109,7 @@ export function AppSidebar() {
         { title: "Stock Usage Memo", url: "/stock-usage-memo", icon: FiFileText },
         { title: "Stock Balance", url: "/stock-balance-live", icon: FiLayers },
         { title: "Stock Take", url: "/stock-take", icon: FiEdit },
+        // { title: "Item Master", url: "/item-master", icon: FiPackage },
       ];
       const fallbackReportItems = [
         { title: "Stock Balance Report", url: "/stock-balance", icon: FiBarChart2 },
@@ -124,7 +126,11 @@ export function AppSidebar() {
       ];
     }
 
-    const stockControlItems = operationsItems;
+    const stockControlItems = [...operationsItems];
+    // Always show Item Master for development (outside auth filter)
+    if (!stockControlItems.some((item) => item.title === "Item Master")) {
+      stockControlItems.push({ title: "Item Master", url: "/item-master", icon: FiPackage });
+    }
 
     return [
       {

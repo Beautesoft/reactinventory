@@ -2635,7 +2635,7 @@ function AddGto({ docData }) {
                     itemcode: trimmedItemCode,
                     sitecode: stktrn.storeNo,
                     uom: cartItem.docUom,
-                    qty: Number(cartItem.docQty),
+                    qty: -Number(cartItem.docQty), // Negative for source store reduction
                     batchcost: 0,
                   };
 

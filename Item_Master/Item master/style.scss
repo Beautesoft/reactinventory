@@ -1,0 +1,70 @@
+@import "../../../../assets/scss/abstracts/abstracts-dir.scss";
+.itemmaster-container {
+  .icon {
+    width: 50px;
+    height: 50px;
+    background-color: #1379e6dc;
+    border-radius: 50%;
+    box-shadow: 0 6px 10px 0 #666;
+    transition: all 0.1s ease-in-out;
+    font-size: 50px;
+    color: white;
+    text-align: center;
+    line-height: 50px;
+    position: fixed;
+    right: 50px;
+    z-index: 5;
+    bottom: 10px;
+    cursor: pointer;
+  }
+  .pagination {
+    margin: 15px auto;
+    display: flex;
+    list-style: none;
+    outline: none;
+    float: right;
+  }
+  .pagination > .active > a {
+    background-color: $primary-color;
+    border-color: $primary-color;
+    color: #fff;
+  }
+  .pagination > li > a {
+    border: 1px solid $primary-color;
+    padding: 5px 10px;
+    outline: none;
+    cursor: pointer;
+  }
+  .pagination > .active > a,
+  .pagination > .active > span,
+  .pagination > .active > a:hover,
+  .pagination > .active > span:hover,
+  .pagination > .active > a:focus,
+  .pagination > .active > span:focus {
+    background-color: $primary-color;
+    border-color: $primary-color;
+    outline: none;
+  }
+  .pagination > li > a,
+  .pagination > li > span {
+    color: $primary-color;
+  }
+  .pagination > li:first-child > a,
+  .pagination > li:first-child > span,
+  .pagination > li:last-child > a,
+  .pagination > li:last-child > span {
+    border-radius: unset;
+  }
+}
+.label-head {
+  font-family: "Nunito", sans-serif;
+  font-weight: 400;
+  color: rgba(54, 74, 99, 1);
+  font-size: 36px;
+}
+.label-title {
+  font-family: Roboto;
+  font-weight: 400;
+  font-size: 20px;
+  color: rgba(82, 100, 132, 1);
+}

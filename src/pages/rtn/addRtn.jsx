@@ -2606,7 +2606,7 @@ function AddRtn({ docData }) {
                 itemcode: trimmedItemCode,
                 sitecode: userDetails.siteCode,
                 uom: cartItem.docUom,
-                qty: Number(cartItem.docQty),
+                qty: -Number(cartItem.docQty), // Negative for return (reduction)
                 batchcost: 0,
               };
 

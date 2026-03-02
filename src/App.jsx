@@ -34,6 +34,8 @@ import PurchaseOrder from "./pages/po/purchaseOrder";
 import AddPO from "./pages/po/addPo";
 import PurchaseRequisition from "./pages/pr/purchaseRequisition";
 import AddPR from "./pages/pr/addPr";
+import ItemMasterList from "./pages/item-master/itemMasterList";
+import ItemMasterForm from "./pages/item-master/itemMasterForm";
 
 function App() {
   return (
@@ -135,6 +137,11 @@ function App() {
                   <Route path="purchase-requisition/details/:id" element={<AddPR />} />
                   <Route path="purchase-requisition/print/:docNo" element={<PrintPreview documentType="pr" />} />
                   <Route path="purchase-requisition/edit/:id" element={<AddPR />} />
+                  
+                  {/* Item Master Routes */}
+                  <Route path="item-master" element={<ItemMasterList />} />
+                  <Route path="item-master/add" element={<ItemMasterForm />} />
+                  <Route path="item-master/edit/:itemCode" element={<ItemMasterForm />} />
                   
                   {/* Other Routes */}
                   <Route path="sales-order" element={<h1>Sales Order</h1>} />

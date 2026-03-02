@@ -3332,10 +3332,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
         // Step 8: Handle non-batch items (when BATCH_NO is disabled)
         if (getConfigValue('BATCH_NO') !== "Yes") {
-          for (const stktrnRecord of stktrnsWithIds) {
-            const group = Array.from(groupedItems.values()).find(
-              (g) => g.itemcode === stktrnRecord.itemcode
-            );
+          const groupedValues = Array.from(groupedItems.values());
+          for (let i = 0; i < stktrnsWithIds.length; i++) {
+            const stktrnRecord = stktrnsWithIds[i];
+            const group = groupedValues[i];
             
             if (group && group.hasAnyVariance) {
               // Only update ItemBatches if there's variance

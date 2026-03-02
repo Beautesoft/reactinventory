@@ -59,6 +59,20 @@ const routeConfig = {
     label: "Stock Usage Memo",
     parent: "Stock Movement",
   },
+  "/item-master": {
+    label: "Item Master",
+    parent: "Stock Control",
+  },
+  "/item-master/add": {
+    label: "Add Item",
+    parent: "Item Master",
+    parentPath: "/item-master",
+  },
+  "/item-master/edit": {
+    label: "Edit Item",
+    parent: "Item Master",
+    parentPath: "/item-master",
+  },
 };
 
 export function BreadcrumbNav() {
@@ -85,12 +99,32 @@ export function BreadcrumbNav() {
           isLast: false,
         });
       }
+      // Add Stock Control if it's a parent
+      if (route.parent === "Stock Control") {
+        breadcrumbs.push({
+          path: "#",
+          label: "Stock Control",
+          isLast: false,
+        });
+      }
 
       // Add parent route if exists
       if (route.parent === "Goods Receive Note") {
         breadcrumbs.push({
           path: route.parentPath,
           label: "Goods Receive Note",
+          isLast: false,
+        });
+      }
+      if (route.parent === "Item Master") {
+        breadcrumbs.push({
+          path: "#",
+          label: "Stock Control",
+          isLast: false,
+        });
+        breadcrumbs.push({
+          path: route.parentPath,
+          label: "Item Master",
           isLast: false,
         });
       }
@@ -111,35 +145,35 @@ export function BreadcrumbNav() {
   return (
     <Breadcrumb className=" p-3 rounded-lg ">
       <BreadcrumbList className="text-base">
-        {breadcrumbs.map((breadcrumb, index) => (
+        {breadcrumbs.flatMap((breadcrumb, index) => [
           <BreadcrumbItem key={breadcrumb.path} className="font-medium">
             {!breadcrumb.isLast ? (
-              <BreadcrumbLink
-                as={Link}
-                to={breadcrumb.path}
-                className={`
-                  hover:text-primary transition-colors
-                  ${
+              <BreadcrumbLink asChild>
+                <Link
+                  to={breadcrumb.path}
+                  className={
                     breadcrumb.path === "#"
                       ? "cursor-default pointer-events-none text-gray-600 font-semibold"
                       : "text-gray-500 hover:text-primary/90 cursor-pointer"
                   }
-                `}
-              >
-                {breadcrumb.label}
+                >
+                  {breadcrumb.label}
+                </Link>
               </BreadcrumbLink>
             ) : (
               <BreadcrumbPage className="font-semibold text-primary">
                 {breadcrumb.label}
               </BreadcrumbPage>
             )}
-            {index < breadcrumbs.length - 1 && (
-              <BreadcrumbSeparator>
-                <ChevronRight className="h-4 w-4 text-gray-400" />
-              </BreadcrumbSeparator>
-            )}
-          </BreadcrumbItem>
-        ))}
+          </BreadcrumbItem>,
+          ...(index < breadcrumbs.length - 1
+            ? [
+                <BreadcrumbSeparator key={`sep-${breadcrumb.path}`}>
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                </BreadcrumbSeparator>,
+              ]
+            : []),
+        ])}
       </BreadcrumbList>
     </Breadcrumb>
   );
