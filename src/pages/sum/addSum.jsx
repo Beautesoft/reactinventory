@@ -2038,11 +2038,11 @@ function AddSum({ docData }) {
       fstoreNo: null,
       trnDocno: docNo,
       trnType: "SUM",
-      // For Usage: Output (Credit)
       trnDbQty: null,
-      trnCrQty: Math.abs(Number(item.docQty)),
+      trnCrQty: null,
+      // trnCrQty: Math.abs(Number(item.docQty)),
       trnQty: -Math.abs(Number(item.docQty)), // Always negative for usage
-      trnBalqty: 0, // Will be updated from backend/ItemOnQties logic if implemented there, or simply recorded as is
+      trnBalqty: 0, // Set from Itemonqties in post flow (step 4) before posting Stktrns
       trnBalcst: 0, 
       trnAmt: item.docAmt,
       trnCost: item.docAmt,
@@ -2236,6 +2236,64 @@ function AddSum({ docData }) {
             trnObj.fefoBatches = item.fefoBatches; // FEFO calculated batches
             return trnObj;
           });
+
+          // 4) Fetch Itemonqties and set trnBalqty/trnBalcst so stktrn balance is correct (works for BATCH_NO Yes and No)
+          const uniqueItems = new Map();
+          stktrns.forEach((d) => {
+            const key = `${d.itemcode}-${d.itemUom}`;
+            if (!uniqueItems.has(key)) {
+              uniqueItems.set(key, d);
+            }
+          });
+
+          const itemRequests = Array.from(uniqueItems.values()).map((d) => {
+            const filter = {
+              where: {
+                and: [
+                  { itemcode: d.itemcode },
+                  { uom: d.itemUom },
+                  { sitecode: userDetails.siteCode },
+                ],
+              },
+            };
+            const url = `Itemonqties?filter=${encodeURIComponent(JSON.stringify(filter))}`;
+            return apiService
+              .get(url)
+              .then((resp) => ({ resp, d }))
+              .catch((error) => ({ error, d }));
+          });
+
+          const results = await Promise.all(itemRequests);
+
+          const balanceMap = new Map();
+          for (const result of results) {
+            const { resp, d, error } = result;
+            const key = `${d.itemcode}-${d.itemUom}`;
+            if (error) {
+              balanceMap.set(key, { qty: 0, cost: 0, batchCost: 0 });
+              continue;
+            }
+            const list = Array.isArray(resp) ? resp : resp != null && typeof resp === "object" ? [resp] : [];
+            if (list.length) {
+              const on = list[0];
+              balanceMap.set(key, {
+                qty: Number(on.trnBalqty ?? 0),
+                cost: Number(on.trnBalcst ?? 0),
+                batchCost: Number(on.batchCost ?? 0),
+              });
+            } else {
+              balanceMap.set(key, { qty: 0, cost: 0, batchCost: 0 });
+            }
+          }
+
+          for (let i = 0; i < stktrns.length; i++) {
+            const d = stktrns[i];
+            const key = `${d.itemcode}-${d.itemUom}`;
+            const balance = balanceMap.get(key) || { qty: 0, cost: 0, batchCost: 0 };
+            d.trnBalqty = (Number(d.trnQty) + Number(balance.qty)).toString();
+            d.trnBalcst = (Number(d.trnAmt) + Number(balance.cost)).toString();
+            d.itemBatchCost = (d.itemBatchCost || balance.batchCost || 0).toString();
+          }
 
           // Check if Stktrns already exist
           const chkFilter = {

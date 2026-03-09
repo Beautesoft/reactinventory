@@ -7,12 +7,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, History } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import TableSpinner from "./tabelSpinner";
 import { useNavigate } from "react-router-dom";
+import { CostHistoryTimelineModal } from "@/components/item-master/CostHistoryTimelineModal";
 
 function ItemMasterTable({ data, isLoading, onSort }) {
   const navigate = useNavigate();
+  const [costHistoryOpen, setCostHistoryOpen] = useState(false);
+  const [costHistoryItemCode, setCostHistoryItemCode] = useState(null);
+  const [costHistoryItemName, setCostHistoryItemName] = useState(null);
   const [sortConfig, setSortConfig] = useState({
     key: null,
     direction: "ascending",
@@ -62,6 +73,7 @@ function ItemMasterTable({ data, isLoading, onSort }) {
     { key: "itemIsactive", label: "Active" },
     { key: "itemBrand", label: "Brand" },
     { key: "itemRange", label: "Range" },
+    { key: "actions", label: "", sortable: false },
   ];
 
   const handleRowClick = (item) => {
@@ -76,12 +88,12 @@ function ItemMasterTable({ data, isLoading, onSort }) {
             {headers.map((header) => (
               <TableHead
                 key={header.key}
-                className="cursor-pointer hover:bg-gray-200 text-left"
-                onClick={() => handleSort(header.key)}
+                className={header.sortable === false ? "w-[50px] text-center" : "cursor-pointer hover:bg-gray-200 text-left"}
+                onClick={header.sortable === false ? undefined : () => handleSort(header.key)}
               >
                 <div className="flex items-center">
                   {header.label}
-                  {getSortIcon(header.key)}
+                  {header.sortable !== false && getSortIcon(header.key)}
                 </div>
               </TableHead>
             ))}
@@ -120,11 +132,39 @@ function ItemMasterTable({ data, isLoading, onSort }) {
                 </TableCell>
                 <TableCell>{item.itemBrand ?? "-"}</TableCell>
                 <TableCell>{item.itemRange ?? "-"}</TableCell>
+                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCostHistoryItemCode(item.itemCode);
+                            setCostHistoryItemName(item.itemName);
+                            setCostHistoryOpen(true);
+                          }}
+                        >
+                          <History className="w-4 h-4 text-gray-600 hover:text-blue-600" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Cost change history</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </TableCell>
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
+      <CostHistoryTimelineModal
+        open={costHistoryOpen}
+        onOpenChange={setCostHistoryOpen}
+        itemCode={costHistoryItemCode}
+        itemName={costHistoryItemName}
+      />
     </div>
   );
 }

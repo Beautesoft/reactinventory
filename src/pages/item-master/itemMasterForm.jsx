@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, History, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import itemMasterApi from "@/services/itemMasterApi";
 import { AddDeptModal } from "@/components/item-master/AddDeptModal";
@@ -33,6 +33,13 @@ import { AddBrandModal } from "@/components/item-master/AddBrandModal";
 import { AddClassModal } from "@/components/item-master/AddClassModal";
 import { AddRangeModal } from "@/components/item-master/AddRangeModal";
 import { AddUomModal } from "@/components/item-master/AddUomModal";
+import { CostHistoryTimelineModal } from "@/components/item-master/CostHistoryTimelineModal";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 
 const now = () => {
   const d = new Date();
@@ -77,6 +84,7 @@ function ItemMasterForm() {
     stockprice: "",
     floorprice: "",
     priceceiling: "",
+    cost: "",
     item_active: true,
     rptcode: "",
     disclimit: "",
@@ -113,6 +121,13 @@ function ItemMasterForm() {
   const [addClassOpen, setAddClassOpen] = useState(false);
   const [addRangeOpen, setAddRangeOpen] = useState(false);
   const [addUomOpen, setAddUomOpen] = useState(false);
+  const [costHistoryOpen, setCostHistoryOpen] = useState(false);
+
+  // Stk.Balance: Site / UOM filter and No-Qty table
+  const [stkBalanceSiteCode, setStkBalanceSiteCode] = useState("");
+  const [stkBalanceUomCode, setStkBalanceUomCode] = useState("");
+  const [stkBalanceList, setStkBalanceList] = useState([]);
+  const [stkBalanceLoading, setStkBalanceLoading] = useState(false);
 
   const [sectionOpen, setSectionOpen] = useState({
     general: true,
@@ -131,6 +146,8 @@ function ItemMasterForm() {
   const [uoms, setUoms] = useState([]);
   const [sites, setSites] = useState([]);
   const [originalStocklists, setOriginalStocklists] = useState([]);
+  const initialUomPricesRef = useRef([]);
+  const stockFromApiRef = useRef(null);
   const [controlNo, setControlNo] = useState("");
   const [updateId, setUpdateId] = useState(null);
 
@@ -170,6 +187,30 @@ function ItemMasterForm() {
 
   const setField = (name, value) => {
     setForm((f) => ({ ...f, [name]: value }));
+  };
+
+  const logCostHistory = async (code, data, changeType) => {
+    try {
+      const itemPrice = Number(data.itemPrice) || 0;
+      const itemCost = Number(data.itemCost) || 0;
+      const minMargin =
+        data.minMargin != null && data.minMargin !== "" && !isNaN(Number(data.minMargin))
+          ? Number(data.minMargin)
+          : null;
+      await itemMasterApi.createItemCostHistory({
+        itemCode: code,
+        itemUom: data.itemUom,
+        itemCost,
+        itemPrice,
+        minMargin,
+        changeType,
+        createdBy: userDetails?.username || "SYSTEM",
+        effectiveAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn("Cost history log failed:", err);
+      toast.warning("Item saved but cost history was not recorded");
+    }
   };
 
   const loadLookups = useCallback(async () => {
@@ -270,14 +311,22 @@ function ItemMasterForm() {
     if (!itemCode) return;
     setInitLoading(true);
     try {
-      const stocks = await itemMasterApi.getStocks({ limit: 5000 });
-      const stock = (stocks || []).find((s) => s.itemCode === itemCode);
+      const stock = await itemMasterApi.getStockByItemCode(itemCode);
       if (!stock) {
         toast.error("Item not found");
         navigate("/item-master");
         return;
       }
 
+      stockFromApiRef.current = {
+        itemPrice: stock.itemPrice,
+        onhandCst: stock.onhandCst,
+        costPrice: stock.costPrice,
+        itemUom: stock.itemUom,
+      };
+
+      setImageFile(null);
+      setImagePreview(null);
       setUpdateId(stock.itemNo);
       setControlNo(stock.itemCode);
       const fromDate = stock.vilidityFromDate ? (typeof stock.vilidityFromDate === "string" ? stock.vilidityFromDate.slice(0, 10) : null) : "";
@@ -295,6 +344,7 @@ function ItemMasterForm() {
         stockprice: stock.itemPrice ?? "",
         floorprice: stock.itemPriceFloor ?? "",
         priceceiling: stock.itemPriceCeiling ?? "",
+        cost: stock.onhandCst != null ? stock.onhandCst : (stock.costPrice != null ? stock.costPrice : ""),
         item_active: stock.itemIsactive !== false,
         rptcode: stock.rptCode || "",
         disclimit: stock.disclimit ?? "",
@@ -332,19 +382,30 @@ function ItemMasterForm() {
         itemMasterApi.getItemLinksByItem(itemCode).catch(() => []),
       ]);
 
-      setUoms(
-        (uomPrices || []).map((u) => ({
+      const normalizedUoms = (uomPrices || []).map((u) => {
+        const itemPrice = u.itemPrice ?? u.item_price ?? u.price ?? u.unitPrice ?? 0;
+        const itemCost = u.itemCost ?? u.item_cost ?? u.cost ?? 0;
+        const minMargin = u.minMargin ?? u.min_margin ?? 0;
+        return {
           id: u.id,
-          itemUom: u.itemUom,
-          uomDesc: u.uomDesc,
-          uomUnit: u.uomUnit ?? 1,
-          itemUom2: u.itemUom2,
-          uom2Desc: u.uom2Desc,
-          itemPrice: u.itemPrice ?? 0,
-          itemCost: u.itemCost ?? 0,
-          minMargin: u.minMargin ?? 0,
-        }))
-      );
+          itemUom: u.itemUom ?? u.item_uom,
+          uomDesc: u.uomDesc ?? u.uom_desc,
+          uomUnit: u.uomUnit ?? u.uom_unit ?? 1,
+          itemUom2: u.itemUom2 ?? u.item_uom2,
+          uom2Desc: u.uom2Desc ?? u.uom2_desc,
+          itemPrice: Number(itemPrice) || 0,
+          itemCost: Number(itemCost) || 0,
+          minMargin: minMargin != null && minMargin !== "" && !isNaN(Number(minMargin)) ? Number(minMargin) : 0,
+        };
+      });
+      initialUomPricesRef.current = normalizedUoms.map(({ id, itemUom, itemPrice, itemCost, minMargin }) => ({
+        id,
+        itemUom,
+        itemPrice,
+        itemCost,
+        minMargin,
+      }));
+      setUoms(normalizedUoms);
 
       setSites(
         (stocklists || []).map((s) => ({
@@ -394,6 +455,11 @@ function ItemMasterForm() {
           rptCodeStatus: l.rptCodeStatus === true,
         }))
       );
+
+      // Stk.Balance: set default site and UOM from loaded data so dropdowns are pre-filled in edit
+      setStkBalanceSiteCode(stocklists?.[0]?.itemsiteCode ?? "");
+      setStkBalanceUomCode(normalizedUoms?.[0]?.itemUom ?? stock?.itemUom ?? "");
+      setStkBalanceList([]);
     } catch (err) {
       console.error("Load edit error:", err);
       toast.error("Failed to load item");
@@ -516,6 +582,33 @@ function ItemMasterForm() {
       );
     } else {
       setSites([]);
+    }
+  };
+
+  const refreshStkBalance = async () => {
+    if (!itemCode) {
+      toast.info("Save the item first to view stock balance by site and UOM.");
+      return;
+    }
+    setStkBalanceLoading(true);
+    setStkBalanceList([]);
+    try {
+      const batches = await itemMasterApi.getItemBatches(itemCode, {
+        siteCode: stkBalanceSiteCode || undefined,
+        uom: stkBalanceUomCode || undefined,
+      });
+      setStkBalanceList(
+        (batches || []).map((b, i) => ({
+          no: i + 1,
+          qty: Number(b.qty) ?? 0,
+        }))
+      );
+    } catch (err) {
+      console.warn("Stk.Balance refresh failed:", err);
+      toast.error("Failed to load stock balance");
+      setStkBalanceList([]);
+    } finally {
+      setStkBalanceLoading(false);
     }
   };
 
@@ -678,6 +771,11 @@ function ItemMasterForm() {
       toast.error("Floor price must be less than or equal to price");
       return false;
     }
+    const costVal = form.cost !== "" && form.cost != null ? Number(form.cost) : null;
+    if (costVal != null && !isNaN(costVal) && price > 0 && costVal > price) {
+      toast.error("Cost must be less than or equal to price");
+      return false;
+    }
     const showUom = ["1", "2", ""].includes(form.stockdivision);
     if (showUom && uoms.length === 0) {
       toast.error("At least one UOM is required");
@@ -721,6 +819,8 @@ function ItemMasterForm() {
         itemPrice,
         itemPriceFloor: Number(form.floorprice) || null,
         itemPriceCeiling: Number(form.priceceiling) || null,
+        onhandCst: form.cost !== "" && form.cost != null ? Number(form.cost) : null,
+        costPrice: form.cost !== "" && form.cost != null ? Number(form.cost) : 0,
         itemIsactive: form.item_active,
         rptCode: form.rptcode || null,
         disclimit: form.disclimit ? Number(form.disclimit) : null,
@@ -753,13 +853,28 @@ function ItemMasterForm() {
         t2TaxCode: form.taxtwo || null,
         accountCodeTd: form.account_no || null,
         voucherValue: form.stockdivision === "4" ? Number(voucherValue) : null,
-        voucherValueIsAmount: form.stockdivision === "4" ? voucherValueIsAmount : null,
+        // Required by backend validation (presence): must be boolean, not null/undefined
+        voucherValueIsAmount: Boolean(voucherValueIsAmount),
         voucherValidPeriod: form.stockdivision === "4" ? voucherValidPeriod : null,
         voucherValidUntilDate: form.stockdivision === "4" && isVoucherValidDate ? voucherValidUntilDate : null,
+        // Required by backend validation (presence)
+        voucherIsvalidUntilDate: form.stockdivision === "4" ? Boolean(isVoucherValidDate) : false,
         prepaidValue: form.stockdivision === "5" ? Number(prepaidValue) : null,
         prepaidSellAmt: form.stockdivision === "5" ? Number(prepaidSellAmt) : null,
         prepaidValidPeriod: form.stockdivision === "5" ? prepaidValidPeriod : null,
         membercardnoaccess: form.stockdivision === "5" ? prepaidMemberCardAccess : null,
+
+        // Required by backend validation (presence)
+        itemHavechild: false,
+        valueApplytochild: false,
+        havePackageDisc: false,
+        mixbrand: false,
+        serviceExpireActive: false,
+        treatmentLimitActive: false,
+        limitserviceFlexionly: false,
+        isGst: false,
+        isOpenPrepaid: false,
+        serviceCostPercent: false,
       };
 
       if (isEdit) {
@@ -813,14 +928,45 @@ function ItemMasterForm() {
 
         const showUomSection = ["1", "2", ""].includes(form.stockdivision);
         if (showUomSection) {
+        const initialUomPrices = initialUomPricesRef.current || [];
+        const stockFromApi = stockFromApiRef.current;
         for (let i = 0; i < uoms.length; i++) {
           const u = uoms[i];
+          const initial = u.id ? initialUomPrices.find((x) => x.id === u.id) : null;
+          const currentItemUom = u.itemUom ?? u.item_uom ?? initial?.itemUom;
+          let rawPrice = u.itemPrice ?? u.item_price ?? initial?.itemPrice;
+          let rawCost = u.itemCost ?? u.item_cost ?? initial?.itemCost;
+          let itemPrice = Number(rawPrice) || 0;
+          let itemCost = Number(rawCost) || 0;
+          if (
+            stockFromApi &&
+            (currentItemUom == null || String(currentItemUom) === String(stockFromApi.itemUom)) &&
+            (itemPrice === 0 || itemCost === 0)
+          ) {
+            const stockPrice = Number(stockFromApi.itemPrice) || 0;
+            const stockCost = Number(stockFromApi.onhandCst ?? stockFromApi.costPrice) || 0;
+            if (stockPrice > 0 || stockCost > 0) {
+              itemPrice = stockPrice;
+              itemCost = stockCost;
+            }
+          }
+          let minMargin =
+            (u.minMargin ?? u.min_margin ?? initial?.minMargin) != null &&
+            (u.minMargin ?? u.min_margin ?? initial?.minMargin) !== "" &&
+            !isNaN(Number(u.minMargin ?? u.min_margin ?? initial?.minMargin))
+              ? Number(u.minMargin ?? u.min_margin ?? initial?.minMargin)
+              : null;
+          if (itemPrice > 0 && itemCost > 0 && itemCost < itemPrice) {
+            minMargin = Number((((itemPrice - itemCost) / itemPrice) * 100).toFixed(2));
+          }
+          const costHistoryPayload = { itemUom: currentItemUom, itemPrice, itemCost, minMargin };
           if (u.id) {
             await itemMasterApi.updateItemUomprice(u.id, {
-              itemPrice: Number(u.itemPrice),
-              itemCost: Number(u.itemCost),
-              minMargin: Number(u.minMargin),
+              itemPrice,
+              itemCost,
+              minMargin: minMargin ?? 0,
             });
+            await logCostHistory(itemCode, costHistoryPayload, "UPDATE");
           } else {
             await itemMasterApi.createItemUomprices({
               itemCode,
@@ -829,11 +975,12 @@ function ItemMasterForm() {
               uomUnit: u.uomUnit,
               itemUom2: u.itemUom2,
               uom2Desc: u.uom2Desc,
-              itemPrice: Number(u.itemPrice),
-              itemCost: Number(u.itemCost),
-              minMargin: Number(u.minMargin),
+              itemPrice,
+              itemCost,
+              minMargin,
               isactive: true,
             });
+            await logCostHistory(itemCode, costHistoryPayload, "CREATE");
           }
         }
         }
@@ -900,6 +1047,13 @@ function ItemMasterForm() {
         const showUomSectionCreate = ["1", "2", ""].includes(form.stockdivision);
         if (showUomSectionCreate) {
         for (const u of uoms) {
+          const itemPrice = Number(u.itemPrice ?? u.item_price) || 0;
+          const itemCost = Number(u.itemCost ?? u.item_cost) || 0;
+          const minMargin =
+            (u.minMargin ?? u.min_margin) != null && (u.minMargin ?? u.min_margin) !== "" && !isNaN(Number(u.minMargin ?? u.min_margin))
+              ? Number(u.minMargin ?? u.min_margin)
+              : null;
+          const costHistoryPayload = { itemUom: u.itemUom ?? u.item_uom, itemPrice, itemCost, minMargin };
           await itemMasterApi.createItemUomprices({
             itemCode: controlNo,
             itemUom: u.itemUom,
@@ -907,11 +1061,12 @@ function ItemMasterForm() {
             uomUnit: u.uomUnit,
             itemUom2: u.itemUom2,
             uom2Desc: u.uom2Desc,
-            itemPrice: Number(u.itemPrice),
-            itemCost: Number(u.itemCost),
-            minMargin: Number(u.minMargin),
+            itemPrice,
+            itemCost,
+            minMargin,
             isactive: true,
           });
+          await logCostHistory(controlNo, costHistoryPayload, "CREATE");
         }
         }
 
@@ -1218,6 +1373,17 @@ function ItemMasterForm() {
                   />
                 </div>
                 <div>
+                  <Label className="text-xs font-medium text-gray-500 uppercase">Cost</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={form.cost}
+                    onChange={(e) => setField("cost", e.target.value)}
+                    placeholder="Enter cost"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Discount Limit</Label>
                   <Input
                     type="number"
@@ -1412,7 +1578,30 @@ function ItemMasterForm() {
           <Card className="border-0 shadow-none">
             <CollapsibleTrigger asChild>
               <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
-                <CardTitle className="text-base font-semibold">UOM</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base font-semibold">UOM</CardTitle>
+                  {isEdit && itemCode && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCostHistoryOpen(true);
+                            }}
+                          >
+                            <History className="w-4 h-4 text-gray-600 hover:text-blue-600" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Cost change history</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
                 {sectionOpen.uom ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
               </CardHeader>
             </CollapsibleTrigger>
@@ -1558,57 +1747,146 @@ function ItemMasterForm() {
               </CardHeader>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-6">
-                <div className="flex flex-col gap-2 p-4 border rounded-md bg-gray-50/30">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox id="reoreder_level" checked={form.reoreder_level} onCheckedChange={(v) => setField("reoreder_level", !!v)} />
-                    <Label htmlFor="reoreder_level" className="font-semibold cursor-pointer">Re-Order Level</Label>
-                  </div>
-                  {form.reoreder_level && (
-                    <div className="mt-2 animate-in fade-in slide-in-from-top-2">
-                      <Label className="text-xs text-gray-500 uppercase">Min Qty</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={form.min_qty}
-                        onChange={(e) => setField("min_qty", e.target.value)}
-                        placeholder="0"
-                        className="mt-1.5"
-                      />
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Left: Site Code, UOM Code, Refresh, No/Qty table */}
+                  <div className="space-y-4">
+                    <div>
+                      <Label className="text-xs font-medium text-gray-500 uppercase">Site Code</Label>
+                      <Select
+                        value={stkBalanceSiteCode || "__none__"}
+                        onValueChange={(v) => setStkBalanceSiteCode(v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger className="mt-1.5">
+                          <SelectValue placeholder="Select site" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Select site</SelectItem>
+                          {siteOptions.map((s) => (
+                            <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )}
-                </div>
-                <div className="lg:col-span-3 flex flex-col gap-2 p-4 border rounded-md bg-gray-50/30">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox id="customer_replan" checked={form.customer_replan} onCheckedChange={(v) => setField("customer_replan", !!v)} />
-                    <Label htmlFor="customer_replan" className="font-semibold cursor-pointer">Customer Replenishment</Label>
-                  </div>
-                  {form.customer_replan && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 animate-in fade-in slide-in-from-top-2">
-                      <div>
-                        <Label className="text-xs text-gray-500 uppercase">Replenishment (Days)</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={form.Replenishment}
-                          onChange={(e) => setField("Replenishment", e.target.value)}
-                          placeholder="0"
-                          className="mt-1.5"
-                        />
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <Label className="text-xs font-medium text-gray-500 uppercase">UOM Code</Label>
+                        <Select
+                          value={stkBalanceUomCode || "__none__"}
+                          onValueChange={(v) => setStkBalanceUomCode(v === "__none__" ? "" : v)}
+                        >
+                          <SelectTrigger className="mt-1.5">
+                            <SelectValue placeholder="Select UOM" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Select UOM</SelectItem>
+                            {uomOptions.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div>
-                        <Label className="text-xs text-gray-500 uppercase">Remind Advance (Days)</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={form.Remind_advance}
-                          onChange={(e) => setField("Remind_advance", e.target.value)}
-                          placeholder="0"
-                          className="mt-1.5"
-                        />
-                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={refreshStkBalance}
+                        disabled={stkBalanceLoading || !itemCode}
+                        title="Refresh"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${stkBalanceLoading ? "animate-spin" : ""}`} />
+                      </Button>
                     </div>
-                  )}
+                    <div className="rounded-md border mt-3">
+                      <Table>
+                        <TableHeader className="bg-gray-50/50">
+                          <TableRow>
+                            <TableHead className="w-[80px] font-semibold">No</TableHead>
+                            <TableHead className="font-semibold">Qty</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {stkBalanceLoading ? (
+                            <TableRow>
+                              <TableCell colSpan={2} className="text-center py-6">
+                                <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-500" />
+                              </TableCell>
+                            </TableRow>
+                          ) : stkBalanceList.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={2} className="text-center py-6 text-gray-400">
+                                —
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            stkBalanceList.map((row, idx) => (
+                              <TableRow key={idx}>
+                                <TableCell>{row.no}</TableCell>
+                                <TableCell>{row.qty}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                  {/* Right: Re-Order Level, Min_Qty, Customer Replenishment, Replenishment, Remind_advance */}
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap items-center gap-4 p-4 border rounded-md bg-gray-50/30">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="reoreder_level" checked={form.reoreder_level} onCheckedChange={(v) => setField("reoreder_level", !!v)} />
+                        <Label htmlFor="reoreder_level" className="font-semibold cursor-pointer">Re-Order Level</Label>
+                      </div>
+                      {form.reoreder_level && (
+                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                          <Label className="text-xs text-gray-500 uppercase whitespace-nowrap">Min_Qty</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={form.min_qty}
+                            onChange={(e) => setField("min_qty", e.target.value)}
+                            placeholder="0"
+                            className="w-24"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-4 p-4 border rounded-md bg-gray-50/30">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox id="customer_replan" checked={form.customer_replan} onCheckedChange={(v) => setField("customer_replan", !!v)} />
+                        <Label htmlFor="customer_replan" className="font-semibold cursor-pointer">Customer Replenishment</Label>
+                      </div>
+                      {form.customer_replan && (
+                        <div className="space-y-4 mt-2 animate-in fade-in slide-in-from-top-2">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-gray-500 uppercase w-28">Replenishment</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={form.Replenishment}
+                              onChange={(e) => setField("Replenishment", e.target.value)}
+                              placeholder="0"
+                              className="w-24"
+                            />
+                            <span className="text-sm text-gray-600">Days</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-gray-500 uppercase w-28">Remind_advance</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={form.Remind_advance}
+                              onChange={(e) => setField("Remind_advance", e.target.value)}
+                              placeholder="0"
+                              className="w-24"
+                            />
+                            <span className="text-sm text-gray-600">Days</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </CollapsibleContent>
@@ -2184,6 +2462,12 @@ function ItemMasterForm() {
         <AddClassModal open={addClassOpen} onOpenChange={setAddClassOpen} onSuccess={refreshClass} />
         <AddRangeModal open={addRangeOpen} onOpenChange={setAddRangeOpen} onSuccess={refreshRange} brand={form.brand} dept={form.dept} />
         <AddUomModal open={addUomOpen} onOpenChange={setAddUomOpen} onSuccess={handleUomSuccess} existingUoms={uoms} />
+        <CostHistoryTimelineModal
+          open={costHistoryOpen}
+          onOpenChange={setCostHistoryOpen}
+          itemCode={itemCode}
+          itemName={form.stockname}
+        />
       </div>
     </div>
   );

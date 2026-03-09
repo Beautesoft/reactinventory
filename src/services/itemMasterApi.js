@@ -29,6 +29,14 @@ export const itemMasterApi = {
     return Array.isArray(res) ? res : [];
   },
 
+  // Get single stock by itemCode (for edit page)
+  async getStockByItemCode(itemCode) {
+    const filter = { where: { itemCode }, limit: 1 };
+    const res = await apiService.get(`Stocks${queryString(filter)}`);
+    const list = Array.isArray(res) ? res : [];
+    return list[0] ?? null;
+  },
+
   // Count stocks
   async getStocksCount(where = {}) {
     const q = `?where=${encodeURIComponent(JSON.stringify(where))}`;
@@ -176,7 +184,27 @@ export const itemMasterApi = {
     );
   },
 
+  // ItemCostHistory (LoopBack: Itemcosthistories)
+  async getItemCostHistory(itemCode) {
+    const filter = { where: { itemCode }, order: "effectiveAt DESC" };
+    const res = await apiService.get(
+      `Itemcosthistories${queryString(filter)}`
+    );
+    return Array.isArray(res) ? res : [];
+  },
+  async createItemCostHistory(payload) {
+    return apiService.post("Itemcosthistories", payload);
+  },
+
   // ItemBatches
+  async getItemBatches(itemCode, opts = {}) {
+    const where = { itemCode };
+    if (opts.siteCode) where.siteCode = opts.siteCode;
+    if (opts.uom) where.uom = opts.uom;
+    const filter = { where, order: opts.order || "expDate ASC" };
+    const res = await apiService.get(`ItemBatches${queryString(filter)}`);
+    return Array.isArray(res) ? res : [];
+  },
   async createItemBatches(items) {
     return apiService.post("ItemBatches", items);
   },
@@ -245,7 +273,14 @@ export const itemMasterApi = {
     return apiService.get(`stockimage/${itemNo}`);
   },
   async uploadStockImage(formData) {
-    return apiService.post("stockimageupload/", formData);
+    const beBase =
+      (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
+    const url = beBase
+      ? `${beBase.replace(/\/$/, "")}/stockimageupload/`
+      : "stockimageupload/";
+    return apiService.post(url, formData, {
+      headers: { "Content-Type": false },
+    });
   },
 
   // Control number update
