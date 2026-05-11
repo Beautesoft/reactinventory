@@ -160,7 +160,12 @@ const UserAuthorization = () => {
     // Save to API
     try {
       await saveAuthorization(selectedUser.itemCode, code, active);
-      toast.success("Authorization updated successfully. Please logout and login again for changes to take effect.");
+      const isCurrentUser = getCurrentUser()?.username === selectedUser.itemCode;
+      toast.success(
+        isCurrentUser
+          ? "Authorization updated successfully. Please logout and login again for changes to take effect."
+          : "Authorization updated successfully."
+      );
     } catch (error) {
       toast.error("Failed to update authorization");
       // Revert local state on error
@@ -260,7 +265,7 @@ const UserAuthorization = () => {
                   <h3 className="font-semibold text-blue-900">{selectedUser.itemDesc}</h3>
                   <p className="text-sm text-blue-700">{selectedUser.itemCode}</p>
                   {/* Show indicator if this is the current logged-in user */}
-                  {getCurrentUser()?.usercode === selectedUser.itemCode && (
+                  {getCurrentUser()?.username === selectedUser.itemCode && (
                     <p className="text-xs text-blue-600 mt-1">(Current User)</p>
                   )}
                 </div>

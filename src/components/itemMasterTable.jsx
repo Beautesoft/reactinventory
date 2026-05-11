@@ -24,6 +24,7 @@ function ItemMasterTable({ data, isLoading, onSort }) {
   const [costHistoryOpen, setCostHistoryOpen] = useState(false);
   const [costHistoryItemCode, setCostHistoryItemCode] = useState(null);
   const [costHistoryItemName, setCostHistoryItemName] = useState(null);
+  const [costHistoryDivisionLabel, setCostHistoryDivisionLabel] = useState(null);
   const [sortConfig, setSortConfig] = useState({
     key: null,
     direction: "ascending",
@@ -88,7 +89,13 @@ function ItemMasterTable({ data, isLoading, onSort }) {
             {headers.map((header) => (
               <TableHead
                 key={header.key}
-                className={header.sortable === false ? "w-[50px] text-center" : "cursor-pointer hover:bg-gray-200 text-left"}
+                className={
+                  header.sortable === false
+                    ? "w-[50px] text-center"
+                    : header.key === "itemName"
+                    ? "cursor-pointer hover:bg-gray-200 text-left"
+                    : "cursor-pointer hover:bg-gray-200 text-left"
+                }
                 onClick={header.sortable === false ? undefined : () => handleSort(header.key)}
               >
                 <div className="flex items-center">
@@ -121,7 +128,9 @@ function ItemMasterTable({ data, isLoading, onSort }) {
                 <TableCell className="text-primary font-medium hover:underline">
                   {item.itemCode}
                 </TableCell>
-                <TableCell>{item.itemName || "-"}</TableCell>
+                <TableCell className="p-2">
+                  {item.itemName || "-"}
+                </TableCell>
                 <TableCell>{item.rptCode || "-"}</TableCell>
                 <TableCell>{item.itemType || "-"}</TableCell>
                 <TableCell>{item.itemDiv ?? "-"}</TableCell>
@@ -144,6 +153,7 @@ function ItemMasterTable({ data, isLoading, onSort }) {
                             e.stopPropagation();
                             setCostHistoryItemCode(item.itemCode);
                             setCostHistoryItemName(item.itemName);
+                            setCostHistoryDivisionLabel(item.itemDiv ?? null);
                             setCostHistoryOpen(true);
                           }}
                         >
@@ -164,6 +174,7 @@ function ItemMasterTable({ data, isLoading, onSort }) {
         onOpenChange={setCostHistoryOpen}
         itemCode={costHistoryItemCode}
         itemName={costHistoryItemName}
+        divisionLabel={costHistoryDivisionLabel}
       />
     </div>
   );

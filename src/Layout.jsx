@@ -17,7 +17,7 @@ const Layout = () => {
       <Toaster richColors />
       <div className="flex w-full h-screen overflow-hidden">
         <AppSidebar />
-        <div className="flex flex-col flex-1">
+        <div className="flex flex-col flex-1 min-w-0">
           <div className="flex items-center justify-between gap-3 py-3 px-3 bg-gradient-to-br from-white via-sky-50/30 to-indigo-50/20 dark:from-gray-900 dark:to-gray-800 border-b border-gray-200">
             <div className="flex items-center justify-start">
               <SidebarTrigger />
@@ -38,7 +38,7 @@ const Layout = () => {
               </div>
             </div>
           </div>
-          <main className="flex-1 px-2 overflow-auto bg-gradient-to-br from-white via-sky-50/30 to-indigo-50/20 dark:from-gray-900 dark:to-gray-800">
+          <main className="flex-1 px-4 overflow-auto bg-gradient-to-br from-white via-sky-50/30 to-indigo-50/20 dark:from-gray-900 dark:to-gray-800">
             <Outlet />
           </main>
           

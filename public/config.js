@@ -9,19 +9,21 @@ window.APP_CONFIG = {
 
     // API_LOGIN_URL: "http://103.253.15.75:7040/Webinventoryapi_train/",
     // 
-    // API_LOGIN_URL: "http://103.253.15.75:9613/Webinventoryapi_train/",
-    API_LOGIN_URL: "http://103.253.15.75:9607/Webinventoryapi_ForReact/",
-    // API_LOGIN_URL: "https://mirageinventory.beautecloud.com/login",
+    API_LOGIN_URL: "http://103.253.15.75:9613/Webinventoryapi_train/",
+    // API_LOGIN_URL: "http://103.253.15.75:9607/Webinventoryapi_ForReact/",
     // API_LOGIN_URL: "https://mirageinventory.beautecloud.com/inventoryapi",
 
 
+    // API_LOGIN_URL_frontend : "https://mirageinventory.beautecloud.com/login",
 
 
 
     // API_BASE_URL: "https://zenthtrain.beautecloud.com/lb/api",
-    API_BASE_URL: "https://inyeontrain.beautecloud.com/lb/api",
-    API_BE_BASE_URL: "https://inyeontrain.beautecloud.com/be/api",
-    // API_BASE_URL: "https://mirage.beautecloud.com/lb/api",
+    // API_BASE_URL: "https://inyeontrain.beautecloud.com/lb/api",
+    // API_BE_BASE_URL: "https://inyeontrain.beautecloud.com/be/api",
+    API_BASE_URL: "https://mirage.beautecloud.com/lb/api",
+    API_BE_BASE_URL: "https://mirage.beautecloud.com/be/api",
+
 
 
 
@@ -63,3 +65,6 @@ window.APP_CONFIG = {
   NOTIFICATION_MAIL2:'muthu98wic@gmail.com'
   // Add other configuration values here
 };
+
+
+

@@ -1324,8 +1324,8 @@ function AddPR() {
       
       const query = `?Site=${siteCode}`;
       const response = await apiService1.get(`api/GetInvitems${query}`);
-      const stockDetails = response.result;
-      const count = response.result.length;
+      const stockDetails = Array.isArray(response?.result) ? response.result : [];
+      const count = stockDetails.length;
       
       console.log("Sample item from API:", stockDetails[0]);
       console.log("Total items:", count);

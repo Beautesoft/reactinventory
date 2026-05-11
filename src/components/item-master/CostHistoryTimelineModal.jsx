@@ -16,9 +16,19 @@ import {
 import { Loader2, History } from "lucide-react";
 import itemMasterApi from "@/services/itemMasterApi";
 
-export function CostHistoryTimelineModal({ open, onOpenChange, itemCode, itemName }) {
+function getDivisionPriceLabel(divisionLabel) {
+  if (divisionLabel == null || divisionLabel === "") return "Item price";
+  const u = String(divisionLabel).toUpperCase();
+  if (u === "3" || u.includes("SERVICE")) return "Service price";
+  if (u === "4" || u.includes("VOUCHER")) return "Voucher price";
+  if (u === "5" || u.includes("PREPAID")) return "Prepaid price";
+  return "Item price";
+}
+
+export function CostHistoryTimelineModal({ open, onOpenChange, itemCode, itemName, divisionLabel }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const labelForNoUom = getDivisionPriceLabel(divisionLabel);
 
   useEffect(() => {
     if (open && itemCode) {
@@ -38,7 +48,12 @@ export function CostHistoryTimelineModal({ open, onOpenChange, itemCode, itemNam
   const formatDate = (val) => {
     if (!val) return "-";
     const d = new Date(val);
-    return isNaN(d.getTime()) ? val : d.toLocaleString();
+    if (isNaN(d.getTime())) return val;
+    const day = d.getDate().toString().padStart(2, "0");
+    const month = (d.getMonth() + 1).toString().padStart(2, "0");
+    const year = d.getFullYear();
+    const time = d.toLocaleTimeString("en-GB", { hour12: false }); // HH:mm:ss
+    return `${day}/${month}/${year}, ${time}`;
   };
 
   const formatNum = (val) => {
@@ -92,7 +107,7 @@ export function CostHistoryTimelineModal({ open, onOpenChange, itemCode, itemNam
                   {logs.map((log, idx) => (
                     <TableRow key={log.id ?? idx}>
                       <TableCell className="text-sm">{formatDate(log.effectiveAt)}</TableCell>
-                      <TableCell>{log.itemUom ?? "-"}</TableCell>
+                      <TableCell>{log.itemUom ? log.itemUom : labelForNoUom}</TableCell>
                       <TableCell className="text-right font-medium">{formatNum(log.itemCost)}</TableCell>
                       <TableCell className="text-right">{formatNum(log.itemPrice)}</TableCell>
                       <TableCell className="text-right">{formatNum(log.minMargin)}</TableCell>

@@ -209,7 +209,7 @@ function StockBalance() {
         apiService1.get(`api/GetInvitems${dataQuery}`),
       ]);
       
-      let stockItems = dataResponse?.result || dataResponse || [];
+      let stockItems = Array.isArray(dataResponse?.result) ? dataResponse.result : [];
 
       // Store the raw data without any filtering - filtering will be done locally
       setStockData(stockItems);

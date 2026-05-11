@@ -2003,7 +2003,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       // apiService.get(`GetInvItems${query}`),
 
       .then((res) => {
-        const stockDetails = res.result;
+        const stockDetails = Array.isArray(res?.result) ? res.result : [];
         const updatedRes = stockDetails.map((item) => ({
           ...item,
           Qty: 0,

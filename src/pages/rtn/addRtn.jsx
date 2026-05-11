@@ -1062,8 +1062,8 @@ function AddRtn({ docData }) {
       // apiService.get(`GetInvItems${query}`),
 
       .then((res) => {
-        const stockDetails = res.result;
-        const count = res.result.length;
+        const stockDetails = Array.isArray(res?.result) ? res.result : [];
+        const count = stockDetails.length;
         setLoading(false);
         const updatedRes = stockDetails.map((item) => ({
           ...item,

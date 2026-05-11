@@ -38,7 +38,7 @@ function DashBoard() {
       // Fetch stock items
       const stockQuery = `?Site=${userDetails.siteCode}`;
       const stockResponse = await apiService1.get(`api/GetInvitems${stockQuery}`);
-      const stockItems = stockResponse?.result || stockResponse || [];
+      const stockItems = Array.isArray(stockResponse?.result) ? stockResponse.result : [];
 
       // Fetch transaction count (last 30 days) and recent list from Stktrns
       const thirtyDaysAgo = new Date();

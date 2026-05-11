@@ -969,8 +969,8 @@ function AddGti({ docData }) {
       const query = `?Site=${stockHdrs.fstoreNo}`;
       const res = await apiService1.get(`api/GetInvitems${query}`);
 
-      const stockDetails = res.result;
-      const count = res.result.length;
+      const stockDetails = Array.isArray(res?.result) ? res.result : [];
+      const count = stockDetails.length;
 
       const updatedRes = stockDetails.map((item) => ({
         ...item,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -89,12 +89,13 @@ function ItemMasterForm() {
     rptcode: "",
     disclimit: "",
     supply_itemsval: "",
-    vilidityFromDate: "",
-    vilidityToDate: "",
+    vilidityFromDate: new Date().toISOString().slice(0, 10),
+    vilidityToDate: new Date().toISOString().slice(0, 10),
     duration: "",
     membershipPoint: "",
     percent: true,
     auto_cust_disc: true,
+    open_prepaid: false,
     tax: false,
     allow_foc: false,
     commissionable: false,
@@ -185,21 +186,26 @@ function ItemMasterForm() {
   const [prepaidInclusiveValue, setPrepaidInclusiveValue] = useState("");
   const [prepaidExclusiveValue, setPrepaidExclusiveValue] = useState("");
 
+  const [hasCustomDesc, setHasCustomDesc] = useState(false);
+
   const setField = (name, value) => {
     setForm((f) => ({ ...f, [name]: value }));
   };
 
+  const round2 = (n) =>
+    n != null && n !== "" && !isNaN(Number(n)) ? Math.round(Number(n) * 100) / 100 : n;
+
   const logCostHistory = async (code, data, changeType) => {
     try {
-      const itemPrice = Number(data.itemPrice) || 0;
-      const itemCost = Number(data.itemCost) || 0;
+      const itemPrice = round2(Number(data.itemPrice) || 0) ?? 0;
+      const itemCost = round2(Number(data.itemCost) || 0) ?? 0;
       const minMargin =
         data.minMargin != null && data.minMargin !== "" && !isNaN(Number(data.minMargin))
-          ? Number(data.minMargin)
+          ? round2(Number(data.minMargin))
           : null;
       await itemMasterApi.createItemCostHistory({
         itemCode: code,
-        itemUom: data.itemUom,
+        itemUom: data.itemUom ?? "",
         itemCost,
         itemPrice,
         minMargin,
@@ -211,6 +217,16 @@ function ItemMasterForm() {
       console.warn("Cost history log failed:", err);
       toast.warning("Item saved but cost history was not recorded");
     }
+  };
+
+  // Effective item price for divisions 3/4/5 (same as Stocks.itemPrice)
+  const getEffectiveItemPriceForDiv345 = () => {
+    const stockprice = Number(form.stockprice) || 0;
+    const div = form.stockdivision;
+    if (div === "4") return stockprice > 0 ? stockprice : Number(voucherValue) || 0;
+    if (div === "5") return stockprice > 0 ? stockprice : Number(prepaidSellAmt) || Number(prepaidValue) || 0;
+    if (div === "3") return stockprice; // package_total when package & stockprice=0 would go here; use stockprice for now
+    return stockprice;
   };
 
   const loadLookups = useCallback(async () => {
@@ -237,16 +253,40 @@ function ItemMasterForm() {
         (divs || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
       );
       setDeptOptions(
-        (depts || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
+        (depts || []).map((x) => ({
+          value: String(x.itmCode),
+          label: x.itmDesc,
+          isRetailproduct: x.isRetailproduct === true,
+          isSalonproduct: x.isSalonproduct === true,
+          isService: x.isService === true,
+          isVoucher: x.isVoucher === true,
+          isPrepaid: x.isPrepaid === true,
+        }))
       );
       setBrandOptions(
-        (brands || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
+        (brands || []).map((x) => ({
+          value: String(x.itmId),
+          label: x.itmDesc,
+          itmCode: x.itmCode,
+          retailProductBrand: x.retailProductBrand,
+          voucherBrand: x.voucherBrand,
+          prepaidBrand: x.prepaidBrand,
+        }))
       );
       setClassOptions(
         (classes || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
       );
       setRangeOptions(
-        (ranges || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
+        (ranges || []).map((x) => ({
+          value: String(x.itmCode),
+          label: x.itmDesc,
+          itmBrand: x.itmBrand,
+          itmDept: x.itmDept,
+          isproduct: x.isproduct === true,
+          isservice: x.isservice === true,
+          isvoucher: x.isvoucher === true,
+          isprepaid: x.isprepaid === true,
+        }))
       );
       setTypeOptions(
         (types || []).map((x) => ({ value: x.itemType || x.itmCode, label: x.itemType || x.itmDesc }))
@@ -292,11 +332,28 @@ function ItemMasterForm() {
 
   const refreshDept = useCallback(async () => {
     const depts = await itemMasterApi.getItemDepts();
-    setDeptOptions((depts || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc })));
+    setDeptOptions(
+      (depts || []).map((x) => ({
+        value: String(x.itmCode),
+        label: x.itmDesc,
+        isRetailproduct: x.isRetailproduct === true,
+        isSalonproduct: x.isSalonproduct === true,
+        isService: x.isService === true,
+        isVoucher: x.isVoucher === true,
+        isPrepaid: x.isPrepaid === true,
+      }))
+    );
   }, []);
   const refreshBrand = useCallback(async () => {
     const brands = await itemMasterApi.getItemBrands();
-    setBrandOptions((brands || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc })));
+    setBrandOptions((brands || []).map((x) => ({
+      value: String(x.itmId),
+      label: x.itmDesc,
+      itmCode: x.itmCode,
+      retailProductBrand: x.retailProductBrand,
+      voucherBrand: x.voucherBrand,
+      prepaidBrand: x.prepaidBrand,
+    })));
   }, []);
   const refreshClass = useCallback(async () => {
     const classes = await itemMasterApi.getItemClasses();
@@ -304,19 +361,34 @@ function ItemMasterForm() {
   }, []);
   const refreshRange = useCallback(async () => {
     const ranges = await itemMasterApi.getItemRanges();
-    setRangeOptions((ranges || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc })));
+    setRangeOptions(
+      (ranges || []).map((x) => ({
+        value: String(x.itmCode),
+        label: x.itmDesc,
+        itmBrand: x.itmBrand,
+        itmDept: x.itmDept,
+        isproduct: x.isproduct === true,
+        isservice: x.isservice === true,
+        isvoucher: x.isvoucher === true,
+        isprepaid: x.isprepaid === true,
+      }))
+    );
   }, []);
 
   const loadForEdit = useCallback(async () => {
     if (!itemCode) return;
     setInitLoading(true);
     try {
-      const stock = await itemMasterApi.getStockByItemCode(itemCode);
+      const [stock, brands] = await Promise.all([
+        itemMasterApi.getStockByItemCode(itemCode),
+        itemMasterApi.getItemBrands(),
+      ]);
       if (!stock) {
         toast.error("Item not found");
         navigate("/item-master");
         return;
       }
+      const matchBrand = brands?.find((b) => String(b.itmCode) === String(stock.itemBrand));
 
       stockFromApiRef.current = {
         itemPrice: stock.itemPrice,
@@ -334,7 +406,7 @@ function ItemMasterForm() {
       setForm({
         stockdivision: String(stock.itemDiv ?? ""),
         dept: String(stock.itemDept ?? ""),
-        brand: String(stock.itemBrand ?? ""),
+        brand: matchBrand ? String(matchBrand.itmId) : String(stock.itemBrand ?? ""),
         stockclass: String(stock.itemClass ?? ""),
         range: String(stock.itemRange ?? ""),
         stocktype: stock.itemType || "SINGLE",
@@ -355,6 +427,7 @@ function ItemMasterForm() {
         membershipPoint: stock.printdesc ?? "",
         percent: true,
         auto_cust_disc: stock.autocustdisc !== false,
+        open_prepaid: stock.isOpenPrepaid === true,
         tax: stock.isHaveTax === true,
         allow_foc: stock.isAllowFoc === true,
         commissionable: stock.commissionable === true,
@@ -372,6 +445,10 @@ function ItemMasterForm() {
         taxtwo: String(stock.t2TaxCode ?? ""),
         account_no: String(stock.accountCodeTd ?? ""),
       });
+
+      setHasCustomDesc(
+        (stock.itemDesc || "") !== (stock.itemName || "")
+      );
 
       const [uomPrices, stocklists, usageLevels, voucherConds, prepaidConds, itemLinks] = await Promise.all([
         itemMasterApi.getItemUomprices(itemCode),
@@ -474,21 +551,30 @@ function ItemMasterForm() {
     try {
       const ctrl = await itemMasterApi.getControlNo(siteCode);
       if (ctrl) {
-        const prefix = `${form.stockdivision}${form.dept}`;
+        // Legacy: prefix = division + dept zero-padded to 2 digits (e.g. 3+1→301, 3+10→310)
+        const prefix = String(form.stockdivision) + String(form.dept).padStart(2, "0");
         const stocks = await itemMasterApi.getStocks({ limit: 5000 });
         const matching = (stocks || []).filter(
           (s) => s.itemCode && String(s.itemCode).startsWith(prefix)
         );
+
+        // Suffix always 5 digits: first item 00001, then increment from last matching code
+        const suffixLength = 5;
         let nextNo = "1";
         if (matching.length > 0) {
           const last = matching[matching.length - 1].itemCode;
-          const suffix = last.slice(String(prefix).length) || "0";
+          const suffix = last.length >= prefix.length + suffixLength
+            ? last.slice(prefix.length, prefix.length + suffixLength)
+            : last.slice(prefix.length) || "0";
           nextNo = String(parseInt(suffix, 10) + 1);
         }
-        if (prefix.length + nextNo.length > 8) {
-          nextNo = nextNo.slice(-(8 - prefix.length));
+
+        let paddedNextNo = String(nextNo).padStart(suffixLength, "0");
+        if (paddedNextNo.length > suffixLength) {
+          paddedNextNo = paddedNextNo.slice(-suffixLength);
         }
-        setControlNo(prefix + nextNo);
+
+        setControlNo(prefix + paddedNextNo);
       }
     } catch (e) {
       console.warn("Control no load failed:", e);
@@ -508,9 +594,41 @@ function ItemMasterForm() {
     loadControlNo();
   }, [loadControlNo]);
 
+  // Default select all sites when creating new item (stock listing)
+  const hasDefaultedSitesRef = useRef(false);
+  useEffect(() => {
+    if (isEdit) {
+      hasDefaultedSitesRef.current = false;
+    } else if (siteOptions.length > 0 && !hasDefaultedSitesRef.current) {
+      hasDefaultedSitesRef.current = true;
+      setSites(siteOptions.map((s) => ({ itemsiteCode: s.value, itemsiteIsactive: true })));
+    }
+  }, [isEdit, siteOptions]);
+
+  const deptBrand = Number(form.stockdivision) || 0;
+  const filteredBrandOptions = useMemo(() => {
+    if (!deptBrand || deptBrand === 2 || deptBrand === 3) return brandOptions;
+    if (deptBrand === 1) return brandOptions.filter((x) => x.retailProductBrand === true);
+    if (deptBrand === 5) return brandOptions.filter((x) => x.prepaidBrand === true);
+    if (deptBrand === 4) return brandOptions.filter((x) => x.voucherBrand === true);
+    return brandOptions;
+  }, [brandOptions, deptBrand]);
+
+  // Legacy: filter department options by division (isRetailproduct, isSalonproduct, isService, isVoucher, isPrepaid)
+  const filteredDeptOptions = useMemo(() => {
+    const div = Number(form.stockdivision) || 0;
+    if (!div) return deptOptions;
+    if (div === 1) return deptOptions.filter((x) => x.isRetailproduct === true);
+    if (div === 2) return deptOptions.filter((x) => x.isSalonproduct === true);
+    if (div === 3) return deptOptions.filter((x) => x.isService === true);
+    if (div === 4) return deptOptions.filter((x) => x.isVoucher === true);
+    if (div === 5) return deptOptions.filter((x) => x.isPrepaid === true);
+    return deptOptions;
+  }, [deptOptions, form.stockdivision]);
+
   useEffect(() => {
     if (prepaidInclusiveType === "Product Only") {
-      setPrepaidInclusiveOptions(brandOptions);
+      setPrepaidInclusiveOptions(filteredBrandOptions);
     } else if (prepaidInclusiveType === "Service Only") {
       setPrepaidInclusiveOptions(deptOptions);
     } else if (prepaidInclusiveType === "All") {
@@ -518,17 +636,50 @@ function ItemMasterForm() {
     } else {
       setPrepaidInclusiveOptions([]);
     }
-  }, [prepaidInclusiveType, brandOptions, deptOptions]);
+  }, [prepaidInclusiveType, filteredBrandOptions, deptOptions]);
 
   useEffect(() => {
     if (prepaidExclusiveType === "Product Only") {
-      setPrepaidExclusiveOptions(brandOptions);
+      setPrepaidExclusiveOptions(filteredBrandOptions);
     } else if (prepaidExclusiveType === "Service Only") {
       setPrepaidExclusiveOptions(deptOptions);
     } else {
       setPrepaidExclusiveOptions([]);
     }
-  }, [prepaidExclusiveType, brandOptions, deptOptions]);
+  }, [prepaidExclusiveType, filteredBrandOptions, deptOptions]);
+
+  useEffect(() => {
+    if (form.brand && filteredBrandOptions.length > 0 && !filteredBrandOptions.some((o) => o.value === form.brand)) {
+      setField("brand", "");
+    }
+  }, [filteredBrandOptions, form.brand]);
+
+  // Legacy: clear dept when division changes (dept options are filtered by division)
+  useEffect(() => {
+    if (form.dept && filteredDeptOptions.length > 0 && !filteredDeptOptions.some((o) => o.value === form.dept)) {
+      setField("dept", "");
+    }
+  }, [filteredDeptOptions, form.dept]);
+
+  // Legacy: filter range options by division, brand, dept (Listofitemrange)
+  const brandItmCode = brandOptions.find((b) => b.value === form.brand)?.itmCode ?? form.brand;
+  const filteredRangeOptions = useMemo(() => {
+    const div = Number(form.stockdivision) || 0;
+    let list = rangeOptions;
+    if (div === 1) list = list.filter((x) => x.isproduct === true);
+    else if (div === 2 || !div) list = list.filter((x) => String(x.itmBrand) === String(brandItmCode));
+    else if (div === 3) list = list.filter((x) => x.isservice === true && String(x.itmDept) === String(form.dept));
+    else if (div === 4) list = list.filter((x) => x.isvoucher === true);
+    else if (div === 5) list = list.filter((x) => x.isprepaid === true);
+    return list;
+  }, [rangeOptions, form.stockdivision, form.brand, form.dept, brandItmCode]);
+
+  // Legacy: clear range when filtered options change and current range not in list
+  useEffect(() => {
+    if (form.range && filteredRangeOptions.length > 0 && !filteredRangeOptions.some((o) => o.value === form.range)) {
+      setField("range", "");
+    }
+  }, [filteredRangeOptions, form.range]);
 
   const addUom = () => {
     setAddUomOpen(true);
@@ -733,38 +884,38 @@ function ItemMasterForm() {
       return false;
     }
     const div = form.stockdivision;
-    if (!["3", "4", "5"].includes(div) && !form.supply_itemsval) {
-      toast.error("Supplier Code is required for this division");
-      return false;
-    }
-    if (form.commissionable) {
-      if (!form.Sales_commission) {
-        toast.error("Sales Commission Group is required when Commissionable");
-        return false;
-      }
-      if (!form.work_commission) {
-        toast.error("Work Commission Group is required when Commissionable");
-        return false;
-      }
-      if (form.sales_point === "" || form.sales_point == null) {
-        toast.error("Sales Points is required when Commissionable");
-        return false;
-      }
-      if (form.work_point === "" || form.work_point == null) {
-        toast.error("Work Points is required when Commissionable");
-        return false;
-      }
-    }
-    if (form.tax) {
-      if (!form.taxone) {
-        toast.error("Tax Type 1 is required when Tax is checked");
-        return false;
-      }
-      if (!form.taxtwo) {
-        toast.error("Tax Type 2 is required when Tax is checked");
-        return false;
-      }
-    }
+    // if (!["3", "4", "5"].includes(div) && !form.supply_itemsval) {
+    //   toast.error("Supplier Code is required for this division");
+    //   return false;
+    // }
+    // if (form.commissionable) {
+    //   if (!form.Sales_commission) {
+    //     toast.error("Sales Commission Group is required when Commissionable");
+    //     return false;
+    //   }
+    //   if (!form.work_commission) {
+    //     toast.error("Work Commission Group is required when Commissionable");
+    //     return false;
+    //   }
+    //   if (form.sales_point === "" || form.sales_point == null) {
+    //     toast.error("Sales Points is required when Commissionable");
+    //     return false;
+    //   }
+    //   if (form.work_point === "" || form.work_point == null) {
+    //     toast.error("Work Points is required when Commissionable");
+    //     return false;
+    //   }
+    // }
+    // if (form.tax) {
+    //   if (!form.taxone) {
+    //     toast.error("Tax Type 1 is required when Tax is checked");
+    //     return false;
+    //   }
+    //   if (!form.taxtwo) {
+    //     toast.error("Tax Type 2 is required when Tax is checked");
+    //     return false;
+    //   }
+    // }
     const price = Number(form.stockprice);
     const floor = Number(form.floorprice);
     if (floor > 0 && price > 0 && floor > price) {
@@ -809,7 +960,7 @@ function ItemMasterForm() {
         itemCode: isEdit ? itemCode : controlNo,
         itemDiv: form.stockdivision,
         itemDept: form.dept,
-        itemBrand: form.brand,
+        itemBrand: brandOptions.find((o) => o.value === form.brand)?.itmCode ?? form.brand,
         itemClass: form.stockclass,
         itemRange: form.range,
         itemType: form.stocktype,
@@ -873,12 +1024,18 @@ function ItemMasterForm() {
         treatmentLimitActive: false,
         limitserviceFlexionly: false,
         isGst: false,
-        isOpenPrepaid: false,
+        isOpenPrepaid: form.stockdivision === "5" ? form.open_prepaid : false,
         serviceCostPercent: false,
       };
 
       if (isEdit) {
         await itemMasterApi.updateStock(itemCode, payload);
+
+        // Cost history for divisions 3/4/5 (no UOM - log Stocks.itemPrice)
+        if (["3", "4", "5"].includes(form.stockdivision)) {
+          const priceForLog = getEffectiveItemPriceForDiv345();
+          await logCostHistory(itemCode, { itemUom: "", itemPrice: priceForLog, itemCost: 0, minMargin: null }, "UPDATE");
+        }
 
         // Usage Levels
         if (usageItems.length > 0) {
@@ -936,15 +1093,15 @@ function ItemMasterForm() {
           const currentItemUom = u.itemUom ?? u.item_uom ?? initial?.itemUom;
           let rawPrice = u.itemPrice ?? u.item_price ?? initial?.itemPrice;
           let rawCost = u.itemCost ?? u.item_cost ?? initial?.itemCost;
-          let itemPrice = Number(rawPrice) || 0;
-          let itemCost = Number(rawCost) || 0;
+          let itemPrice = round2(Number(rawPrice) || 0) ?? 0;
+          let itemCost = round2(Number(rawCost) || 0) ?? 0;
           if (
             stockFromApi &&
             (currentItemUom == null || String(currentItemUom) === String(stockFromApi.itemUom)) &&
             (itemPrice === 0 || itemCost === 0)
           ) {
-            const stockPrice = Number(stockFromApi.itemPrice) || 0;
-            const stockCost = Number(stockFromApi.onhandCst ?? stockFromApi.costPrice) || 0;
+            const stockPrice = round2(Number(stockFromApi.itemPrice) || 0) ?? 0;
+            const stockCost = round2(Number(stockFromApi.onhandCst ?? stockFromApi.costPrice) || 0) ?? 0;
             if (stockPrice > 0 || stockCost > 0) {
               itemPrice = stockPrice;
               itemCost = stockCost;
@@ -954,10 +1111,10 @@ function ItemMasterForm() {
             (u.minMargin ?? u.min_margin ?? initial?.minMargin) != null &&
             (u.minMargin ?? u.min_margin ?? initial?.minMargin) !== "" &&
             !isNaN(Number(u.minMargin ?? u.min_margin ?? initial?.minMargin))
-              ? Number(u.minMargin ?? u.min_margin ?? initial?.minMargin)
+              ? round2(Number(u.minMargin ?? u.min_margin ?? initial?.minMargin))
               : null;
           if (itemPrice > 0 && itemCost > 0 && itemCost < itemPrice) {
-            minMargin = Number((((itemPrice - itemCost) / itemPrice) * 100).toFixed(2));
+            minMargin = round2(Number((((itemPrice - itemCost) / itemPrice) * 100).toFixed(2)));
           }
           const costHistoryPayload = { itemUom: currentItemUom, itemPrice, itemCost, minMargin };
           if (u.id) {
@@ -1029,6 +1186,12 @@ function ItemMasterForm() {
       } else {
         await itemMasterApi.createStock(payload);
 
+        // Cost history for divisions 3/4/5 (no UOM - log Stocks.itemPrice)
+        if (["3", "4", "5"].includes(form.stockdivision)) {
+          const priceForLog = getEffectiveItemPriceForDiv345();
+          await logCostHistory(controlNo, { itemUom: "", itemPrice: priceForLog, itemCost: 0, minMargin: null }, "CREATE");
+        }
+
         const newStockLists = sites.map((s) => ({
           itemCode: controlNo,
           itemsiteCode: s.itemsiteCode,
@@ -1047,12 +1210,15 @@ function ItemMasterForm() {
         const showUomSectionCreate = ["1", "2", ""].includes(form.stockdivision);
         if (showUomSectionCreate) {
         for (const u of uoms) {
-          const itemPrice = Number(u.itemPrice ?? u.item_price) || 0;
-          const itemCost = Number(u.itemCost ?? u.item_cost) || 0;
-          const minMargin =
+          const itemPrice = round2(Number(u.itemPrice ?? u.item_price) || 0) ?? 0;
+          const itemCost = round2(Number(u.itemCost ?? u.item_cost) || 0) ?? 0;
+          let minMargin =
             (u.minMargin ?? u.min_margin) != null && (u.minMargin ?? u.min_margin) !== "" && !isNaN(Number(u.minMargin ?? u.min_margin))
-              ? Number(u.minMargin ?? u.min_margin)
+              ? round2(Number(u.minMargin ?? u.min_margin))
               : null;
+          if (itemPrice > 0 && itemCost > 0 && itemCost < itemPrice) {
+            minMargin = round2(Number((((itemPrice - itemCost) / itemPrice) * 100).toFixed(2)));
+          }
           const costHistoryPayload = { itemUom: u.itemUom ?? u.item_uom, itemPrice, itemCost, minMargin };
           await itemMasterApi.createItemUomprices({
             itemCode: controlNo,
@@ -1199,7 +1365,30 @@ function ItemMasterForm() {
           <Card className="border-0 shadow-none">
             <CollapsibleTrigger asChild>
               <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
-                <CardTitle className="text-base font-semibold">General Information</CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base font-semibold">General Information</CardTitle>
+                  {isEdit && itemCode && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCostHistoryOpen(true);
+                            }}
+                          >
+                            <History className="w-4 h-4 text-gray-600 hover:text-blue-600" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Cost change history</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
                 {sectionOpen.general ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
               </CardHeader>
             </CollapsibleTrigger>
@@ -1207,13 +1396,27 @@ function ItemMasterForm() {
               <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-6">
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Stock Code</Label>
-                  <Input value={isEdit ? itemCode : controlNo} disabled className="mt-1.5 bg-gray-50 font-mono" />
+                  <Input
+                    value={
+                      isEdit
+                        ? itemCode
+                        : form.dept
+                        ? (form.stockdivision || "") + (form.dept || "")
+                        : form.stockdivision || controlNo || ""
+                    }
+                    disabled
+                    className="mt-1.5 bg-gray-50 font-mono"
+                  />
                 </div>
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Division <span className="text-red-500">*</span></Label>
                   <Select
                     value={form.stockdivision}
-                    onValueChange={(v) => setField("stockdivision", v)}
+                    onValueChange={(v) => {
+                      setField("stockdivision", v);
+                      if (!isEdit) setField("dept", "");
+                    }}
+                    disabled={isEdit}
                   >
                     <SelectTrigger className="mt-1.5">
                       <SelectValue placeholder="Select Division" />
@@ -1228,18 +1431,18 @@ function ItemMasterForm() {
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
                     <Label className="text-xs font-medium text-gray-500 uppercase">Department <span className="text-red-500">*</span></Label>
-                    <Select value={form.dept} onValueChange={(v) => setField("dept", v)}>
+                    <Select value={form.dept} onValueChange={(v) => setField("dept", v)} disabled={isEdit}>
                       <SelectTrigger className="mt-1.5">
                         <SelectValue placeholder="Select Department" />
                       </SelectTrigger>
                       <SelectContent>
-                        {deptOptions.map((o, idx) => (
+                        {filteredDeptOptions.map((o, idx) => (
                           <SelectItem key={`dept-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddDeptOpen(true)} title="Add Department">
+                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddDeptOpen(true)} disabled={isEdit} title="Add Department">
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
@@ -1251,7 +1454,7 @@ function ItemMasterForm() {
                         <SelectValue placeholder="Select Brand" />
                       </SelectTrigger>
                       <SelectContent>
-                        {brandOptions.map((o, idx) => (
+                        {filteredBrandOptions.map((o, idx) => (
                           <SelectItem key={`brand-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1287,13 +1490,13 @@ function ItemMasterForm() {
                         <SelectValue placeholder="Select Range" />
                       </SelectTrigger>
                       <SelectContent>
-                        {rangeOptions.map((o, idx) => (
+                        {filteredRangeOptions.map((o, idx) => (
                           <SelectItem key={`range-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddRangeOpen(true)} disabled={!form.brand} title="Add Range">
+                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddRangeOpen(true)} title="Add Range">
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
@@ -1317,7 +1520,13 @@ function ItemMasterForm() {
                   <Label className="text-xs font-medium text-gray-500 uppercase">Stock Name <span className="text-red-500">*</span></Label>
                   <Input
                     value={form.stockname}
-                    onChange={(e) => setField("stockname", e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setField("stockname", value);
+                      if (!hasCustomDesc) {
+                        setField("item_desc", value);
+                      }
+                    }}
                     placeholder="Stock Name"
                     className="mt-1.5"
                     maxLength={40}
@@ -1327,12 +1536,17 @@ function ItemMasterForm() {
                   <Label className="text-xs font-medium text-gray-500 uppercase">Description <span className="text-red-500">*</span></Label>
                   <Input
                     value={form.item_desc}
-                    onChange={(e) => setField("item_desc", e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setField("item_desc", value);
+                      setHasCustomDesc(value !== form.stockname);
+                    }}
                     placeholder="Description"
                     className="mt-1.5"
                     maxLength={60}
                   />
                 </div>
+                {!["4", "5"].includes(form.stockdivision) && (
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Barcode</Label>
                   <Input
@@ -1342,6 +1556,7 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                )}
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Price</Label>
                   <Input
@@ -1352,6 +1567,8 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                {["3", ""].includes(form.stockdivision) && (
+                <>
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Floor Price</Label>
                   <Input
@@ -1383,6 +1600,9 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                </>
+                )}
+                {!["4", "5"].includes(form.stockdivision) && (
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Discount Limit</Label>
                   <Input
@@ -1393,9 +1613,10 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                )}
                 {!["3", "4", "5"].includes(form.stockdivision) && (
                   <div>
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Supplier Code <span className="text-red-500">*</span></Label>
+                    <Label className="text-xs font-medium text-gray-500 uppercase">Supplier Code {/* <span className="text-red-500">*</span> */}</Label>
                     <Select value={form.supply_itemsval || "__none__"} onValueChange={(v) => setField("supply_itemsval", v === "__none__" ? "" : v)}>
                       <SelectTrigger className="mt-1.5">
                         <SelectValue placeholder="Select Supplier" />
@@ -1431,6 +1652,8 @@ function ItemMasterForm() {
                     )}
                   </div>
                 </div>
+                {form.stocktype !== "PACKAGE" && (
+                <>
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">From Date</Label>
                   <Input
@@ -1449,6 +1672,8 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                </>
+                )}
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Duration (Minutes)</Label>
                   <Input
@@ -1460,6 +1685,7 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                {["1", "2", "3", ""].includes(form.stockdivision) && (
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Membership Point Redeem</Label>
                   <Input
@@ -1471,11 +1697,14 @@ function ItemMasterForm() {
                     className="mt-1.5"
                   />
                 </div>
+                )}
                 <div className="col-span-full flex flex-wrap gap-6 pt-4 border-t mt-2">
                   <div className="flex items-center space-x-2">
                     <Checkbox id="active" checked={form.item_active} onCheckedChange={(v) => setField("item_active", !!v)} />
                     <Label htmlFor="active" className="cursor-pointer">Active</Label>
                   </div>
+                  {!["4", "5"].includes(form.stockdivision) && (
+                  <>
                   <div className="flex items-center space-x-2">
                     <Checkbox id="percent" checked={form.percent} onCheckedChange={(v) => setField("percent", !!v)} />
                     <Label htmlFor="percent" className="cursor-pointer">Percent</Label>
@@ -1484,6 +1713,14 @@ function ItemMasterForm() {
                     <Checkbox id="auto_cust_disc" checked={form.auto_cust_disc} onCheckedChange={(v) => setField("auto_cust_disc", !!v)} />
                     <Label htmlFor="auto_cust_disc" className="cursor-pointer">Auto Cust Disc</Label>
                   </div>
+                  </>
+                  )}
+                  {form.stockdivision === "5" && (
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="open_prepaid" checked={form.open_prepaid} onCheckedChange={(v) => setField("open_prepaid", !!v)} />
+                    <Label htmlFor="open_prepaid" className="cursor-pointer">Open Prepaid</Label>
+                  </div>
+                  )}
                   <div className="flex items-center space-x-2">
                     <Checkbox id="tax" checked={form.tax} onCheckedChange={(v) => setField("tax", !!v)} />
                     <Label htmlFor="tax" className="cursor-pointer">Tax</Label>
@@ -1578,30 +1815,7 @@ function ItemMasterForm() {
           <Card className="border-0 shadow-none">
             <CollapsibleTrigger asChild>
               <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base font-semibold">UOM</CardTitle>
-                  {isEdit && itemCode && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCostHistoryOpen(true);
-                            }}
-                          >
-                            <History className="w-4 h-4 text-gray-600 hover:text-blue-600" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Cost change history</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                </div>
+                <CardTitle className="text-base font-semibold">UOM</CardTitle>
                 {sectionOpen.uom ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
               </CardHeader>
             </CollapsibleTrigger>
@@ -2410,7 +2624,7 @@ function ItemMasterForm() {
             <CollapsibleContent>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6">
                 <div>
-                  <Label className="text-xs font-medium text-gray-500 uppercase">1st Tax Code <span className="text-red-500">*</span></Label>
+                  <Label className="text-xs font-medium text-gray-500 uppercase">1st Tax Code {/* <span className="text-red-500">*</span> */}</Label>
                   <Select value={form.taxone || "__none__"} onValueChange={(v) => setField("taxone", v === "__none__" ? "" : v)}>
                     <SelectTrigger className="mt-1.5">
                       <SelectValue placeholder="Select Tax Type 1" />
@@ -2424,7 +2638,7 @@ function ItemMasterForm() {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs font-medium text-gray-500 uppercase">2nd Tax Code <span className="text-red-500">*</span></Label>
+                  <Label className="text-xs font-medium text-gray-500 uppercase">2nd Tax Code {/* <span className="text-red-500">*</span> */}</Label>
                   <Select value={form.taxtwo || "__none__"} onValueChange={(v) => setField("taxtwo", v === "__none__" ? "" : v)}>
                     <SelectTrigger className="mt-1.5">
                       <SelectValue placeholder="Select Tax Type 2" />
@@ -2460,13 +2674,14 @@ function ItemMasterForm() {
         <AddDeptModal open={addDeptOpen} onOpenChange={setAddDeptOpen} onSuccess={refreshDept} />
         <AddBrandModal open={addBrandOpen} onOpenChange={setAddBrandOpen} onSuccess={refreshBrand} />
         <AddClassModal open={addClassOpen} onOpenChange={setAddClassOpen} onSuccess={refreshClass} />
-        <AddRangeModal open={addRangeOpen} onOpenChange={setAddRangeOpen} onSuccess={refreshRange} brand={form.brand} dept={form.dept} />
+        <AddRangeModal open={addRangeOpen} onOpenChange={setAddRangeOpen} onSuccess={refreshRange} brand={form.brand} brandCodeForDept={form.brand ? brandOptions.find((o) => o.value === form.brand)?.itmCode : null} brandOptions={filteredBrandOptions} />
         <AddUomModal open={addUomOpen} onOpenChange={setAddUomOpen} onSuccess={handleUomSuccess} existingUoms={uoms} />
         <CostHistoryTimelineModal
           open={costHistoryOpen}
           onOpenChange={setCostHistoryOpen}
           itemCode={itemCode}
           itemName={form.stockname}
+          divisionLabel={form.stockdivision}
         />
       </div>
     </div>

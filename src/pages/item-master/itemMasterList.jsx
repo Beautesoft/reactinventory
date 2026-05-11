@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2 } from "lucide-react";
+import { Search } from "lucide-react";
+import PageLoader from "@/components/PageLoader";
 import useDebounce from "@/hooks/useDebounce";
 import { useNavigate } from "react-router-dom";
 import ItemMasterTable from "@/components/itemMasterTable";
@@ -37,12 +38,6 @@ function ItemMasterList() {
       ]);
 
       let list = Array.isArray(stocks) ? stocks : [];
-
-      if (activeTab === "active") {
-        list = list.filter((i) => i.itemIsactive === true);
-      } else if (activeTab === "inactive") {
-        list = list.filter((i) => i.itemIsactive === false);
-      }
 
       const enrich = (item) => {
         const d = { ...item };
@@ -88,11 +83,17 @@ function ItemMasterList() {
       setIsLoading(false);
       setInitialLoading(false);
     }
-  }, [activeTab, debouncedSearch]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     loadItems();
   }, [loadItems]);
+
+  const displayedItems = useMemo(() => {
+    if (activeTab === "active") return items.filter((i) => i.itemIsactive === true);
+    if (activeTab === "inactive") return items.filter((i) => i.itemIsactive === false);
+    return items;
+  }, [items, activeTab]);
 
   const handleSort = (key, direction) => {
     setItems((prev) => {
@@ -111,8 +112,8 @@ function ItemMasterList() {
     });
   };
 
-  const totalPages = Math.max(1, Math.ceil(items.length / pagination.perPage));
-  const paginatedItems = items.slice(
+  const totalPages = Math.max(1, Math.ceil(displayedItems.length / pagination.perPage));
+  const paginatedItems = displayedItems.slice(
     (pagination.page - 1) * pagination.perPage,
     pagination.page * pagination.perPage
   );
@@ -120,10 +121,7 @@ function ItemMasterList() {
   return (
     <>
       {initialLoading ? (
-        <div className="flex flex-col items-center justify-center h-screen">
-          <Loader2 className="w-8 h-8 text-gray-500 animate-spin" />
-          <span className="text-gray-600 ml-4 text-sm">Loading...</span>
-        </div>
+        <PageLoader />
       ) : (
         <div className="h-screen w-full mt-6 light">
           <div className="ml-2 mb-7">
@@ -138,37 +136,39 @@ function ItemMasterList() {
               setPagination((p) => ({ ...p, page: 1 }));
             }}
           >
-            <div className="flex items-center justify-between space-x-2 mb-6">
-              <div className="flex gap-4 items-center w-[60%]">
-                <div className="w-[280px] relative">
-                  <Input
-                    placeholder="Search by Stock Code, Name, Link Code..."
-                    value={searchValue}
-                    onChange={(e) => setSearchValue(e.target.value)}
-                    className="pl-10"
-                  />
-                  <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+            <div className="overflow-x-auto min-w-0 mb-6">
+              <div className="flex items-center justify-between gap-4 min-w-max pr-2">
+                <div className="flex gap-4 items-center min-w-0 flex-1">
+                  <div className="w-[380px] min-w-[240px] flex-shrink-0 relative">
+                    <Input
+                      placeholder="Search by Stock Code, Name, Link Code..."
+                      value={searchValue}
+                      onChange={(e) => setSearchValue(e.target.value)}
+                      className="pl-10"
+                    />
+                    <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                  </div>
                 </div>
+
+                <TabsList className="flex-shrink-0 w-[25%] min-w-[200px] bg-gray-200 h-[38px]">
+                  <TabsTrigger className="cursor-pointer" value="all">
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger className="cursor-pointer" value="active">
+                    Active
+                  </TabsTrigger>
+                  <TabsTrigger className="cursor-pointer" value="inactive">
+                    Inactive
+                  </TabsTrigger>
+                </TabsList>
+
+                <Button
+                  onClick={() => navigate("/item-master/add")}
+                  className="flex-shrink-0 bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
+                >
+                  + Create New
+                </Button>
               </div>
-
-              <TabsList className="w-[25%] bg-gray-200 h-[38px]">
-                <TabsTrigger className="cursor-pointer" value="all">
-                  All
-                </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="active">
-                  Active
-                </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="inactive">
-                  Inactive
-                </TabsTrigger>
-              </TabsList>
-
-              <Button
-                onClick={() => navigate("/item-master/add")}
-                className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
-              >
-                + Create New
-              </Button>
             </div>
 
             <TabsContent value="all">
@@ -194,11 +194,13 @@ function ItemMasterList() {
             </TabsContent>
           </Tabs>
 
-          <Pagination
-            currentPage={pagination.page}
-            totalPages={totalPages}
-            onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
-          />
+          <div className="py-6">
+            <Pagination
+              currentPage={pagination.page}
+              totalPages={totalPages}
+              onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
+            />
+          </div>
         </div>
       )}
     </>

@@ -77,7 +77,10 @@ const SAMPLE_DATA = {
   ],
 };
 
-const ITEMS_PER_PAGE = 20;
+/** Preview pager (on screen) */
+const SCREEN_ITEMS_PER_PAGE = 20;
+/** Print / PDF / Word chunk size */
+const PRINT_ITEMS_PER_PAGE = 30;
 const ZOOM_OPTIONS = [
   { value: "auto", label: "Auto Width" },
   { value: "page", label: "Page Width" },
@@ -89,8 +92,17 @@ const ZOOM_OPTIONS = [
   { value: "200", label: "200%" },
 ];
 
-// Print-specific CSS styles
+// Print-specific CSS styles (pdf-export-full is for html2canvas on screen, not print media)
 const printStyles = `
+  html.pdf-export-full .print-preview-screen-table {
+    display: none !important;
+  }
+  html.pdf-export-full .print-preview-on-screen-header {
+    display: none !important;
+  }
+  html.pdf-export-full .print-preview-full-table {
+    display: block !important;
+  }
   @media print {
     .print-content {
       max-width: none !important;
@@ -156,10 +168,34 @@ const printStyles = `
     .print:hidden {
       display: none !important;
     }
+
+    .print-preview-on-screen-header {
+      display: none !important;
+    }
     
-    /* Page break optimization */
-    .print-table tr {
+    /* Repeat table header on each printed sheet */
+    .print-table thead {
+      display: table-header-group !important;
+    }
+
+    /* Long lists: allow normal breaks on data rows */
+    .print-table tbody tr.print-data-row {
+      page-break-inside: auto !important;
+    }
+
+    /* Keep totals / signatures from splitting awkwardly */
+    .print-table tbody tr.print-keep-together {
       page-break-inside: avoid !important;
+    }
+
+    /* Chunked print: page break after each chunk (size = PRINT_ITEMS_PER_PAGE in JS) */
+    .print-doc-page.print-doc-page-break {
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+    .print-doc-page:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
     }
     
     /* Optimize table row spacing for print */
@@ -596,11 +632,100 @@ function PrintPreview({
     }
   };
 
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(filteredItems.length / SCREEN_ITEMS_PER_PAGE);
   const currentItems = filteredItems.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+    (currentPage - 1) * SCREEN_ITEMS_PER_PAGE,
+    currentPage * SCREEN_ITEMS_PER_PAGE
   );
+
+  const printChunks = useMemo(() => {
+    const size = PRINT_ITEMS_PER_PAGE;
+    if (!filteredItems.length) return [[]];
+    const chunks = [];
+    for (let i = 0; i < filteredItems.length; i += size) {
+      chunks.push(filteredItems.slice(i, i + size));
+    }
+    return chunks;
+  }, [filteredItems]);
+
+  const renderLineItemRow = (item, rowNo) => (
+    <tr
+      key={`line-${rowNo}-${item.itemcode ?? item.itemdesc ?? rowNo}`}
+      className="border-b hover:bg-gray-50 print-row print-data-row"
+    >
+      <td className="py-3 px-3 print-cell">{rowNo}</td>
+      <td className="py-3 px-3 print-cell font-medium">{item.itemcode}</td>
+      <td className="py-3 px-3 print-cell">{item.itemdesc}</td>
+      <td className="py-3 px-3 print-cell">{item.batchselect || "-"}</td>
+      <td className="py-3 px-3 print-cell text-right font-medium">{item.docQty}</td>
+      {isPRApproved && (
+        <td className="py-3 px-3 print-cell text-right font-medium">
+          {item.approvedQty != null ? item.approvedQty : "-"}
+        </td>
+      )}
+      {effectiveMode === "admin" && (
+        <>
+          <td className="py-3 px-3 print-cell text-right">
+            {item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "-"}
+          </td>
+          <td className="py-3 px-3 print-cell text-right font-medium">
+            {item.docAmt ? parseFloat(item.docAmt).toFixed(2) : "-"}
+          </td>
+          <td className="py-3 px-3 print-cell text-right">
+            {(parseFloat(item.itemCost) || 0).toFixed(2)}
+          </td>
+          <td className="py-3 px-3 print-cell text-right font-medium">
+            {((item.docQty * (parseFloat(item.itemCost) || 0)) || 0).toFixed(2)}
+          </td>
+        </>
+      )}
+    </tr>
+  );
+
+  const renderGrandTotalRow = () => (
+    <tr className="border-t-4 border-double border-black bg-blue-50 font-bold text-lg print-keep-together">
+      <td colSpan={currentColumnConfig.colSpan} className="py-4 px-4 text-right">
+        Grand Total:
+      </td>
+      <td className="py-4 px-4 text-right text-blue-800">
+        {filteredItems.reduce((sum, item) => sum + (item.docQty || 0), 0)}
+      </td>
+      {isPRApproved && (
+        <td className="py-4 px-4 text-right text-blue-800">
+          {filteredItems.reduce((sum, item) => sum + (parseFloat(item.approvedQty) || 0), 0)}
+        </td>
+      )}
+      {effectiveMode === "admin" && (
+        <>
+          <td className="py-4 px-4 text-right">-</td>
+          <td className="py-4 px-4 text-right text-blue-800">
+            {filteredItems.reduce((sum, item) => sum + (parseFloat(item.docAmt) || 0), 0).toFixed(2)}
+          </td>
+          <td className="py-4 px-4 text-right">-</td>
+          <td className="py-4 px-4 text-right text-blue-800">
+            {filteredItems
+              .reduce((sum, item) => sum + (item.docQty * (parseFloat(item.itemCost) || 0) || 0), 0)
+              .toFixed(2)}
+          </td>
+        </>
+      )}
+    </tr>
+  );
+
+  const renderSignatureRows = () =>
+    documentType === "grn" || documentType === "gto" ? (
+      <tr className="border-t border-gray-300 print-keep-together">
+        <td colSpan={currentColumnConfig.headers.length} className="py-4 px-4">
+          <div className="space-y-2 print-signature">
+            <p className="font-semibold text-sm">Authorised Signature:</p>
+            <p className="font-semibold text-sm">Sender:</p>
+            <p className="font-semibold text-sm">Delivery Man:</p>
+            <p className="font-semibold text-sm">Receiver:</p>
+            <p className="font-semibold text-sm">Remarks:</p>
+          </div>
+        </td>
+      </tr>
+    ) : null;
 
   const handleZoomChange = (value) => {
     setZoom(value);
@@ -676,6 +801,39 @@ function PrintPreview({
       </div>
     );
   };
+
+  /** Company + title + fields — first printed page only; later pages are table-only */
+  const renderPrintDocumentHeader = () => (
+    <>
+      <div className="text-center mb-6 print-header">
+        {titles ? (
+          <>
+            <h2 className="font-bold">{titles.companyHeader1}</h2>
+            <p className="text-sm">{titles.companyHeader2}</p>
+            <p className="text-sm">{titles.companyHeader3}</p>
+            <p className="text-sm">{titles.companyHeader4}</p>
+          </>
+        ) : (
+          <>
+            <h2 className="font-bold">{userDetails?.siteName}</h2>
+            <p className="text-sm">{userDetails?.siteAddress}</p>
+            <p className="text-sm">
+              {userDetails?.siteCity} {userDetails?.sitePostCode}
+            </p>
+            <p className="text-sm">Tel: {userDetails?.sitePhone}</p>
+          </>
+        )}
+      </div>
+      <div className="bg-gray-100 py-2 px-4 mb-6 print-title">
+        <div className="flex justify-between items-center">
+          <h3 className="font-bold text-lg">{finalTitle}</h3>
+        </div>
+      </div>
+      <div className="print-fields">
+        {renderDocumentFields({ ...config, fields: finalFields }, documentData)}
+      </div>
+    </>
+  );
 
   // Dynamic export headers based on document type
   const getExportHeaders = (config) => {
@@ -835,6 +993,8 @@ function PrintPreview({
 
       case "pdf":
         try {
+          document.documentElement.classList.add("pdf-export-full");
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
           const printArea = document.querySelector("#printable-content");
 
           const canvas = await html2canvas(printArea, {
@@ -845,6 +1005,7 @@ function PrintPreview({
             removeContainer: true,
             allowTaint: true,
             onclone: (clonedDoc) => {
+              clonedDoc.documentElement.classList.add("pdf-export-full");
               const clonedElement =
                 clonedDoc.querySelector("#printable-content");
               if (clonedElement) {
@@ -875,11 +1036,22 @@ function PrintPreview({
         } catch (error) {
           console.error("PDF generation error:", error);
           toast.error("Failed to generate PDF");
+        } finally {
+          document.documentElement.classList.remove("pdf-export-full");
         }
         break;
 
-      case "word":
-        // Create HTML content for Word
+      case "word": {
+        const source = document.querySelector("#printable-content");
+        const clone = source?.cloneNode(true);
+        if (clone) {
+          clone.querySelectorAll(".print-preview-screen-table").forEach((el) => el.remove());
+          clone.querySelectorAll(".print-preview-full-table").forEach((el) => {
+            el.classList.remove("hidden");
+            el.style.display = "block";
+          });
+        }
+        const inner = clone ? clone.innerHTML : (source?.innerHTML ?? "");
         const htmlContent = `
           <html>
             <head>
@@ -891,7 +1063,7 @@ function PrintPreview({
               </style>
             </head>
             <body>
-              ${document.querySelector("#printable-content").innerHTML}
+              ${inner}
             </body>
           </html>
         `;
@@ -899,6 +1071,7 @@ function PrintPreview({
         const blob = new Blob([htmlContent], { type: "application/msword" });
         saveAs(blob, `${fileName}.doc`);
         break;
+      }
 
       default:
         console.error("Unsupported format:", format);
@@ -1038,6 +1211,7 @@ function PrintPreview({
           }
         }}
       >
+        <div className="print-preview-on-screen-header block print:hidden">
         <div className="text-center mb-6 print-header">
           {titles ? (
             <>
@@ -1070,14 +1244,17 @@ function PrintPreview({
         <div className="print-fields">
           {renderDocumentFields({ ...config, fields: finalFields }, documentData)}
         </div>
+        </div>
 
+        {/* Screen: paginated preview (hidden when printing) */}
+        <div className="print-preview-screen-table block print:hidden">
         <table className="w-full text-sm border-collapse mb-6 print-table">
           <thead>
             <tr className="border-y bg-gray-50">
               {currentColumnConfig.headers.map((header, index) => (
-                <th 
-                  key={index} 
-                  className={`py-3 px-4 text-${currentColumnConfig.alignments[index] || 'left'} font-semibold`}
+                <th
+                  key={index}
+                  className={`py-3 px-4 text-${currentColumnConfig.alignments[index] || "left"} font-semibold`}
                 >
                   {header}
                 </th>
@@ -1085,123 +1262,51 @@ function PrintPreview({
             </tr>
           </thead>
           <tbody>
-                                     {currentItems.map((item, index) => (
-              <tr key={index} className="border-b hover:bg-gray-50 print-row">
-                <td className="py-3 px-3 print-cell">
-                  {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
-                </td>
-                <td className="py-3 px-3 print-cell font-medium">{item.itemcode}</td>
-                <td className="py-3 px-3 print-cell">{item.itemdesc}</td>
-                <td className="py-3 px-3 print-cell">{item.batchselect || "-"}</td>
-                <td className="py-3 px-3 print-cell text-right font-medium">{item.docQty}</td>
-                {isPRApproved && (
-                  <td className="py-3 px-3 print-cell text-right font-medium">
-                    {item.approvedQty != null ? item.approvedQty : "-"}
-                  </td>
-                )}
-                {effectiveMode === 'admin' && (
-                  <>
-                    <td className="py-3 px-3 print-cell text-right">{item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "-"}</td>
-                    <td className="py-3 px-3 print-cell text-right font-medium">{item.docAmt ? parseFloat(item.docAmt).toFixed(2) : "-"}</td>
-                    <td className="py-3 px-3 print-cell text-right">{(parseFloat(item.itemCost) || 0).toFixed(2)}</td>
-                    <td className="py-3 px-3 print-cell text-right font-medium">{((item.docQty * (parseFloat(item.itemCost) || 0)) || 0).toFixed(2)}</td>
-                  </>
-                )}
-              </tr>
-            ))}
-
-            {/* Page Total Row - Commented out for now, can be re-enabled later */}
-            {/* 
-            <tr className="border-t-2 border-gray-300 bg-gray-100 font-semibold">
-              <td colSpan={currentColumnConfig.colSpan} className="py-3 px-4 text-right font-bold">
-                Page Total:
-              </td>
-              <td className="py-3 px-4 text-right font-bold text-blue-600">
-                {currentItems.reduce(
-                  (sum, item) => sum + (item.docQty || 0),
-                  0
-                )}
-              </td>
-              {effectiveMode === 'admin' && (
-                <>
-                  <td className="py-3 px-4 text-right">-</td>
-                  <td className="py-3 px-4 text-right font-bold text-blue-600">
-                    {currentItems.reduce(
-                      (sum, item) => sum + (item.docAmt || 0),
-                      0
-                    ).toFixed(2)}
-                  </td>
-                  <td className="py-3 px-4 text-right">-</td>
-                  <td className="py-3 px-4 text-right font-bold text-blue-600">
-                    {currentItems.reduce(
-                      (sum, item) => sum + ((item.docQty * item.itemCost) || 0),
-                      0
-                    ).toFixed(2)}
-                  </td>
-                </>
-              )}
-            </tr>
-            */}
-
-            {/* Grand Total Row - Only show on last page */}
-            {currentPage === totalPages && (
-              <tr className="border-t-4 border-double border-black bg-blue-50 font-bold text-lg">
-                <td colSpan={currentColumnConfig.colSpan} className="py-4 px-4 text-right">
-                  Grand Total:
-                </td>
-                <td className="py-4 px-4 text-right text-blue-800">
-                  {filteredItems.reduce(
-                    (sum, item) => sum + (item.docQty || 0),
-                    0
-                  )}
-                </td>
-                {isPRApproved && (
-                  <td className="py-4 px-4 text-right text-blue-800">
-                    {filteredItems.reduce(
-                      (sum, item) => sum + (parseFloat(item.approvedQty) || 0),
-                      0
-                    )}
-                  </td>
-                )}
-                {effectiveMode === 'admin' && (
-                  <>
-                    <td className="py-4 px-4 text-right">-</td>
-                    <td className="py-4 px-4 text-right text-blue-800">
-                      {filteredItems.reduce(
-                        (sum, item) => sum + (parseFloat(item.docAmt) || 0),
-                        0
-                      ).toFixed(2)}
-                    </td>
-                    <td className="py-4 px-4 text-right">-</td>
-                    <td className="py-4 px-4 text-right text-blue-800">
-                      {filteredItems.reduce(
-                        (sum, item) => sum + ((item.docQty * (parseFloat(item.itemCost) || 0)) || 0),
-                        0
-                      ).toFixed(2)}
-                    </td>
-                  </>
-                )}
-              </tr>
+            {currentItems.map((item, index) =>
+              renderLineItemRow(item, (currentPage - 1) * SCREEN_ITEMS_PER_PAGE + index + 1)
             )}
 
-            {/* Signature Section - Show on every page */}
-            {(documentType === 'grn' || documentType === 'gto') && (
-              <>
-                <tr className="border-t border-gray-300">
-                  <td colSpan={currentColumnConfig.headers.length} className="py-4 px-4">
-                    <div className="space-y-2 print-signature">
-                      <p className="font-semibold text-sm">Authorised Signature:</p>
-                      <p className="font-semibold text-sm">Sender:</p>
-                      <p className="font-semibold text-sm">Delivery Man:</p>
-                      <p className="font-semibold text-sm">Receiver:</p>
-                      <p className="font-semibold text-sm">Remarks:</p>
-                    </div>
-                  </td>
-                </tr>
-              </>
-            )}
+            {currentPage === totalPages && renderGrandTotalRow()}
+
+            {(documentType === "grn" || documentType === "gto") && renderSignatureRows()}
           </tbody>
         </table>
+        </div>
+
+        {/* Print / PDF / Word: PRINT_ITEMS_PER_PAGE lines per sheet; preview pager uses SCREEN_ITEMS_PER_PAGE; grand total + signature on last print sheet only */}
+        <div className="print-preview-full-table hidden print:block">
+          {printChunks.map((chunk, chunkIndex) => {
+            const isLastChunk = chunkIndex === printChunks.length - 1;
+            const rowOffset = chunkIndex * PRINT_ITEMS_PER_PAGE;
+            return (
+              <div
+                key={chunkIndex}
+                className={`print-doc-page mb-6 ${!isLastChunk ? "print-doc-page-break" : ""}`}
+              >
+                {chunkIndex === 0 && renderPrintDocumentHeader()}
+                <table className="w-full text-sm border-collapse mb-6 print-table">
+                  <thead>
+                    <tr className="border-y bg-gray-50">
+                      {currentColumnConfig.headers.map((header, index) => (
+                        <th
+                          key={index}
+                          className={`py-3 px-4 text-${currentColumnConfig.alignments[index] || "left"} font-semibold`}
+                        >
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chunk.map((item, i) => renderLineItemRow(item, rowOffset + i + 1))}
+                    {isLastChunk && renderGrandTotalRow()}
+                    {isLastChunk && renderSignatureRows()}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
 
         {/* Custom footer if provided */}
         {customFooter && (

@@ -238,7 +238,7 @@ function StockTake() {
                 </Select>
               </div>
 
-              <TabsList className="w-[40%] bg-gray-200 h-[38px]">
+              <TabsList className="flex-shrink-0 w-[25%] min-w-[200px] bg-gray-200 h-[38px]">
                 <TabsTrigger className="cursor-pointer" value="all">
                   All
                 </TabsTrigger>

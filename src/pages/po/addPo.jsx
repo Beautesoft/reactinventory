@@ -794,9 +794,10 @@ function AddPO() {
     try {
       const siteCode = userDetails?.siteCode;
       const res = await apiService1.get(`api/GetInvitems?Site=${siteCode}`);
+      const stockDetails = Array.isArray(res?.result) ? res.result : [];
       
-      if (res && res.length > 0) {
-        const items = res.map(item => ({
+      if (stockDetails.length > 0) {
+        const items = stockDetails.map(item => ({
           ...item,
           Qty: "",
           Price: item.costPrice || 0,
