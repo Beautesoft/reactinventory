@@ -51,6 +51,30 @@ const convertEmptyStringsToNull = (obj) => {
   return obj;
 };
 
+// Resolve approved qty; treats explicit 0 as valid (unlike || fallback)
+export const getApprovedQty = (item) => {
+  if (item.reqAppqty != null && item.reqAppqty !== "") {
+    return parseFloat(item.reqAppqty) || 0;
+  }
+  return parseFloat(item.reqdQty) || 0;
+};
+
+// DB/new lines often store 0 as "not set"; default to requested qty unless PR is already approved
+export const resolveReqAppqtyForLoad = (item, reqStatus) => {
+  const raw = item.reqAppqty;
+  const hasValue = raw != null && raw !== "";
+
+  if (reqStatus === "Approved") {
+    return hasValue ? raw : item.reqdQty;
+  }
+
+  if (!hasValue || Number(raw) === 0) {
+    return item.reqdQty;
+  }
+
+  return raw;
+};
+
 export const prApi = {
   // Fetch HQ batch breakdown for an item/uom
   async getHQItemBatches(itemCode, uom, hqSiteCode = null) {
@@ -445,7 +469,7 @@ export const prApi = {
       for (const item of lineItems) {
         if (item.reqId && item.reqId !== "") {
           await apiService.post(`reqdetails/update?[where][reqId]=${item.reqId}`, {
-            reqAppqty: item.reqAppqty || item.reqdQty, // Use approved qty or default to requested qty
+            reqAppqty: getApprovedQty(item),
             reqdQty: item.reqdQty // Keep original requested qty
           });
         }
@@ -492,7 +516,8 @@ export const prApi = {
       const effectiveHQ = hqSiteCode || userDetails?.HQSiteCode || "HQ";
       const validationErrors = [];
       for (const item of lineItems) {
-        const approvedQty = parseFloat(item.reqAppqty || item.reqdQty || 0);
+        const approvedQty = getApprovedQty(item);
+        if (approvedQty <= 0) continue;
         const uom = item.docUom;
         const batches = await this.getHQItemBatches(item.reqdItemcode, uom, effectiveHQ);
 
@@ -621,10 +646,19 @@ export const prApi = {
         throw new Error("Failed to generate GTI document number");
       }
 
+      const transferLineItems = lineItems.filter((item) => getApprovedQty(item) > 0);
+      if (transferLineItems.length === 0) {
+        return {
+          success: true,
+          docNo: null,
+          message: "Purchase Requisition approved with no items to transfer",
+        };
+      }
+
       // 2. Calculate totals
-      const totals = lineItems.reduce(
+      const totals = transferLineItems.reduce(
         (acc, item) => ({
-          totalQty: acc.totalQty + Number(item.reqAppqty || item.reqdQty || 0),
+          totalQty: acc.totalQty + getApprovedQty(item),
           totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
           totalDisc: acc.totalDisc + Number(item.reqdDiscamt || 0),
           totalAmt: acc.totalAmt + Number(item.reqdAmt || 0),
@@ -646,7 +680,7 @@ export const prApi = {
         tstoreNo: requestingSiteCode, // To store (requesting site)
         docRef1: prData.reqNo, // Link to PR
         docRef2: prData.reqRef || "",
-        docLines: lineItems.length,
+        docLines: transferLineItems.length,
         docDate: moment().format("YYYY-MM-DD"),
         postDate: "", // Empty for Open documents
         docStatus: "0", // Open status (not posted)
@@ -669,8 +703,8 @@ export const prApi = {
       };
 
       // 4. Create GTI line items (StkMovdocDtls)
-      const gtiDetails = lineItems.map((item, index) => {
-        const approvedQty = parseFloat(item.reqAppqty || item.reqdQty || 0);
+      const gtiDetails = transferLineItems.map((item, index) => {
+        const approvedQty = getApprovedQty(item);
         const focQty = parseFloat(item.reqdFocqty || 0);
         const totalQty = approvedQty + focQty;
         const price = parseFloat(parseFloat(item.reqdItemprice || item.reqdPrice || 0).toFixed(2));

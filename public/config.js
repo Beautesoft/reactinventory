@@ -9,9 +9,9 @@ window.APP_CONFIG = {
 
     // API_LOGIN_URL: "http://103.253.15.75:7040/Webinventoryapi_train/",
     // 
-    API_LOGIN_URL: "http://103.253.15.75:9613/Webinventoryapi_train/",
+    // API_LOGIN_URL: "http://103.253.15.75:9613/Webinventoryapi_train/",
     // API_LOGIN_URL: "http://103.253.15.75:9607/Webinventoryapi_ForReact/",
-    // API_LOGIN_URL: "https://mirageinventory.beautecloud.com/inventoryapi",
+    API_LOGIN_URL: "https://mirageinventory.beautecloud.com/inventoryapi",
 
 
     // API_LOGIN_URL_frontend : "https://mirageinventory.beautecloud.com/login",

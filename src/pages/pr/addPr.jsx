@@ -47,7 +47,7 @@ import { toast, Toaster } from "sonner";
 import moment from "moment-timezone";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
-import { prApi } from "@/services/prApi";
+import { prApi, getApprovedQty, resolveReqAppqtyForLoad } from "@/services/prApi";
 
 import {
   buildCountObject,
@@ -81,9 +81,8 @@ import ItemTable from "@/components/itemTable";
 const calculateTotals = (cartData) => {
   const result = cartData.reduce(
     (acc, item) => {
-      // Get approved quantity - use reqAppqty if set, otherwise use reqdQty as fallback
-      // This matches the display logic: item.reqAppqty || item.reqdQty
-      const approvedQty = parseFloat(item.reqAppqty || item.reqdQty || 0);
+      // Get approved quantity - use reqAppqty if explicitly set (including 0), otherwise reqdQty
+      const approvedQty = getApprovedQty(item);
       
       // Track if any item has explicit reqAppqty set (not just using reqdQty fallback)
       const hasExplicitApprovedQty = item.reqAppqty != null && item.reqAppqty !== "";
@@ -1106,6 +1105,9 @@ function AddPR() {
   
   // Ref to track if we're loading PR data to prevent double supplier reload
   const isLoadingPRDataRef = useRef(false);
+  const approvedQtyEditedRef = useRef(new Set());
+
+  const getApprovedQtyLineKey = (item, index) => item.reqId || `idx-${index}`;
 
   // Load data on component mount
   useEffect(() => {
@@ -1122,6 +1124,21 @@ function AddPR() {
     const isPostedStatus = formData.reqStatus === 'Posted';
     setApprovalMode(isHQUser && (isPostedStatus || approvalParam));
   }, [formData.reqStatus, userDetails, approvalParam]);
+
+  // Default unset approved qty to requested qty when entering approval (preserve user-edited values including 0)
+  useEffect(() => {
+    if (!approvalMode || formData.reqStatus !== "Posted") return;
+
+    setCartData((prev) =>
+      prev.map((item, index) => {
+        const key = getApprovedQtyLineKey(item, index);
+        if (approvedQtyEditedRef.current.has(key)) return item;
+        const resolved = resolveReqAppqtyForLoad(item, "Posted");
+        if (item.reqAppqty === resolved) return item;
+        return { ...item, reqAppqty: resolved };
+      })
+    );
+  }, [approvalMode, formData.reqStatus]);
 
   // Reload suppliers when approval mode changes (for HQ users)
   // But skip if we're currently loading PR data (will be loaded after data is set)
@@ -1203,6 +1220,7 @@ function AddPR() {
   const loadPRData = async () => {
     setPageLoading(true);
     isLoadingPRDataRef.current = true; // Set flag to prevent double supplier reload
+    approvedQtyEditedRef.current.clear();
     try {
       const [pr, items] = await Promise.all([
         prApi.getPR(id),
@@ -1270,12 +1288,9 @@ function AddPR() {
       }
 
       if (items) {
-        // Initialize reqAppqty if not set (for approval mode)
         const itemsWithApprovedQty = items.map(item => ({
           ...item,
-          reqAppqty: item.reqAppqty !== undefined && item.reqAppqty !== null 
-            ? item.reqAppqty 
-            : item.reqdQty // Default to requested quantity if not set
+          reqAppqty: resolveReqAppqtyForLoad(item, pr?.reqStatus),
         }));
         setCartData(itemsWithApprovedQty);
       }
@@ -2063,7 +2078,7 @@ function AddPR() {
       reqdItemdesc: item.stockName,
       reqdItemprice: parseFloat(price.toFixed(2)), // Format to 2 decimal places as number
       reqdQty: qty,
-      reqAppqty: 0,
+      reqAppqty: null,
       reqdFocqty: 0,
       reqdTtlqty: qty,
       reqdPrice: parseFloat(price.toFixed(2)), // Format to 2 decimal places as number
@@ -2342,7 +2357,7 @@ function AddPR() {
       // 1. Validate approved quantities
       const validationErrors = [];
       cartData.forEach((item, index) => {
-        const approvedQty = parseFloat(item.reqAppqty || item.reqdQty);
+        const approvedQty = getApprovedQty(item);
         const requestedQty = parseFloat(item.reqdQty);
         
         if (approvedQty > requestedQty) {
@@ -2351,12 +2366,9 @@ function AddPR() {
         if (approvedQty < 0) {
           validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity cannot be negative`);
         }
-        if (approvedQty === 0) {
-          validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity must be greater than 0`);
-        }
 
         // Validate batch selection matches approved quantity for specific batch mode
-        if (getConfigValue('BATCH_NO') === "Yes") {
+        if (getConfigValue('BATCH_NO') === "Yes" && approvedQty > 0) {
           const isSpecificBatch = (item.itemRemark1 || item.ordMemo1)?.startsWith("specific");
           
           if (isSpecificBatch) {
@@ -2502,8 +2514,10 @@ function AddPR() {
   // Handle approved quantity change
   const handleApprovedQtyChange = (index, value) => {
     const newCartData = [...cartData];
-    const newApprovedQty = parseFloat(value) || 0;
+    const parsed = parseFloat(value);
+    const newApprovedQty = Number.isNaN(parsed) ? 0 : parsed;
     newCartData[index].reqAppqty = newApprovedQty;
+    approvedQtyEditedRef.current.add(getApprovedQtyLineKey(newCartData[index], index));
     
     // Warn if batch selection doesn't match new approved quantity
     if (getConfigValue('BATCH_NO') === "Yes" && newApprovedQty > 0) {
@@ -2607,7 +2621,7 @@ function AddPR() {
   const handleEditBatchSelection = async (index, cartItem) => {
     // Use approved quantity if in approval mode, otherwise use requested quantity
     const qty = approvalMode 
-      ? parseFloat(cartItem.reqAppqty || cartItem.reqdQty || 0)
+      ? getApprovedQty(cartItem)
       : parseFloat(cartItem.reqdQty || 0);
     
     if (qty <= 0) {
@@ -3353,14 +3367,14 @@ function AddPR() {
                     <TableCell>{item.docUom}</TableCell>
                       <TableCell>{parseFloat(item.reqdQty || 0)}</TableCell>
                       {!isHQUser && (isViewOnlyStatus || formData.reqStatus === "Rejected") && (
-                        <TableCell>{parseFloat(item.reqAppqty || item.reqdQty || 0)}</TableCell>
+                        <TableCell>{getApprovedQty(item)}</TableCell>
                       )}
                       <TableCell>{parseFloat(item.reqdFocqty || 0)}</TableCell>
                     {approvalMode && (
                       <TableCell>
                         <Input
                           type="number"
-                          value={parseFloat(item.reqAppqty || item.reqdQty || 0).toString()}
+                          value={getApprovedQty(item).toString()}
                           onChange={(e) => handleApprovedQtyChange(index, e.target.value)}
                           min="0"
                           max={item.reqdQty}
@@ -3547,12 +3561,16 @@ function AddPR() {
                     <strong>Items to Transfer:</strong>
                   </p>
                   <ul className="text-xs text-yellow-700 list-disc list-inside mt-1 space-y-1">
-                    {cartData.map((item, idx) => (
-                      <li key={idx}>
-                        {item.reqdItemcode}: {item.reqAppqty || item.reqdQty} {item.docUom}
-                        {(item.itemRemark1 || item.ordMemo1)?.startsWith("specific") && " (Specific Batches)"}
-                      </li>
-                    ))}
+                    {cartData.filter((item) => getApprovedQty(item) > 0).length === 0 ? (
+                      <li>No items with approved quantity greater than 0</li>
+                    ) : (
+                      cartData.filter((item) => getApprovedQty(item) > 0).map((item, idx) => (
+                        <li key={idx}>
+                          {item.reqdItemcode}: {getApprovedQty(item)} {item.docUom}
+                          {(item.itemRemark1 || item.ordMemo1)?.startsWith("specific") && " (Specific Batches)"}
+                        </li>
+                      ))
+                    )}
                   </ul>
                 </div>
               </>
