@@ -44,6 +44,19 @@ import {
   queryParamsGenerate,
   getConfigValue,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  coerceStockListFieldValue,
+  calcDocAmtFromQtyPrice,
+  parseQtyNumber,
+  isEmptyOrInvalidQty,
+  getStockLineKey,
+  matchesStockLine,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -83,7 +96,8 @@ const BatchSelectionDialog = memo(({
   scenarioMessage,
   onBatchSelectionSubmit,
   itemcode,
-  itemdesc
+  itemdesc,
+  allowDecimalQty = false,
 }) => {
   const [selectedBatches, setSelectedBatches] = useState([]);
   const [batchQuantities, setBatchQuantities] = useState({});
@@ -263,8 +277,8 @@ const BatchSelectionDialog = memo(({
                           <td className="p-2 text-center">
                             {batch.batchNo === "" ? (
                               noBatchSelected ? (
-                                <Input
-                                  type="number"
+                                <QtyInput
+                                  item={{ allowDecimalQty }}
                                   min="0"
                                   max={Math.min(batch.availableQty, remainingQty + noBatchQuantity)}
                                   value={noBatchQuantity}
@@ -276,8 +290,8 @@ const BatchSelectionDialog = memo(({
                               )
                             ) : (
                               isSelected ? (
-                                <Input
-                                  type="number"
+                                <QtyInput
+                                  item={{ allowDecimalQty }}
                                   min="0"
                                   max={maxSelectableQty}
                                   value={selectedQty}
@@ -408,6 +422,12 @@ const EditDialog = memo(
         if (!editData?.docQty || editData.docQty <= 0) {
           errors.push("Quantity must be greater than 0");
         }
+        if (
+          editData?.docQty &&
+          !isValidQtyForItem(editData.docQty, editData)
+        ) {
+          errors.push(qtyValidationMessageForItem(editData));
+        }
         
         // Only validate price if price viewing is enabled
         if (userDetails?.isSettingViewPrice === "True" && (!editData?.docPrice || editData.docPrice <= 0)) {
@@ -458,9 +478,9 @@ const EditDialog = memo(
             <>
               <div className="space-y-2">
                 <Label htmlFor="qty">Quantity</Label>
-                <Input
+                <QtyInput
                   id="qty"
-                  type="number"
+                  item={editData}
                   min="0"
                   value={editData?.docQty || ""}
                   onChange={(e) => onEditCart(e, "docQty")}
@@ -1054,19 +1074,20 @@ function AddSum({ docData }) {
       // apiService1.get(`api/GetInvitems/count${countQuery}`),
       // apiService.get(`GetInvItems${query}`),
 
-      .then((res) => {
+      .then(async (res) => {
         const stockDetails = Array.isArray(res?.result) ? res.result : [];
         const count = stockDetails.length;
         setLoading(false);
-        const updatedRes = stockDetails.map((item) => ({
+        const baseRes = stockDetails.map((item) => ({
           ...item,
-          Qty: 0,
+          Qty: "",
           expiryDate: null,
           // Price: Number(item?.item_Price),
           // Price: item?.Price,
 
           docAmt: null,
         }));
+        const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
         console.log(updatedRes, "updatedRes");
         console.log(count, "count");
 
@@ -1174,8 +1195,9 @@ function AddSum({ docData }) {
       const response = await apiService.get(
         `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
       );
-      setCartItems(response);
-      setCartData(response);
+      const enrichedItems = await enrichStockItemsWithDecimalFlag(response);
+      setCartItems(enrichedItems);
+      setCartData(enrichedItems);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
@@ -1286,9 +1308,11 @@ function AddSum({ docData }) {
         i === index
           ? {
               ...item,
-              [field]: field === "expiryDate" ? value : Number(value),
+              [field]: coerceStockListFieldValue(field, value),
               docAmt:
-                field === "Qty" ? value * item.Price : item.Qty * item.Price,
+                field === "Qty"
+                  ? calcDocAmtFromQtyPrice(value, item.Price)
+                  : calcDocAmtFromQtyPrice(item.Qty, value),
             }
           : item
       )
@@ -1394,6 +1418,10 @@ function AddSum({ docData }) {
         toast.error("Quantity is required");
         return;
       }
+
+      if (!validateQtyForItemOrToast(updatedEditData.docQty, updatedEditData, { toast })) {
+        return;
+      }
       
       // Only validate price if price viewing is enabled
       if (userDetails?.isSettingViewPrice === "True" && !updatedEditData.docPrice) {
@@ -1453,7 +1481,7 @@ function AddSum({ docData }) {
       prev.map((stockItem, i) =>
         i === index ? { 
           ...stockItem, 
-          Qty: 0,
+          Qty: "",
           selectedBatches: null // Clear batch selection when added to cart
         } : stockItem
       )
@@ -1473,13 +1501,13 @@ function AddSum({ docData }) {
     }
 
     // Always check if quantity is entered and valid
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity first");
       return;
     }
 
     // Set loading state for this specific item
-    setItemBatchLoading((prev) => ({ ...prev, [item.stockCode]: true }));
+    setItemBatchLoading((prev) => ({ ...prev, [getStockLineKey(item)]: true }));
     try {
       // Fetch ItemBatches for this item from the current store
       const filter = {
@@ -1559,7 +1587,7 @@ function AddSum({ docData }) {
         (sum, b) => sum + b.availableQty,
         0
       );
-      const usageQty = Number(item.Qty);
+      const usageQty = parseQtyNumber(item.Qty);
 
       // Generate scenario message
       let scenarioMessage = "";
@@ -1583,7 +1611,7 @@ function AddSum({ docData }) {
       toast.error("Failed to fetch batch information");
     } finally {
       // Clear loading state for this specific item
-      setItemBatchLoading((prev) => ({ ...prev, [item.stockCode]: false }));
+      setItemBatchLoading((prev) => ({ ...prev, [getStockLineKey(item)]: false }));
     }
   };
 
@@ -1616,7 +1644,7 @@ function AddSum({ docData }) {
       // Update the stock item to show that specific batches are selected
       setStockList((prev) =>
         prev.map((stockItem) =>
-          stockItem.stockCode === currentBatchItem.stockCode
+          matchesStockLine(stockItem, currentBatchItem)
             ? {
                 ...stockItem,
                 selectedBatches: {
@@ -1638,7 +1666,7 @@ function AddSum({ docData }) {
       // Only No Batch selected
       setStockList((prev) =>
         prev.map((stockItem) =>
-          stockItem.stockCode === currentBatchItem.stockCode
+          matchesStockLine(stockItem, currentBatchItem)
             ? {
                 ...stockItem,
                 selectedBatches: {
@@ -1662,13 +1690,13 @@ function AddSum({ docData }) {
     setCurrentBatchItem(null);
   };
 
-  const handleRemoveBatchSelection = (index, item) => {
+  const handleRemoveBatchSelection = (_index, item) => {
     setStockList((prev) =>
-      prev.map((stockItem, i) =>
-        i === index
+      prev.map((stockItem) =>
+        matchesStockLine(stockItem, item)
           ? {
               ...stockItem,
-              selectedBatches: null, // Remove batch selection
+              selectedBatches: null,
             }
           : stockItem
       )
@@ -1689,12 +1717,16 @@ function AddSum({ docData }) {
 
   const addToCart = (index, item) => {
     console.log(item, "item");
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity");
       return;
     }
 
-    const amount = Number(item.Qty) * Number(item.Price);
+    if (!validateQtyForItemOrToast(item.Qty, item, { toast })) {
+      return;
+    }
+
+    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
 
     const hasSpecificBatches = item.selectedBatches && item.selectedBatches.transferType === 'specific';
 
@@ -1724,9 +1756,9 @@ function AddSum({ docData }) {
       docLineno: null,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
-      docQty: Number(item.Qty),
+      docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
-      docTtlqty: Number(item.Qty),
+      docTtlqty: parseQtyNumber(item.Qty),
       docPrice: Number(item.Price),
       docPdisc: 0,
       docDisc: 0,
@@ -1735,6 +1767,7 @@ function AddSum({ docData }) {
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.uom,
+      allowDecimalQty: item.allowDecimalQty ?? false,
       docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.expiryDate || "") : "",
       itmBrand: item.BrandCode,
       itmRange: item.RangeCode,
@@ -2989,6 +3022,7 @@ function AddSum({ docData }) {
         onBatchSelectionSubmit={handleBatchSelectionSubmit}
         itemcode={currentBatchItem?.stockCode}
         itemdesc={currentBatchItem?.stockName}
+        allowDecimalQty={currentBatchItem?.allowDecimalQty ?? false}
       />
       {/* Usage Preview Modal */}
       {previewItem && (

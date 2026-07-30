@@ -57,6 +57,19 @@ import {
   normalizeExpDate,
   normalizeExpDateToISO,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  coerceStockListFieldValue,
+  calcDocAmtFromQtyPrice,
+  parseQtyNumber,
+  isEmptyOrInvalidQty,
+  getStockLineKey,
+  matchesStockLine,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -116,6 +129,12 @@ const EditDialog = memo(
       if (!isBatchEdit) {
         if (!editData?.docQty || editData.docQty <= 0) {
           errors.push("Quantity must be greater than 0");
+        }
+        if (
+          editData?.docQty &&
+          !isValidQtyForItem(editData.docQty, editData)
+        ) {
+          errors.push(qtyValidationMessageForItem(editData));
         }
 
         // Check if quantity exceeds available stock for transfers
@@ -177,9 +196,9 @@ const EditDialog = memo(
             <>
               <div className="space-y-2">
                 <Label htmlFor="qty">Quantity</Label>
-                <Input
+                <QtyInput
                   id="qty"
-                  type="number"
+                  item={editData}
                   min="0"
                   value={editData?.docQty || ""}
                   onChange={(e) => onEditCart(e, "docQty")}
@@ -267,6 +286,7 @@ const BatchSelectionDialog = memo(
     onBatchSelectionSubmit,
     itemcode,
     itemdesc,
+    allowDecimalQty = false,
   }) => {
     const [selectedBatches, setSelectedBatches] = useState([]);
     const [batchQuantities, setBatchQuantities] = useState({});
@@ -511,8 +531,8 @@ const BatchSelectionDialog = memo(
                             <td className="p-2 text-center">
                               {batch.batchNo === "" ? (
                                 noBatchSelected ? (
-                                  <Input
-                                    type="number"
+                                  <QtyInput
+                                    item={{ allowDecimalQty }}
                                     min="0"
                                     max={Math.min(
                                       batch.availableQty,
@@ -530,8 +550,8 @@ const BatchSelectionDialog = memo(
                                   <span className="text-gray-400">-</span>
                                 )
                               ) : isSelected ? (
-                                <Input
-                                  type="number"
+                                <QtyInput
+                                  item={{ allowDecimalQty }}
                                   min="0"
                                   max={maxSelectableQty}
                                   value={selectedQty}
@@ -985,12 +1005,14 @@ function AddGto({ docData }) {
       const stockDetails = Array.isArray(res?.result) ? res.result : [];
       const count = stockDetails.length;
 
-      const updatedRes = stockDetails.map((item) => ({
+      const baseRes = stockDetails.map((item) => ({
         ...item,
-        Qty: 0,
+        Qty: "",
         expiryDate: null,
         docAmt: null,
       }));
+
+      const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
 
       setStockList(updatedRes);
       setOriginalStockList(updatedRes);
@@ -1237,8 +1259,10 @@ function AddGto({ docData }) {
         })
       );
 
-      setCartItems(reconstructedItems);
-      setCartData(reconstructedItems);
+      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+
+      setCartItems(enrichedItems);
+      setCartData(enrichedItems);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
     }
@@ -1349,9 +1373,11 @@ function AddGto({ docData }) {
         i === index
           ? {
               ...item,
-              [field]: field === "expiryDate" ? value : Number(value),
+              [field]: coerceStockListFieldValue(field, value),
               docAmt:
-                field === "Qty" ? value * item.Price : item.Qty * item.Price,
+                field === "Qty"
+                  ? calcDocAmtFromQtyPrice(value, item.Price)
+                  : calcDocAmtFromQtyPrice(item.Qty, value),
             }
           : item
       )
@@ -1598,6 +1624,10 @@ function AddGto({ docData }) {
       return;
     }
 
+    if (!validateQtyForItemOrToast(editData.docQty, editData, { toast })) {
+      return;
+    }
+
     // Only validate price if price viewing is enabled
     if (userDetails?.isSettingViewPrice === "True" && !editData.docPrice) {
       toast.error("Price is required");
@@ -1716,7 +1746,7 @@ function AddGto({ docData }) {
       prev.map((stockItem, i) =>
         i === index ? { 
           ...stockItem, 
-          Qty: 0,
+          Qty: "",
           selectedBatches: null // Clear batch selection when added to cart
         } : stockItem
       )
@@ -1758,20 +1788,24 @@ function AddGto({ docData }) {
     }
 
     // Always check if quantity is entered and valid
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity");
       return;
     }
 
+    if (!validateQtyForItemOrToast(item.Qty, item, { toast })) {
+      return;
+    }
+
     // Check if quantity exceeds on-hand quantity
-    if (Number(item.Qty) > Number(item.quantity)) {
+    if (parseQtyNumber(item.Qty) > Number(item.quantity)) {
       toast.error("Not enough stock available");
       return;
     }
     console.log(item, "item in add to cart");
 
     // Create cart item based on whether specific batches are selected
-    const amount = Number(item.Qty) * Number(item.Price);
+    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
     const hasSpecificBatches =
       item.selectedBatches && item.selectedBatches.transferType === "specific";
 
@@ -1832,19 +1866,20 @@ function AddGto({ docData }) {
       createDate: stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
-      docQty: Number(item.Qty),
+      docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
-      docTtlqty: Number(item.Qty) + 0, // Will be updated when FOC is added
+      docTtlqty: parseQtyNumber(item.Qty) + 0, // Will be updated when FOC is added
       docPrice: Number(item.Price),
       docPdisc: 0,
       docDisc: 0,
       // Store batch quantities in recQty fields
       ...recQtyFields,
-      recTtl: Number(item.Qty),
+      recTtl: parseQtyNumber(item.Qty),
       postedQty: 0,
       cancelQty: 0,
       createUser: userDetails?.username || "SYSTEM",
       docUom: item.uom,
+      allowDecimalQty: item.allowDecimalQty ?? false,
       // Store batch info in database fields
       docExpdate: docExpdate,
       docBatchNo: docBatchNo,
@@ -2420,7 +2455,6 @@ function AddGto({ docData }) {
         docAmt: calculateTotals(details).totalAmt,
         docAttn: supplierInfo.Attn,
         docRemk1: hdr.docRemk1,
-        staffNo: userDetails.usercode,
         bname: supplierInfo.Attn,
         baddr1: supplierInfo.line1,
         baddr2: supplierInfo.line2,
@@ -3645,13 +3679,13 @@ function AddGto({ docData }) {
     }
 
     // Always check if quantity is entered and valid
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity first");
       return;
     }
 
     // Set loading state for this specific item
-    setItemBatchLoading((prev) => ({ ...prev, [item.stockCode]: true }));
+    setItemBatchLoading((prev) => ({ ...prev, [getStockLineKey(item)]: true }));
     try {
       // Fetch ItemBatches for this item from the current store (source)
       const filter = {
@@ -3734,7 +3768,7 @@ function AddGto({ docData }) {
         (sum, b) => sum + b.availableQty,
         0
       );
-      const transferQty = Number(item.Qty);
+      const transferQty = parseQtyNumber(item.Qty);
 
       // Generate scenario message
       let scenarioMessage = "";
@@ -3762,7 +3796,7 @@ function AddGto({ docData }) {
       toast.error("Failed to fetch batch information");
     } finally {
       // Clear loading state for this specific item
-      setItemBatchLoading((prev) => ({ ...prev, [item.stockCode]: false }));
+      setItemBatchLoading((prev) => ({ ...prev, [getStockLineKey(item)]: false }));
     }
   };
 
@@ -3797,7 +3831,7 @@ function AddGto({ docData }) {
       // Update the stock item to show that specific batches are selected
       setStockList((prev) =>
         prev.map((stockItem) =>
-          stockItem.stockCode === editData.stockCode
+          matchesStockLine(stockItem, editData)
             ? {
                 ...stockItem,
                 selectedBatches: {
@@ -3837,7 +3871,7 @@ function AddGto({ docData }) {
       // Update the stock item to show that specific batches are selected
       setStockList((prev) =>
         prev.map((stockItem) =>
-          stockItem.stockCode === editData.stockCode
+          matchesStockLine(stockItem, editData)
             ? {
                 ...stockItem,
                 selectedBatches: {
@@ -3875,13 +3909,13 @@ function AddGto({ docData }) {
   };
 
   // NEW: Handle removing batch selection
-  const handleRemoveBatchSelection = (index, item) => {
+  const handleRemoveBatchSelection = (_index, item) => {
     setStockList((prev) =>
-      prev.map((stockItem, i) =>
-        i === index
+      prev.map((stockItem) =>
+        matchesStockLine(stockItem, item)
           ? {
               ...stockItem,
-              selectedBatches: null, // Remove batch selection
+              selectedBatches: null,
             }
           : stockItem
       )
@@ -6223,6 +6257,7 @@ function AddGto({ docData }) {
         onBatchSelectionSubmit={handleBatchSelectionSubmit}
         itemcode={editData?.itemcode}
         itemdesc={editData?.itemdesc}
+        allowDecimalQty={editData?.allowDecimalQty ?? false}
       />
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>

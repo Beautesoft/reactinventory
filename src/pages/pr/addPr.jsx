@@ -58,6 +58,15 @@ import {
   queryParamsGenerate,
   getConfigValue,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  isEmptyOrInvalidQty,
+  parseQtyNumber,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -137,6 +146,7 @@ const BatchSelectionDialog = memo(
     itemcode,
     itemdesc,
     isCartItem = false,
+    allowDecimalQty = false,
   }) => {
     const [selectedBatches, setSelectedBatches] = useState([]);
     const [batchQuantities, setBatchQuantities] = useState({});
@@ -386,8 +396,8 @@ const BatchSelectionDialog = memo(
                             <td className="p-2 text-center">
                               {batch.batchNo === "" ? (
                                 noBatchSelected ? (
-                                  <Input
-                                    type="number"
+                                  <QtyInput
+                                    item={{ allowDecimalQty }}
                                     min="0"
                                     max={Math.min(
                                       batch.availableQty,
@@ -405,8 +415,8 @@ const BatchSelectionDialog = memo(
                                   <span className="text-gray-400">-</span>
                                 )
                               ) : isSelected ? (
-                                <Input
-                                  type="number"
+                                <QtyInput
+                                  item={{ allowDecimalQty }}
                                   min="0"
                                   max={maxSelectableQty}
                                   value={selectedQty}
@@ -653,6 +663,12 @@ const EditDialog = memo(
       if (!editData.reqdQty || editData.reqdQty <= 0) {
         errors.push("Quantity must be greater than 0");
       }
+      if (
+        editData.reqdQty &&
+        !isValidQtyForItem(editData.reqdQty, editData)
+      ) {
+        errors.push(qtyValidationMessageForItem(editData));
+      }
 
       // Validate price if user has permission
       if (userDetails?.isSettingViewPrice === "True") {
@@ -733,13 +749,12 @@ const EditDialog = memo(
               </div>
               <div className="space-y-2">
                 <Label htmlFor="qty">Requested Quantity</Label>
-                <Input
+                <QtyInput
                   id="qty"
-                  type="number"
+                  item={editData}
                   value={editData?.reqdQty || ""}
                   onChange={(e) => onEditCart(e, "reqdQty")}
                   min="0"
-                  step="0.01"
                   disabled={(urlStatus == 7 && !isBatchEdit && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True") || (urlStatus == 7 && isBatchEdit && !approvalMode)}
                 />
               </div>
@@ -759,13 +774,12 @@ const EditDialog = memo(
               )}
               <div className="space-y-2">
                 <Label htmlFor="focqty">FOC Quantity</Label>
-                <Input
+                <QtyInput
                   id="focqty"
-                  type="number"
+                  item={editData}
                   value={editData?.reqdFocqty || ""}
                   onChange={(e) => onEditCart(e, "reqdFocqty")}
                   min="0"
-                  step="0.01"
                   disabled={urlStatus == 7 && !approvalMode && userDetails?.isSettingPostedChangePrice !== "True"}
                 />
               </div>
@@ -1292,7 +1306,8 @@ function AddPR() {
           ...item,
           reqAppqty: resolveReqAppqtyForLoad(item, pr?.reqStatus),
         }));
-        setCartData(itemsWithApprovedQty);
+        const enrichedItems = await enrichStockItemsWithDecimalFlag(itemsWithApprovedQty);
+        setCartData(enrichedItems);
       }
 
       isLoadingPRDataRef.current = false; // Reset flag after everything is loaded
@@ -1345,9 +1360,9 @@ function AddPR() {
       console.log("Sample item from API:", stockDetails[0]);
       console.log("Total items:", count);
       
-      const updatedRes = stockDetails.map((item) => ({
+      const baseRes = stockDetails.map((item) => ({
         ...item,
-        Qty: 0,
+        Qty: "",
         expiryDate: null,
         Price: Number(item?.Price) || Number(item?.Cost) || 0,
         docAmt: null,
@@ -1362,6 +1377,8 @@ function AddPR() {
         docUom: item.uom,
         isActive: item.isActive || "True"
       }));
+
+      const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
 
       console.log("Updated items with Price field:", updatedRes[0]);
 
@@ -1574,7 +1591,7 @@ function AddPR() {
     }
     
     // Always check if quantity is entered and valid
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity first");
       return;
     }
@@ -1660,7 +1677,7 @@ function AddPR() {
         (sum, b) => sum + b.availableQty,
         0
       );
-      const transferQty = Number(item.Qty);
+      const transferQty = parseQtyNumber(item.Qty);
 
       // Generate scenario message
       let scenarioMessage = "";
@@ -1958,8 +1975,12 @@ function AddPR() {
   // Add to cart
   const addToCart = (index, item) => {
     // Always check if quantity is entered and valid
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity");
+      return;
+    }
+
+    if (!validateQtyForItemOrToast(item.Qty, item, { toast })) {
       return;
     }
 
@@ -2101,6 +2122,7 @@ function AddPR() {
       reqId: "", // Will be set when saving
       RunningNo: "", // Will be set when saving
       docUom: item.docUom,
+      allowDecimalQty: item.allowDecimalQty ?? false,
       docBatchNo: docBatchNoStorage || "",        // ✅ B01,B02
       docExpdate: docExpdateStorage || "",        // ✅ 2025-08-12:4,2025-09-15:6 (YYYY-MM-DD format)
       ordMemo4: ordMemo4Storage || "",            // ✅ 2027-10-31T00:00:00.000Z:2,2027-11-30T00:00:00.000Z:1 (ISO format like GTO)
@@ -2192,6 +2214,16 @@ function AddPR() {
   // Submit edit
   const handleEditSubmit = () => {
     if (editData.editingIndex !== null) {
+      if (!validateQtyForItemOrToast(editData.reqdQty, editData, { toast })) {
+        return;
+      }
+      if (
+        editData.reqdFocqty &&
+        !validateQtyForItemOrToast(editData.reqdFocqty, editData, { toast })
+      ) {
+        return;
+      }
+
       const newCartData = [...cartData];
       
       // Ensure all amount fields are formatted to exactly 2 decimal places before saving
@@ -2513,6 +2545,12 @@ function AddPR() {
 
   // Handle approved quantity change
   const handleApprovedQtyChange = (index, value) => {
+    const lineItem = cartData[index];
+    if (value !== "" && !isValidQtyForItem(value, lineItem)) {
+      toast.error(qtyValidationMessageForItem(lineItem));
+      return;
+    }
+
     const newCartData = [...cartData];
     const parsed = parseFloat(value);
     const newApprovedQty = Number.isNaN(parsed) ? 0 : parsed;
@@ -3372,13 +3410,12 @@ function AddPR() {
                       <TableCell>{parseFloat(item.reqdFocqty || 0)}</TableCell>
                     {approvalMode && (
                       <TableCell>
-                        <Input
-                          type="number"
+                        <QtyInput
+                          item={item}
                           value={getApprovedQty(item).toString()}
                           onChange={(e) => handleApprovedQtyChange(index, e.target.value)}
                           min="0"
                           max={item.reqdQty}
-                          step="1"
                           className="w-20"
                         />
                       </TableCell>
@@ -3668,6 +3705,7 @@ function AddPR() {
         itemcode={batchDialogData?.item?.stockCode || ""}
         itemdesc={batchDialogData?.item?.stockName || ""}
         isCartItem={batchDialogData?.isCartItem || false}
+        allowDecimalQty={batchDialogData?.item?.allowDecimalQty ?? false}
       />
 
       {/* Transfer Preview Modal */}

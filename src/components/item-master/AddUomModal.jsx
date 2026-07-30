@@ -134,22 +134,18 @@ export function AddUomModal({ open, onOpenChange, onSuccess, existingUoms = [] }
 
             <div className="col-span-1">
               <Label className="mb-2 block">UOM Description</Label>
-              {existingUoms.length === 0 ? (
-                 <Select value={uomDesc} onValueChange={setUomDesc}>
-                 <SelectTrigger>
-                   <SelectValue placeholder="Select" />
-                 </SelectTrigger>
-                 <SelectContent>
-                   {uomOptions.map((opt) => (
-                     <SelectItem key={`uom-${opt.value}`} value={opt.value}>
-                       {opt.label}
-                     </SelectItem>
-                   ))}
-                 </SelectContent>
-               </Select>
-              ) : (
-                <Input value={uomDesc} disabled className="bg-gray-100" />
-              )}
+              <Select value={uomDesc} onValueChange={setUomDesc}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uomOptions.map((opt) => (
+                    <SelectItem key={`uom-${opt.value}`} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>

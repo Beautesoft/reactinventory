@@ -96,6 +96,7 @@ export function AppSidebar() {
     const reportItems = [
       { title: "Stock Balance Report", url: "/stock-balance", icon: FiBarChart2 },
       { title: "Stock Movement Report", url: "/stock-movement", icon: FiTrendingUp },
+      { title: "Replenishment Report", url: "/replenishment-report", icon: FiLayers },
     ].filter(item => hasAuthorization(item.title));
 
     // If no authorizations found, show all menu items (fallback)
@@ -114,6 +115,7 @@ export function AppSidebar() {
       const fallbackReportItems = [
         { title: "Stock Balance Report", url: "/stock-balance", icon: FiBarChart2 },
         { title: "Stock Movement Report", url: "/stock-movement", icon: FiTrendingUp },
+        { title: "Replenishment Report", url: "/replenishment-report", icon: FiLayers },
       ];
       return [
         { title: "Dashboard", url: "/dashboard", icon: SquareTerminal, isActive: true },

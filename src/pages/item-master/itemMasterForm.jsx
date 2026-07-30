@@ -25,7 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, ChevronDown, ChevronUp, History, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, History, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import itemMasterApi from "@/services/itemMasterApi";
 import { AddDeptModal } from "@/components/item-master/AddDeptModal";
@@ -34,6 +34,29 @@ import { AddClassModal } from "@/components/item-master/AddClassModal";
 import { AddRangeModal } from "@/components/item-master/AddRangeModal";
 import { AddUomModal } from "@/components/item-master/AddUomModal";
 import { CostHistoryTimelineModal } from "@/components/item-master/CostHistoryTimelineModal";
+import { PackageSection } from "@/components/item-master/PackageSection";
+import { ServiceOptionSection } from "@/components/item-master/ServiceOptionSection";
+import { ItemContentSection } from "@/components/item-master/ItemContentSection";
+import { AddLinkModal } from "@/components/item-master/AddLinkModal";
+import { EditLinkModal } from "@/components/item-master/EditLinkModal";
+import { VoucherActivationSection } from "@/components/item-master/VoucherActivationSection";
+import { FieldWithAction } from "@/components/item-master/FieldWithAction";
+import {
+  filterStockTypesByDivision,
+  isValidStockTypeForDivision,
+} from "@/utils/itemMaster/stockTypeFilters";
+import { getUsageServiceCode } from "@/utils/itemMaster/itemCodeHelpers";
+import { recalcPackageTotals } from "@/utils/itemMaster/packagePricing";
+import {
+  buildStockPayload,
+  resolveLookupIds,
+  saveFlexiServices,
+  saveItemContents,
+  savePackageData,
+  savePrepaidConditionsDiff,
+  saveUsageLevelsDiff,
+  saveVoucherCondition,
+} from "@/utils/itemMaster/itemMasterSave";
 import {
   Tooltip,
   TooltipContent,
@@ -61,7 +84,7 @@ function ItemMasterForm() {
   const [brandOptions, setBrandOptions] = useState([]);
   const [classOptions, setClassOptions] = useState([]);
   const [rangeOptions, setRangeOptions] = useState([]);
-  const [typeOptions, setTypeOptions] = useState([]);
+  const [allItemTypes, setAllItemTypes] = useState([]);
   const [uomOptions, setUomOptions] = useState([]);
   const [siteOptions, setSiteOptions] = useState([]);
   const [linkOptions, setLinkOptions] = useState([]);
@@ -133,16 +156,56 @@ function ItemMasterForm() {
   const [sectionOpen, setSectionOpen] = useState({
     general: true,
     commission: false,
+    package: false,
     uom: true,
     stkBalance: false,
     linkCode: false,
     stockListing: true,
     itemUsage: false,
+    serviceOption: false,
+    itemContent: false,
     voucher: false,
+    voucherActivation: false,
     prepaid: false,
     accountCode: false,
     taxCode: false,
   });
+
+  const [packageItems, setPackageItems] = useState([]);
+  const [packageItemsLoading, setPackageItemsLoading] = useState(false);
+  const [packageContent, setPackageContent] = useState([]);
+  const [originalPackageDtlIds, setOriginalPackageDtlIds] = useState([]);
+  const [packageHdr, setPackageHdr] = useState({
+    fromDate: new Date().toISOString().slice(0, 10),
+    toDate: new Date().toISOString().slice(0, 10),
+    fromTime: "",
+    toTime: "",
+    apptTdt: false,
+    apptLimit: "",
+    discMethod: "Evenly Average",
+    discAmount: 0,
+  });
+
+  const [flexiPoints, setFlexiPoints] = useState("");
+  const [serviceExpireActive, setServiceExpireActive] = useState(false);
+  const [serviceExpireMonth, setServiceExpireMonth] = useState("");
+  const [treatmentLimitActive, setTreatmentLimitActive] = useState(false);
+  const [treatmentLimitCount, setTreatmentLimitCount] = useState("");
+  const [limitserviceFlexionly, setLimitserviceFlexionly] = useState(false);
+  const [flexiServices, setFlexiServices] = useState([]);
+  const [originalFlexiServices, setOriginalFlexiServices] = useState([]);
+  const [flexiSearchResults, setFlexiSearchResults] = useState([]);
+
+  const [contentRows, setContentRows] = useState([]);
+  const [originalContentRows, setOriginalContentRows] = useState([]);
+
+  const [originalUsageItems, setOriginalUsageItems] = useState([]);
+  const [originalPrepaidConditions, setOriginalPrepaidConditions] = useState([]);
+  const [usageShowSalon, setUsageShowSalon] = useState(true);
+  const [usageShowRetail, setUsageShowRetail] = useState(false);
+
+  const [editLinkOpen, setEditLinkOpen] = useState(false);
+  const [editingLink, setEditingLink] = useState(null);
 
   const [uoms, setUoms] = useState([]);
   const [sites, setSites] = useState([]);
@@ -170,6 +233,7 @@ function ItemMasterForm() {
   const [voucherValidUntilDate, setVoucherValidUntilDate] = useState("");
   const [isVoucherValidDate, setIsVoucherValidDate] = useState(false);
   const [voucherValidPeriodOptions, setVoucherValidPeriodOptions] = useState([]);
+  const [voucherBatches, setVoucherBatches] = useState([]);
 
   // Prepaid State
   const [prepaidValidPeriod, setPrepaidValidPeriod] = useState("");
@@ -221,12 +285,91 @@ function ItemMasterForm() {
 
   // Effective item price for divisions 3/4/5 (same as Stocks.itemPrice)
   const getEffectiveItemPriceForDiv345 = () => {
-    const stockprice = Number(form.stockprice) || 0;
-    const div = form.stockdivision;
-    if (div === "4") return stockprice > 0 ? stockprice : Number(voucherValue) || 0;
-    if (div === "5") return stockprice > 0 ? stockprice : Number(prepaidSellAmt) || Number(prepaidValue) || 0;
-    if (div === "3") return stockprice; // package_total when package & stockprice=0 would go here; use stockprice for now
-    return stockprice;
+    const { package_total } = recalcPackageTotals(packageContent);
+    return buildStockPayload({
+      form,
+      isEdit,
+      itemCode,
+      controlNo,
+      brandOptions,
+      uoms,
+      uomOptions,
+      voucherValue,
+      voucherValueIsAmount,
+      voucherValidPeriod,
+      isVoucherValidDate,
+      voucherValidUntilDate,
+      prepaidValue,
+      prepaidSellAmt,
+      prepaidValidPeriod,
+      prepaidMemberCardAccess,
+      packageHdr,
+      packageContent,
+      flexiPoints,
+      serviceExpireActive,
+      serviceExpireMonth,
+      treatmentLimitActive,
+      treatmentLimitCount,
+      limitserviceFlexionly,
+      lookupIds: {},
+      userDetails,
+      now,
+    }).itemPrice;
+  };
+
+  const filteredStockTypeOptions = useMemo(
+    () => filterStockTypesByDivision(form.stockdivision, allItemTypes),
+    [form.stockdivision, allItemTypes]
+  );
+
+  useEffect(() => {
+    if (
+      form.stocktype &&
+      allItemTypes.length > 0 &&
+      form.stockdivision &&
+      !isValidStockTypeForDivision(form.stockdivision, form.stocktype, allItemTypes)
+    ) {
+      setField("stocktype", "SINGLE");
+    }
+  }, [form.stockdivision, allItemTypes]);
+
+  useEffect(() => {
+    if (form.stocktype !== "PACKAGE") return;
+    let cancelled = false;
+    setPackageItemsLoading(true);
+    itemMasterApi
+      .getPackageItemDetails()
+      .then((res) => {
+        if (!cancelled) setPackageItems(res || []);
+      })
+      .catch(() => {
+        if (!cancelled) setPackageItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPackageItemsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.stocktype]);
+
+  const searchFlexiServices = async (term) => {
+    if (!term || term.length < 2) {
+      setFlexiSearchResults([]);
+      return;
+    }
+    try {
+      const res = await itemMasterApi.getStocks({ limit: 200 });
+      const list = (res || []).filter(
+        (s) =>
+          String(s.itemDiv) === "3" &&
+          ((s.itemName || "").toLowerCase().includes(term.toLowerCase()) ||
+            (s.itemCode || "").toLowerCase().includes(term.toLowerCase()))
+      );
+      setFlexiSearchResults(list.slice(0, 15));
+    } catch {
+      setFlexiSearchResults([]);
+    }
   };
 
   const loadLookups = useCallback(async () => {
@@ -250,12 +393,13 @@ function ItemMasterForm() {
         ]);
 
       setDivisionOptions(
-        (divs || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
+        (divs || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc, id: x.itmId ?? x.id }))
       );
       setDeptOptions(
         (depts || []).map((x) => ({
           value: String(x.itmCode),
           label: x.itmDesc,
+          id: x.itmId ?? x.id,
           isRetailproduct: x.isRetailproduct === true,
           isSalonproduct: x.isSalonproduct === true,
           isService: x.isService === true,
@@ -274,12 +418,13 @@ function ItemMasterForm() {
         }))
       );
       setClassOptions(
-        (classes || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc }))
+        (classes || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc, id: x.itmId ?? x.id }))
       );
       setRangeOptions(
         (ranges || []).map((x) => ({
           value: String(x.itmCode),
           label: x.itmDesc,
+          id: x.itmId ?? x.id,
           itmBrand: x.itmBrand,
           itmDept: x.itmDept,
           isproduct: x.isproduct === true,
@@ -288,9 +433,7 @@ function ItemMasterForm() {
           isprepaid: x.isprepaid === true,
         }))
       );
-      setTypeOptions(
-        (types || []).map((x) => ({ value: x.itemType || x.itmCode, label: x.itemType || x.itmDesc }))
-      );
+      setAllItemTypes(types || []);
       setUomOptions(
         (uom || []).filter((x) => x.uomIsactive).map((x) => ({ value: x.uomCode, label: x.uomDesc }))
       );
@@ -336,6 +479,7 @@ function ItemMasterForm() {
       (depts || []).map((x) => ({
         value: String(x.itmCode),
         label: x.itmDesc,
+        id: x.itmId ?? x.id,
         isRetailproduct: x.isRetailproduct === true,
         isSalonproduct: x.isSalonproduct === true,
         isService: x.isService === true,
@@ -357,7 +501,7 @@ function ItemMasterForm() {
   }, []);
   const refreshClass = useCallback(async () => {
     const classes = await itemMasterApi.getItemClasses();
-    setClassOptions((classes || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc })));
+    setClassOptions((classes || []).map((x) => ({ value: String(x.itmCode), label: x.itmDesc, id: x.itmId ?? x.id })));
   }, []);
   const refreshRange = useCallback(async () => {
     const ranges = await itemMasterApi.getItemRanges();
@@ -365,6 +509,7 @@ function ItemMasterForm() {
       (ranges || []).map((x) => ({
         value: String(x.itmCode),
         label: x.itmDesc,
+        id: x.itmId ?? x.id,
         itmBrand: x.itmBrand,
         itmDept: x.itmDept,
         isproduct: x.isproduct === true,
@@ -425,7 +570,7 @@ function ItemMasterForm() {
         vilidityToDate: toDate,
         duration: stock.itmDuration ?? "",
         membershipPoint: stock.printdesc ?? "",
-        percent: true,
+        percent: stock.disctypeamount !== false,
         auto_cust_disc: stock.autocustdisc !== false,
         open_prepaid: stock.isOpenPrepaid === true,
         tax: stock.isHaveTax === true,
@@ -450,13 +595,35 @@ function ItemMasterForm() {
         (stock.itemDesc || "") !== (stock.itemName || "")
       );
 
-      const [uomPrices, stocklists, usageLevels, voucherConds, prepaidConds, itemLinks] = await Promise.all([
+      setFlexiPoints(stock.flexiPoints ?? "");
+      setServiceExpireActive(stock.serviceExpireActive === true);
+      setServiceExpireMonth(stock.serviceExpireMonth ?? "");
+      setTreatmentLimitActive(stock.treatmentLimitActive === true);
+      setTreatmentLimitCount(stock.treatmentLimitCount ?? "");
+      setLimitserviceFlexionly(stock.limitserviceFlexionly === true);
+
+      if (stock.itemNo) {
+        itemMasterApi.getStockImage(stock.itemNo).then((img) => {
+          const path = img?.picPath || img?.image || img;
+          if (path && typeof path === "string") {
+            setImagePreview(path.startsWith("http") ? path : path);
+          }
+        }).catch(() => {});
+      }
+
+      const [uomPrices, stocklists, usageLevels, voucherConds, prepaidConds, itemLinks, packageHdrs, packageDtls, flexiList, itemContents] = await Promise.all([
         itemMasterApi.getItemUomprices(itemCode),
         itemMasterApi.getItemStocklists(itemCode),
-        itemMasterApi.getUsageLevels(itemCode).catch(() => []),
+        itemMasterApi.getUsageLevels(getUsageServiceCode(itemCode)).catch(() =>
+          itemMasterApi.getUsageLevels(itemCode).catch(() => [])
+        ),
         itemMasterApi.getVoucherConditions(itemCode).catch(() => []),
         itemMasterApi.getPrepaidOpenConditions(itemCode).catch(() => []),
         itemMasterApi.getItemLinksByItem(itemCode).catch(() => []),
+        itemMasterApi.getPackageHdrs(itemCode).catch(() => []),
+        itemMasterApi.getPackageDtls(itemCode).catch(() => []),
+        itemMasterApi.getItemFlexiservices(itemCode).catch(() => []),
+        itemMasterApi.getItemContents(itemCode).catch(() => []),
       ]);
 
       const normalizedUoms = (uomPrices || []).map((u) => {
@@ -494,14 +661,15 @@ function ItemMasterForm() {
       setOriginalStocklists(stocklists || []);
 
       // Usage Levels
-      setUsageItems(
-        (usageLevels || []).map((x) => ({
-          itemCode: x.itemCode,
-          itemName: x.itemDesc || x.serviceDesc,
-          qty: x.qty,
-          uom: x.uom,
-        }))
-      );
+      const mappedUsage = (usageLevels || []).map((x) => ({
+        id: x.id,
+        itemCode: x.itemCode,
+        itemName: x.itemDesc || x.serviceDesc,
+        qty: x.qty,
+        uom: x.uom,
+      }));
+      setUsageItems(mappedUsage);
+      setOriginalUsageItems(mappedUsage);
 
       // Voucher
       setVoucherValue(stock.voucherValue ?? "");
@@ -511,19 +679,26 @@ function ItemMasterForm() {
       setVoucherValidUntilDate(vDate);
       setIsVoucherValidDate(!!vDate);
 
+      if (String(stock.itemDiv) === "4") {
+        itemMasterApi.getLoadVoucherBatches().then((res) => {
+          setVoucherBatches(res?.data || (Array.isArray(res) ? res : []));
+        }).catch(() => setVoucherBatches([]));
+      }
+
       // Prepaid
       setPrepaidValue(stock.prepaidValue ?? "");
       setPrepaidSellAmt(stock.prepaidSellAmt ?? "");
       setPrepaidValidPeriod(stock.prepaidValidPeriod ?? "");
       setPrepaidMemberCardAccess(stock.membercardnoaccess === true);
-      setPrepaidConditions(
-        (prepaidConds || []).map((p) => ({
-          type: p.pItemtype ?? p.type,
-          condition1: p.conditiontype1 ?? p.condition1,
-          condition2: p.conditiontype2 ?? p.condition2,
-          price: p.amount ?? p.rate ?? p.price,
-        }))
-      );
+      const mappedPrepaid = (prepaidConds || []).map((p) => ({
+        id: p.id,
+        type: p.pItemtype ?? p.type,
+        condition1: p.conditiontype1 ?? p.condition1,
+        condition2: p.conditiontype2 ?? p.condition2,
+        price: p.amount ?? p.rate ?? p.price,
+      }));
+      setPrepaidConditions(mappedPrepaid);
+      setOriginalPrepaidConditions(mappedPrepaid);
       setLinkList(
         (itemLinks || []).map((l) => ({
           itmId: l.itmId,
@@ -532,6 +707,57 @@ function ItemMasterForm() {
           rptCodeStatus: l.rptCodeStatus === true,
         }))
       );
+
+      const hdr = (packageHdrs || []).find((h) => h.code === itemCode) || packageHdrs?.[0];
+      if (hdr) {
+        setPackageHdr({
+          fromDate: hdr.fromDate ? String(hdr.fromDate).slice(0, 10) : "",
+          toDate: hdr.toDate ? String(hdr.toDate).slice(0, 10) : "",
+          fromTime: hdr.fromTime || "",
+          toTime: hdr.toTime || "",
+          apptTdt: hdr.istdt === true,
+          apptLimit: hdr.apptlimit ?? "",
+          discMethod: hdr.manualDisc ? "Manual" : "Evenly Average",
+          discAmount: hdr.discount ?? 0,
+        });
+      }
+
+      const pkgRows = (packageDtls || []).map((d) => ({
+        id: d.id,
+        Item_Code: (d.code || "").replace(/0000$/, "") || d.code,
+        Description: d.description,
+        Qty: d.qty,
+        U_Price: d.unitPrice,
+        Unit_Disc: d.discount,
+        P_Price: d.price,
+        Total: (Number(d.qty) || 0) * (Number(d.unitPrice) || 0),
+        Total_Amount: d.ttlUprice,
+        UOM: d.uom,
+        package_div: d.itemDiv,
+        Active: d.isactive !== false ? "Yes" : "No",
+      }));
+      setPackageContent(pkgRows);
+      setOriginalPackageDtlIds(pkgRows.filter((r) => r.id).map((r) => r.id));
+
+      const flexiMapped = (flexiList || []).map((f) => ({
+        itmId: f.itmId ?? f.id,
+        itemSrvcode: f.itemSrvcode,
+        itemSrvdesc: f.itemSrvdesc,
+        itemSrvIdId: f.itemSrvIdId,
+        itmIsactive: f.itmIsactive !== false,
+      }));
+      setFlexiServices(flexiMapped);
+      setOriginalFlexiServices(flexiMapped);
+
+      const contentMapped = (itemContents || []).map((c) => ({
+        id: c.id,
+        contentLineNo: c.contentLineNo ?? c.content_line_no,
+        contentDetail1: c.contentDetail1 ?? c.content_detail_1,
+        contentDetail2: c.contentDetail2 ?? c.Content_detail_2 ?? c.content_detail_2,
+        isActive: c.isActive ?? c.isactive !== false,
+      }));
+      setContentRows(contentMapped);
+      setOriginalContentRows(contentMapped);
 
       // Stk.Balance: set default site and UOM from loaded data so dropdowns are pre-filled in edit
       setStkBalanceSiteCode(stocklists?.[0]?.itemsiteCode ?? "");
@@ -625,6 +851,15 @@ function ItemMasterForm() {
     if (div === 5) return deptOptions.filter((x) => x.isPrepaid === true);
     return deptOptions;
   }, [deptOptions, form.stockdivision]);
+
+  const stockCodeDisplay = useMemo(() => {
+    if (isEdit) return itemCode;
+    if (controlNo) return controlNo;
+    if (form.stockdivision && form.dept) {
+      return String(form.stockdivision) + String(form.dept).padStart(2, "0");
+    }
+    return form.stockdivision || "";
+  }, [isEdit, itemCode, controlNo, form.stockdivision, form.dept]);
 
   useEffect(() => {
     if (prepaidInclusiveType === "Product Only") {
@@ -803,12 +1038,18 @@ function ItemMasterForm() {
       return;
     }
     try {
-      const res = await itemMasterApi.getStocks({ limit: 100 });
-      const list = (res || []).filter(
-        (s) =>
+      const res = await itemMasterApi.getStocks({ limit: 500 });
+      const list = (res || []).filter((s) => {
+        const div = String(s.itemDiv ?? "");
+        const salonMatch = usageShowSalon && div === "2";
+        const retailMatch = usageShowRetail && div === "1";
+        if (!usageShowSalon && !usageShowRetail) return true;
+        if (!salonMatch && !retailMatch) return false;
+        return (
           (s.itemName || "").toLowerCase().includes(term.toLowerCase()) ||
           (s.itemCode || "").toLowerCase().includes(term.toLowerCase())
-      );
+        );
+      });
       setUsageSearchResults(list.slice(0, 15));
     } catch (e) {
       console.error(e);
@@ -883,39 +1124,40 @@ function ItemMasterForm() {
       toast.error("Description must be less than or equal to 60 characters");
       return false;
     }
-    const div = form.stockdivision;
+    // Temporarily allow creation without supplier
+    // const div = form.stockdivision;
     // if (!["3", "4", "5"].includes(div) && !form.supply_itemsval) {
     //   toast.error("Supplier Code is required for this division");
     //   return false;
     // }
-    // if (form.commissionable) {
-    //   if (!form.Sales_commission) {
-    //     toast.error("Sales Commission Group is required when Commissionable");
-    //     return false;
-    //   }
-    //   if (!form.work_commission) {
-    //     toast.error("Work Commission Group is required when Commissionable");
-    //     return false;
-    //   }
-    //   if (form.sales_point === "" || form.sales_point == null) {
-    //     toast.error("Sales Points is required when Commissionable");
-    //     return false;
-    //   }
-    //   if (form.work_point === "" || form.work_point == null) {
-    //     toast.error("Work Points is required when Commissionable");
-    //     return false;
-    //   }
-    // }
-    // if (form.tax) {
-    //   if (!form.taxone) {
-    //     toast.error("Tax Type 1 is required when Tax is checked");
-    //     return false;
-    //   }
-    //   if (!form.taxtwo) {
-    //     toast.error("Tax Type 2 is required when Tax is checked");
-    //     return false;
-    //   }
-    // }
+    if (form.commissionable) {
+      if (!form.Sales_commission) {
+        toast.error("Sales Commission Group is required when Commissionable");
+        return false;
+      }
+      if (!form.work_commission) {
+        toast.error("Work Commission Group is required when Commissionable");
+        return false;
+      }
+      if (form.sales_point === "" || form.sales_point == null) {
+        toast.error("Sales Points is required when Commissionable");
+        return false;
+      }
+      if (form.work_point === "" || form.work_point == null) {
+        toast.error("Work Points is required when Commissionable");
+        return false;
+      }
+    }
+    if (form.tax) {
+      if (!form.taxone) {
+        toast.error("Tax Type 1 is required when Tax is checked");
+        return false;
+      }
+      if (!form.taxtwo) {
+        toast.error("Tax Type 2 is required when Tax is checked");
+        return false;
+      }
+    }
     const price = Number(form.stockprice);
     const floor = Number(form.floorprice);
     if (floor > 0 && price > 0 && floor > price) {
@@ -952,80 +1194,93 @@ function ItemMasterForm() {
     if (!validate()) return;
     setLoading(true);
     try {
-      const dt = now();
-      const itemPrice = Number(form.stockprice) || 0;
-      const fromDate = form.vilidityFromDate ? `${form.vilidityFromDate} 00:00:00.000` : null;
-      const toDate = form.vilidityToDate ? `${form.vilidityToDate} 23:59:59.999` : null;
-      const payload = {
-        itemCode: isEdit ? itemCode : controlNo,
-        itemDiv: form.stockdivision,
-        itemDept: form.dept,
-        itemBrand: brandOptions.find((o) => o.value === form.brand)?.itmCode ?? form.brand,
-        itemClass: form.stockclass,
-        itemRange: form.range,
-        itemType: form.stocktype,
-        itemName: form.stockname.trim(),
-        itemDesc: form.item_desc?.trim() || form.stockname.trim(),
-        itemBarcode: form.ItemBarCode || controlNo + "0000",
-        itemPrice,
-        itemPriceFloor: Number(form.floorprice) || null,
-        itemPriceCeiling: Number(form.priceceiling) || null,
-        onhandCst: form.cost !== "" && form.cost != null ? Number(form.cost) : null,
-        costPrice: form.cost !== "" && form.cost != null ? Number(form.cost) : 0,
-        itemIsactive: form.item_active,
-        rptCode: form.rptcode || null,
-        disclimit: form.disclimit ? Number(form.disclimit) : null,
-        itemDate: dt,
-        itemTime: dt,
-        itemModdate: dt,
-        itemModtime: dt,
-        itemCreateuser: userDetails?.username || "SYSTEM",
-        itemSupp: form.supply_itemsval || null,
-        itemFoc: form.customer_replan,
-        itemUom: (uoms[0]?.itemUom || uomOptions[0]?.value) || null,
-        vilidityFromDate: fromDate,
-        vilidityToDate: toDate,
-        itmDuration: form.duration ? Number(form.duration) : null,
-        printdesc: form.membershipPoint || null,
-        autocustdisc: form.auto_cust_disc,
-        isHaveTax: form.tax,
-        isAllowFoc: form.allow_foc,
-        commissionable: form.commissionable,
-        reminderActive: form.redeem_item,
-        reorderActive: form.reoreder_level,
-        reorderMinqty: form.reoreder_level && form.min_qty ? Number(form.min_qty) : null,
-        custReplenishDays: form.customer_replan && form.Replenishment ? Number(form.Replenishment) : null,
-        custAdvanceDays: form.customer_replan && form.Remind_advance ? Number(form.Remind_advance) : null,
-        salescomm: form.Sales_commission || null,
-        workcomm: form.work_commission || null,
-        salescommpoints: form.sales_point ? Number(form.sales_point) : null,
-        workcommpoints: form.work_point ? Number(form.work_point) : null,
-        t1TaxCode: form.taxone || null,
-        t2TaxCode: form.taxtwo || null,
-        accountCodeTd: form.account_no || null,
-        voucherValue: form.stockdivision === "4" ? Number(voucherValue) : null,
-        // Required by backend validation (presence): must be boolean, not null/undefined
-        voucherValueIsAmount: Boolean(voucherValueIsAmount),
-        voucherValidPeriod: form.stockdivision === "4" ? voucherValidPeriod : null,
-        voucherValidUntilDate: form.stockdivision === "4" && isVoucherValidDate ? voucherValidUntilDate : null,
-        // Required by backend validation (presence)
-        voucherIsvalidUntilDate: form.stockdivision === "4" ? Boolean(isVoucherValidDate) : false,
-        prepaidValue: form.stockdivision === "5" ? Number(prepaidValue) : null,
-        prepaidSellAmt: form.stockdivision === "5" ? Number(prepaidSellAmt) : null,
-        prepaidValidPeriod: form.stockdivision === "5" ? prepaidValidPeriod : null,
-        membercardnoaccess: form.stockdivision === "5" ? prepaidMemberCardAccess : null,
+      const lookupIds = resolveLookupIds(form, {
+        deptOptions,
+        classOptions,
+        divisionOptions,
+        rangeOptions,
+        brandOptions,
+        filteredStockTypeOptions,
+      });
+      const payload = buildStockPayload({
+        form,
+        isEdit,
+        itemCode,
+        controlNo,
+        brandOptions,
+        uoms,
+        uomOptions,
+        voucherValue,
+        voucherValueIsAmount,
+        voucherValidPeriod,
+        isVoucherValidDate,
+        voucherValidUntilDate,
+        prepaidValue,
+        prepaidSellAmt,
+        prepaidValidPeriod,
+        prepaidMemberCardAccess,
+        packageHdr,
+        packageContent,
+        flexiPoints,
+        serviceExpireActive,
+        serviceExpireMonth,
+        treatmentLimitActive,
+        treatmentLimitCount,
+        limitserviceFlexionly,
+        lookupIds,
+        userDetails,
+        now,
+      });
 
-        // Required by backend validation (presence)
-        itemHavechild: false,
-        valueApplytochild: false,
-        havePackageDisc: false,
-        mixbrand: false,
-        serviceExpireActive: false,
-        treatmentLimitActive: false,
-        limitserviceFlexionly: false,
-        isGst: false,
-        isOpenPrepaid: form.stockdivision === "5" ? form.open_prepaid : false,
-        serviceCostPercent: false,
+      const saveCode = isEdit ? itemCode : controlNo;
+
+      const runPackageAndRelated = async (code) => {
+        if (form.stocktype === "PACKAGE" && ["2", "3"].includes(String(form.stockdivision))) {
+          await savePackageData({
+            packageCode: code,
+            packageHdr,
+            packageContent,
+            stockName: form.stockname.trim(),
+            siteCode,
+            serviceOptions: {
+              stockdivision: form.stockdivision,
+              stocktype: form.stocktype,
+              serviceExpireActive,
+              serviceExpireMonth,
+              treatmentLimitActive,
+              treatmentLimitCount,
+              limitserviceFlexionly,
+            },
+            isEdit,
+            originalPackageDtlIds,
+          });
+        }
+        if (["2", "3"].includes(String(form.stockdivision))) {
+          await saveUsageLevelsDiff({
+            serviceCode: code,
+            stockName: form.stockname.trim(),
+            usageItems,
+            originalUsage: originalUsageItems,
+          });
+        }
+        if (["3", "5"].includes(String(form.stockdivision))) {
+          await saveFlexiServices(code, flexiServices, originalFlexiServices);
+        }
+        if (String(form.stockdivision) === "3") {
+          await saveItemContents(code, contentRows, originalContentRows);
+        }
+        if (String(form.stockdivision) === "4") {
+          await saveVoucherCondition(code, {
+            voucherValue,
+            voucherValueIsAmount,
+            voucherValidPeriod,
+            voucherValidUntilDate,
+            isVoucherValidDate,
+          });
+        }
+        if (String(form.stockdivision) === "5") {
+          await savePrepaidConditionsDiff(code, prepaidConditions, originalPrepaidConditions);
+        }
       };
 
       if (isEdit) {
@@ -1037,34 +1292,7 @@ function ItemMasterForm() {
           await logCostHistory(itemCode, { itemUom: "", itemPrice: priceForLog, itemCost: 0, minMargin: null }, "UPDATE");
         }
 
-        // Usage Levels
-        if (usageItems.length > 0) {
-           for (const u of usageItems) {
-             await itemMasterApi.createUsagelevels({
-               serviceCode: itemCode,
-               itemCode: u.itemCode,
-               qty: u.qty,
-               uom: u.uom,
-               serviceDesc: form.stockname,
-               itemDesc: u.itemName,
-               isactive: true
-             });
-           }
-        }
-
-        // Prepaid Conditions
-        if (form.stockdivision === "5" && prepaidConditions.length > 0) {
-           for (const p of prepaidConditions) {
-             await itemMasterApi.createPrepaidOpenConditions({
-               itemCode: itemCode,
-               type: p.type,
-               condition1: p.condition1,
-               condition2: p.condition2,
-               price: p.price,
-               isactive: true
-             });
-           }
-        }
+        await runPackageAndRelated(itemCode);
 
         // ItemLinks - create new, update rptCodeStatus for existing
         for (const l of linkList) {
@@ -1184,14 +1412,6 @@ function ItemMasterForm() {
 
         toast.success("Item updated successfully");
       } else {
-        await itemMasterApi.createStock(payload);
-
-        // Cost history for divisions 3/4/5 (no UOM - log Stocks.itemPrice)
-        if (["3", "4", "5"].includes(form.stockdivision)) {
-          const priceForLog = getEffectiveItemPriceForDiv345();
-          await logCostHistory(controlNo, { itemUom: "", itemPrice: priceForLog, itemCost: 0, minMargin: null }, "CREATE");
-        }
-
         const newStockLists = sites.map((s) => ({
           itemCode: controlNo,
           itemsiteCode: s.itemsiteCode,
@@ -1207,33 +1427,49 @@ function ItemMasterForm() {
           await itemMasterApi.createItemStocklists(newStockLists);
         }
 
+        if (form.stockdivision !== "5") {
+          for (const l of linkList) {
+            await itemMasterApi.createItemLinks({
+              linkCode: l.linkCode,
+              itemCode: controlNo,
+              linkDesc: l.linkDesc,
+              linkFactor: 0,
+              linkType: "",
+              itmIsactive: form.item_active,
+              rptCodeStatus: l.rptCodeStatus,
+            });
+          }
+        }
+
+        await runPackageAndRelated(controlNo);
+
         const showUomSectionCreate = ["1", "2", ""].includes(form.stockdivision);
         if (showUomSectionCreate) {
-        for (const u of uoms) {
-          const itemPrice = round2(Number(u.itemPrice ?? u.item_price) || 0) ?? 0;
-          const itemCost = round2(Number(u.itemCost ?? u.item_cost) || 0) ?? 0;
-          let minMargin =
-            (u.minMargin ?? u.min_margin) != null && (u.minMargin ?? u.min_margin) !== "" && !isNaN(Number(u.minMargin ?? u.min_margin))
-              ? round2(Number(u.minMargin ?? u.min_margin))
-              : null;
-          if (itemPrice > 0 && itemCost > 0 && itemCost < itemPrice) {
-            minMargin = round2(Number((((itemPrice - itemCost) / itemPrice) * 100).toFixed(2)));
+          for (const u of uoms) {
+            const uPrice = round2(Number(u.itemPrice ?? u.item_price) || 0) ?? 0;
+            const uCost = round2(Number(u.itemCost ?? u.item_cost) || 0) ?? 0;
+            let minMargin =
+              (u.minMargin ?? u.min_margin) != null && (u.minMargin ?? u.min_margin) !== "" && !isNaN(Number(u.minMargin ?? u.min_margin))
+                ? round2(Number(u.minMargin ?? u.min_margin))
+                : null;
+            if (uPrice > 0 && uCost > 0 && uCost < uPrice) {
+              minMargin = round2(Number((((uPrice - uCost) / uPrice) * 100).toFixed(2)));
+            }
+            const costHistoryPayload = { itemUom: u.itemUom ?? u.item_uom, itemPrice: uPrice, itemCost: uCost, minMargin };
+            await itemMasterApi.createItemUomprices({
+              itemCode: controlNo,
+              itemUom: u.itemUom,
+              uomDesc: u.uomDesc,
+              uomUnit: u.uomUnit,
+              itemUom2: u.itemUom2,
+              uom2Desc: u.uom2Desc,
+              itemPrice: uPrice,
+              itemCost: uCost,
+              minMargin,
+              isactive: true,
+            });
+            await logCostHistory(controlNo, costHistoryPayload, "CREATE");
           }
-          const costHistoryPayload = { itemUom: u.itemUom ?? u.item_uom, itemPrice, itemCost, minMargin };
-          await itemMasterApi.createItemUomprices({
-            itemCode: controlNo,
-            itemUom: u.itemUom,
-            uomDesc: u.uomDesc,
-            uomUnit: u.uomUnit,
-            itemUom2: u.itemUom2,
-            uom2Desc: u.uom2Desc,
-            itemPrice,
-            itemCost,
-            minMargin,
-            isactive: true,
-          });
-          await logCostHistory(controlNo, costHistoryPayload, "CREATE");
-        }
         }
 
         if (["1", "2", ""].includes(form.stockdivision)) {
@@ -1251,16 +1487,11 @@ function ItemMasterForm() {
           }
         }
 
-        for (const l of linkList) {
-          await itemMasterApi.createItemLinks({
-            linkCode: l.linkCode,
-            itemCode: controlNo,
-            linkDesc: l.linkDesc,
-            linkFactor: 0,
-            linkType: "",
-            itmIsactive: form.item_active,
-            rptCodeStatus: l.rptCodeStatus,
-          });
+        await itemMasterApi.createStock(payload);
+
+        if (["3", "4", "5"].includes(form.stockdivision)) {
+          const priceForLog = getEffectiveItemPriceForDiv345();
+          await logCostHistory(controlNo, { itemUom: "", itemPrice: priceForLog, itemCost: 0, minMargin: null }, "CREATE");
         }
 
         if (imageFile) {
@@ -1273,35 +1504,6 @@ function ItemMasterForm() {
             console.warn("Image upload failed:", imgErr);
             toast.warning("Item saved but image upload failed");
           }
-        }
-
-        // Usage Levels
-        if (usageItems.length > 0) {
-           for (const u of usageItems) {
-             await itemMasterApi.createUsagelevels({
-               serviceCode: controlNo,
-               itemCode: u.itemCode,
-               qty: u.qty,
-               uom: u.uom,
-               serviceDesc: form.stockname,
-               itemDesc: u.itemName,
-               isactive: true
-             });
-           }
-        }
-
-        // Prepaid Conditions
-        if (form.stockdivision === "5" && prepaidConditions.length > 0) {
-           for (const p of prepaidConditions) {
-             await itemMasterApi.createPrepaidOpenConditions({
-               itemCode: controlNo,
-               type: p.type,
-               condition1: p.condition1,
-               condition2: p.condition2,
-               price: p.price,
-               isactive: true
-             });
-           }
         }
 
         toast.success("Item created successfully");
@@ -1397,13 +1599,7 @@ function ItemMasterForm() {
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Stock Code</Label>
                   <Input
-                    value={
-                      isEdit
-                        ? itemCode
-                        : form.dept
-                        ? (form.stockdivision || "") + (form.dept || "")
-                        : form.stockdivision || controlNo || ""
-                    }
+                    value={stockCodeDisplay}
                     disabled
                     className="mt-1.5 bg-gray-50 font-mono"
                   />
@@ -1414,7 +1610,10 @@ function ItemMasterForm() {
                     value={form.stockdivision}
                     onValueChange={(v) => {
                       setField("stockdivision", v);
-                      if (!isEdit) setField("dept", "");
+                      if (!isEdit) {
+                        setField("dept", "");
+                        setField("stocktype", "SINGLE");
+                      }
                     }}
                     disabled={isEdit}
                   >
@@ -1428,89 +1627,127 @@ function ItemMasterForm() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Department <span className="text-red-500">*</span></Label>
-                    <Select value={form.dept} onValueChange={(v) => setField("dept", v)} disabled={isEdit}>
-                      <SelectTrigger className="mt-1.5">
-                        <SelectValue placeholder="Select Department" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredDeptOptions.map((o, idx) => (
-                          <SelectItem key={`dept-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddDeptOpen(true)} disabled={isEdit} title="Add Department">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Brand <span className="text-red-500">*</span></Label>
-                    <Select value={form.brand} onValueChange={(v) => setField("brand", v)}>
-                      <SelectTrigger className="mt-1.5">
-                        <SelectValue placeholder="Select Brand" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredBrandOptions.map((o, idx) => (
-                          <SelectItem key={`brand-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddBrandOpen(true)} title="Add Brand">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Class <span className="text-red-500">*</span></Label>
-                    <Select value={form.stockclass} onValueChange={(v) => setField("stockclass", v)}>
-                      <SelectTrigger className="mt-1.5">
-                        <SelectValue placeholder="Select Class" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {classOptions.map((o, idx) => (
-                          <SelectItem key={`class-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddClassOpen(true)} title="Add Class">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Range <span className="text-red-500">*</span></Label>
-                    <Select value={form.range} onValueChange={(v) => setField("range", v)}>
-                      <SelectTrigger className="mt-1.5">
-                        <SelectValue placeholder="Select Range" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredRangeOptions.map((o, idx) => (
-                          <SelectItem key={`range-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="button" variant="outline" size="icon" className="mb-0.5" onClick={() => setAddRangeOpen(true)} title="Add Range">
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
+                <FieldWithAction
+                  label="Department"
+                  required
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => setAddDeptOpen(true)}
+                      disabled={isEdit}
+                      title="Add Department"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  }
+                >
+                  <Select value={form.dept} onValueChange={(v) => setField("dept", v)} disabled={isEdit}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredDeptOptions.map((o, idx) => (
+                        <SelectItem key={`dept-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldWithAction>
+                <FieldWithAction
+                  label="Brand"
+                  required
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => setAddBrandOpen(true)}
+                      title="Add Brand"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  }
+                >
+                  <Select value={form.brand} onValueChange={(v) => setField("brand", v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Brand" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredBrandOptions.map((o, idx) => (
+                        <SelectItem key={`brand-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldWithAction>
+                <FieldWithAction
+                  label="Class"
+                  required
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => setAddClassOpen(true)}
+                      title="Add Class"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  }
+                >
+                  <Select value={form.stockclass} onValueChange={(v) => setField("stockclass", v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classOptions.map((o, idx) => (
+                        <SelectItem key={`class-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldWithAction>
+                <FieldWithAction
+                  label="Range"
+                  required
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                      onClick={() => setAddRangeOpen(true)}
+                      title="Add Range"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  }
+                >
+                  <Select value={form.range} onValueChange={(v) => setField("range", v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select Range" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredRangeOptions.map((o, idx) => (
+                        <SelectItem key={`range-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldWithAction>
                 <div>
                   <Label className="text-xs font-medium text-gray-500 uppercase">Type</Label>
-                  <Select value={form.stocktype} onValueChange={(v) => setField("stocktype", v)}>
+                  <Select
+                    value={form.stocktype}
+                    onValueChange={(v) => setField("stocktype", v)}
+                    disabled={!form.stockdivision || filteredStockTypeOptions.length === 0}
+                  >
                     <SelectTrigger className="mt-1.5">
                       <SelectValue placeholder="Select Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="SINGLE">SINGLE</SelectItem>
-                      <SelectItem value="PACKAGE">PACKAGE</SelectItem>
-                      <SelectItem value="COMPOUND">COMPOUND</SelectItem>
-                      {typeOptions.map((o, idx) => (
+                      {filteredStockTypeOptions.map((o, idx) => (
                         <SelectItem key={`type-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1810,6 +2047,32 @@ function ItemMasterForm() {
           </Collapsible>
         )}
 
+        {form.stocktype === "PACKAGE" && (
+        <Collapsible open={sectionOpen.package} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, package: v }))} className="border rounded-lg shadow-sm">
+          <Card className="border-0 shadow-none">
+            <CollapsibleTrigger asChild>
+              <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
+                <CardTitle className="text-base font-semibold">Package</CardTitle>
+                {sectionOpen.package ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent>
+                <PackageSection
+                  deptOptions={deptOptions}
+                  packageItems={packageItems}
+                  packageItemsLoading={packageItemsLoading}
+                  packageContent={packageContent}
+                  onPackageContentChange={setPackageContent}
+                  packageHdr={packageHdr}
+                  onPackageHdrChange={setPackageHdr}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+        )}
+
         {["1", "2", ""].includes(form.stockdivision) && (
         <Collapsible open={sectionOpen.uom} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, uom: v }))} className="border rounded-lg shadow-sm">
           <Card className="border-0 shadow-none">
@@ -1982,36 +2245,37 @@ function ItemMasterForm() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex gap-2 items-end">
-                      <div className="flex-1">
-                        <Label className="text-xs font-medium text-gray-500 uppercase">UOM Code</Label>
-                        <Select
-                          value={stkBalanceUomCode || "__none__"}
-                          onValueChange={(v) => setStkBalanceUomCode(v === "__none__" ? "" : v)}
+                    <FieldWithAction
+                      label="UOM Code"
+                      action={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9 shrink-0"
+                          onClick={refreshStkBalance}
+                          disabled={stkBalanceLoading || !itemCode}
+                          title="Refresh"
                         >
-                          <SelectTrigger className="mt-1.5">
-                            <SelectValue placeholder="Select UOM" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">Select UOM</SelectItem>
-                            {uomOptions.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        onClick={refreshStkBalance}
-                        disabled={stkBalanceLoading || !itemCode}
-                        title="Refresh"
+                          <RefreshCw className={`w-4 h-4 ${stkBalanceLoading ? "animate-spin" : ""}`} />
+                        </Button>
+                      }
+                    >
+                      <Select
+                        value={stkBalanceUomCode || "__none__"}
+                        onValueChange={(v) => setStkBalanceUomCode(v === "__none__" ? "" : v)}
                       >
-                        <RefreshCw className={`w-4 h-4 ${stkBalanceLoading ? "animate-spin" : ""}`} />
-                      </Button>
-                    </div>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select UOM" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Select UOM</SelectItem>
+                          {uomOptions.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FieldWithAction>
                     <div className="rounded-md border mt-3">
                       <Table>
                         <TableHeader className="bg-gray-50/50">
@@ -2119,7 +2383,7 @@ function ItemMasterForm() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="pt-6">
-                <div className="flex flex-col md:flex-row gap-4 mb-6 items-end bg-gray-50/30 p-4 rounded-md border">
+                <div className="flex flex-col md:flex-row gap-4 mb-6 md:items-end bg-gray-50/30 p-4 rounded-md border">
                   <div className="flex-1 w-full">
                     <Label className="text-xs font-medium text-gray-500 uppercase">Link Code</Label>
                     <Input value={newLinkCode} onChange={(e) => setNewLinkCode(e.target.value)} placeholder="Enter Code" className="mt-1.5" />
@@ -2128,9 +2392,14 @@ function ItemMasterForm() {
                     <Label className="text-xs font-medium text-gray-500 uppercase">Description</Label>
                     <Input value={newLinkDesc} onChange={(e) => setNewLinkDesc(e.target.value)} placeholder="Enter Description" className="mt-1.5" />
                   </div>
-                  <Button type="button" onClick={addLink} className="w-full md:w-auto">
-                    <Plus className="w-4 h-4 mr-2" /> Add Link
-                  </Button>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                    <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setAddLinkOpen(true)}>
+                      Add Master Link
+                    </Button>
+                    <Button type="button" className="h-9" onClick={addLink}>
+                      <Plus className="w-4 h-4 mr-2" /> Add Link
+                    </Button>
+                  </div>
                 </div>
                 <div className="rounded-md border">
                   <Table>
@@ -2159,9 +2428,24 @@ function ItemMasterForm() {
                               />
                             </TableCell>
                             <TableCell>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600 rounded-full" onClick={() => removeLink(idx)}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              <div className="flex gap-1">
+                                {l.itmId && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => {
+                                      setEditingLink(l);
+                                      setEditLinkOpen(true);
+                                    }}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-red-50 hover:text-red-600 rounded-full" onClick={() => removeLink(idx)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))
@@ -2262,6 +2546,59 @@ function ItemMasterForm() {
           </Card>
         </Collapsible>
 
+        {["3", "5", ""].includes(form.stockdivision) && (
+        <Collapsible open={sectionOpen.serviceOption} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, serviceOption: v }))} className="border rounded-lg shadow-sm">
+          <Card className="border-0 shadow-none">
+            <CollapsibleTrigger asChild>
+              <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
+                <CardTitle className="text-base font-semibold">Service Option</CardTitle>
+                {sectionOpen.serviceOption ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent>
+                <ServiceOptionSection
+                  flexiPoints={flexiPoints}
+                  onFlexiPointsChange={setFlexiPoints}
+                  serviceExpireActive={serviceExpireActive}
+                  onServiceExpireActiveChange={setServiceExpireActive}
+                  serviceExpireMonth={serviceExpireMonth}
+                  onServiceExpireMonthChange={setServiceExpireMonth}
+                  treatmentLimitActive={treatmentLimitActive}
+                  onTreatmentLimitActiveChange={setTreatmentLimitActive}
+                  treatmentLimitCount={treatmentLimitCount}
+                  onTreatmentLimitCountChange={setTreatmentLimitCount}
+                  limitserviceFlexionly={limitserviceFlexionly}
+                  onLimitserviceFlexionlyChange={setLimitserviceFlexionly}
+                  flexiServices={flexiServices}
+                  onFlexiServicesChange={setFlexiServices}
+                  serviceSearchResults={flexiSearchResults}
+                  onServiceSearch={searchFlexiServices}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+        )}
+
+        {["3", ""].includes(form.stockdivision) && (
+        <Collapsible open={sectionOpen.itemContent} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, itemContent: v }))} className="border rounded-lg shadow-sm">
+          <Card className="border-0 shadow-none">
+            <CollapsibleTrigger asChild>
+              <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
+                <CardTitle className="text-base font-semibold">Item Content</CardTitle>
+                {sectionOpen.itemContent ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent>
+                <ItemContentSection contentRows={contentRows} onContentRowsChange={setContentRows} />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+        )}
+
         {["3", ""].includes(form.stockdivision) && (
         <Collapsible open={sectionOpen.itemUsage} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, itemUsage: v }))} className="border rounded-lg shadow-sm">
           <Card className="border-0 shadow-none">
@@ -2273,6 +2610,30 @@ function ItemMasterForm() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="pt-6">
+                <div className="flex flex-wrap gap-6 mb-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="usage-salon"
+                      checked={usageShowSalon}
+                      onCheckedChange={(v) => {
+                        setUsageShowSalon(!!v);
+                        if (usageSearch) searchUsageItems(usageSearch);
+                      }}
+                    />
+                    <Label htmlFor="usage-salon" className="cursor-pointer">Show Salon</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="usage-retail"
+                      checked={usageShowRetail}
+                      onCheckedChange={(v) => {
+                        setUsageShowRetail(!!v);
+                        if (usageSearch) searchUsageItems(usageSearch);
+                      }}
+                    />
+                    <Label htmlFor="usage-retail" className="cursor-pointer">Show Retail</Label>
+                  </div>
+                </div>
                 <div className="mb-6 relative">
                   <Label className="text-xs font-medium text-gray-500 uppercase">Search Item to Add</Label>
                   <div className="relative mt-1.5">
@@ -2410,6 +2771,36 @@ function ItemMasterForm() {
           </Collapsible>
         )}
 
+        {isEdit && ["4", ""].includes(form.stockdivision) && (
+          <Collapsible open={sectionOpen.voucherActivation} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, voucherActivation: v }))} className="border rounded-lg shadow-sm">
+            <Card className="border-0 shadow-none">
+              <CollapsibleTrigger asChild>
+                <CardHeader className="flex flex-row items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100/80 transition-colors rounded-t-lg py-3">
+                  <CardTitle className="text-base font-semibold">Voucher Activation</CardTitle>
+                  {sectionOpen.voucherActivation ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <VoucherActivationSection
+                    siteOptions={siteOptions}
+                    stockId={updateId}
+                    voucherBatches={voucherBatches}
+                    onRefreshBatches={async () => {
+                      try {
+                        const res = await itemMasterApi.getLoadVoucherBatches();
+                        setVoucherBatches(res?.data || (Array.isArray(res) ? res : []));
+                      } catch {
+                        setVoucherBatches([]);
+                      }
+                    }}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
+
         {["5", ""].includes(form.stockdivision) && (
           <Collapsible open={sectionOpen.prepaid} onOpenChange={(v) => setSectionOpen((s) => ({ ...s, prepaid: v }))} className="border rounded-lg shadow-sm">
             <Card className="border-0 shadow-none">
@@ -2435,8 +2826,9 @@ function ItemMasterForm() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="flex items-end pb-2">
-                      <div className="flex items-center space-x-2">
+                    <div>
+                      <Label className="text-xs font-medium text-gray-500 uppercase">Member Card Access</Label>
+                      <div className="mt-1.5 flex h-9 items-center space-x-2">
                         <Checkbox id="cardAccess" checked={prepaidMemberCardAccess} onCheckedChange={(v) => setPrepaidMemberCardAccess(!!v)} />
                         <Label htmlFor="cardAccess" className="cursor-pointer font-medium">Member Card No Accessible</Label>
                       </div>
@@ -2459,19 +2851,19 @@ function ItemMasterForm() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="flex gap-2">
-                          <div className="flex items-center space-x-2 pt-8">
+                        <div className="grid grid-cols-[auto_1fr] gap-3 items-end">
+                          <div className="flex items-center space-x-2 h-9">
                             <Checkbox id="prepaidAll" checked={prepaidAll} onCheckedChange={(v) => setPrepaidAll(!!v)} />
                             <Label htmlFor="prepaidAll">All</Label>
                           </div>
-                          <div className="flex-1">
+                          <div>
                             <Label className="text-xs text-green-700 uppercase">Item/Group</Label>
                             <Select
                               value={prepaidAll ? "All" : prepaidInclusiveValue}
                               onValueChange={setPrepaidInclusiveValue}
                               disabled={prepaidAll}
                             >
-                              <SelectTrigger className="mt-1 bg-white"><SelectValue placeholder="Select Item" /></SelectTrigger>
+                              <SelectTrigger className="mt-1.5 bg-white"><SelectValue placeholder="Select Item" /></SelectTrigger>
                               <SelectContent>
                                 {prepaidInclusiveOptions.map((o, idx) => (
                                   <SelectItem key={`pi-${idx}-${o.value}`} value={o.value}>{o.label}</SelectItem>
@@ -2676,6 +3068,22 @@ function ItemMasterForm() {
         <AddClassModal open={addClassOpen} onOpenChange={setAddClassOpen} onSuccess={refreshClass} />
         <AddRangeModal open={addRangeOpen} onOpenChange={setAddRangeOpen} onSuccess={refreshRange} brand={form.brand} brandCodeForDept={form.brand ? brandOptions.find((o) => o.value === form.brand)?.itmCode : null} brandOptions={filteredBrandOptions} />
         <AddUomModal open={addUomOpen} onOpenChange={setAddUomOpen} onSuccess={handleUomSuccess} existingUoms={uoms} />
+        <AddLinkModal
+          open={addLinkOpen}
+          onOpenChange={setAddLinkOpen}
+          onSuccess={async () => {
+            const links = await itemMasterApi.getItemLinks();
+            setLinkOptions(
+              (links || []).map((x) => ({ value: x.linkCode, label: `${x.linkCode} - ${x.linkDesc || ""}` }))
+            );
+          }}
+        />
+        <EditLinkModal
+          open={editLinkOpen}
+          onOpenChange={setEditLinkOpen}
+          link={editingLink}
+          onSuccess={() => loadLookups()}
+        />
         <CostHistoryTimelineModal
           open={costHistoryOpen}
           onOpenChange={setCostHistoryOpen}

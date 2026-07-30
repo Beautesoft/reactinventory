@@ -30,6 +30,7 @@ import UserAuthorization from "./pages/userAuthorization";
 import StockBalanceReport from "./pages/reports/stockBalanceReports";
 import StockBalance from "./pages/stockBalance";
 import StockMovementReport from "./pages/reports/stockMovementReports";
+import ReplenishmentReport from "./pages/reports/replenishmentReport";
 import PurchaseOrder from "./pages/po/purchaseOrder";
 import AddPO from "./pages/po/addPo";
 import PurchaseRequisition from "./pages/pr/purchaseRequisition";
@@ -124,6 +125,7 @@ function App() {
                   {/* Report Routes */}
                   <Route path="stock-balance" element={<StockBalanceReport />} />
                   <Route path="stock-movement" element={<StockMovementReport />} />
+                  <Route path="replenishment-report" element={<ReplenishmentReport />} />
                   
                   {/* Purchase Order Routes */}
                   <Route path="purchase-order" element={<PurchaseOrder />} />

@@ -57,6 +57,17 @@ import {
   getConfigValue,
   normalizeExpDate,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  coerceStockListFieldValue,
+  calcDocAmtFromQtyPrice,
+  parseQtyNumber,
+  isEmptyOrInvalidQty,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -246,6 +257,12 @@ const EditDialog = memo(
         if (!editData?.docQty || editData.docQty <= 0) {
           errors.push("Quantity must be greater than 0");
         }
+        if (
+          editData?.docQty &&
+          !isValidQtyForItem(editData.docQty, editData)
+        ) {
+          errors.push(qtyValidationMessageForItem(editData));
+        }
         if (!editData?.docPrice || editData.docPrice <= 0) {
           errors.push("Price must be greater than 0");
         }
@@ -319,9 +336,9 @@ const EditDialog = memo(
               <>
                 <div className="space-y-2">
                   <Label htmlFor="qty">Quantity</Label>
-                  <Input
+                  <QtyInput
                     id="qty"
-                    type="number"
+                    item={editData}
                     min="0"
                     value={editData?.docQty || ""}
                     onChange={(e) => onEditCart(e, "docQty")}
@@ -1072,13 +1089,13 @@ function AddGrn({ docData }) {
       // apiService1.get(`api/GetInvitems/count${countQuery}`),
       // apiService.get(`GetInvItems${query}`),
 
-      .then((res) => {
+      .then(async (res) => {
         const stockDetails = Array.isArray(res?.result) ? res.result : [];
         const count = stockDetails.length;
         setLoading(false);
-        const updatedRes = stockDetails.map((item) => ({
+        const baseRes = stockDetails.map((item) => ({
           ...item,
-          Qty: 0,
+          Qty: "",
           expiryDate: null,
           Price:
             Number(item?.item_Price) ||
@@ -1087,6 +1104,7 @@ function AddGrn({ docData }) {
             0,
           docAmt: null,
         }));
+        const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
 
         // Debug logging to see what price fields are available
         console.log("Sample item from API:", stockDetails[0]);
@@ -1307,8 +1325,10 @@ function AddGrn({ docData }) {
         })
       );
 
-      setCartItems(reconstructedItems);
-      setCartData(reconstructedItems);
+      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+
+      setCartItems(enrichedItems);
+      setCartData(enrichedItems);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
@@ -1412,11 +1432,11 @@ function AddGrn({ docData }) {
         i === index
           ? {
               ...item,
-              [field]: field === "expiryDate" ? value : Number(value),
+              [field]: coerceStockListFieldValue(field, value),
               docAmt:
                 field === "Qty"
-                  ? Number(value) * (Number(item.Price) || 0)
-                  : (Number(item.Qty) || 0) * (Number(item.Price) || 0),
+                  ? calcDocAmtFromQtyPrice(value, item.Price)
+                  : calcDocAmtFromQtyPrice(item.Qty, value),
             }
           : item
       )
@@ -1555,6 +1575,10 @@ function AddGrn({ docData }) {
         return;
       }
 
+      if (!validateQtyForItemOrToast(updatedEditData.docQty, updatedEditData, { toast })) {
+        return;
+      }
+
       console.log(updatedEditData, "updatedEditData");
 
       // Prepare ordMemo fields if batch is set
@@ -1674,7 +1698,7 @@ function AddGrn({ docData }) {
       prev.map((stockItem, i) =>
         i === index ? { 
           ...stockItem, 
-          Qty: 0,
+          Qty: "",
           selectedBatches: null // Clear batch selection when added to cart
         } : stockItem
       )
@@ -1682,14 +1706,18 @@ function AddGrn({ docData }) {
   };
 
   const addToCart = (index, item) => {
-    if (!item.Qty || item.Qty <= 0) {
+    if (isEmptyOrInvalidQty(item.Qty)) {
       toast.error("Please enter a valid quantity");
+      return;
+    }
+
+    if (!validateQtyForItemOrToast(item.Qty, item, { toast })) {
       return;
     }
 
     // Ensure we have a valid price, fallback to 0 if undefined/null
     const price = Number(item.Price) || 0;
-    const amount = Number(item.Qty) * price;
+    const amount = parseQtyNumber(item.Qty) * price;
 
     // Debug logging
     console.log("Adding item to cart:", {
@@ -1711,9 +1739,9 @@ function AddGrn({ docData }) {
       docDate: stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
-      docQty: Number(item.Qty),
+      docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
-      docTtlqty: Number(item.Qty),
+      docTtlqty: parseQtyNumber(item.Qty),
       docPrice: price,
       docPdisc: 0,
       docDisc: 0,
@@ -1731,6 +1759,7 @@ function AddGrn({ docData }) {
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
+      allowDecimalQty: item.allowDecimalQty ?? false,
       itemRemark: item?.itemRemark || null,
       itemprice: Number(item.Cost) || 0,
       // Only set docBatchNo if batch functionality is enabled
@@ -1741,7 +1770,7 @@ function AddGrn({ docData }) {
         getConfigValue('BATCH_NO') === "Yes" ? !!item.batchno : false,
 
       docMdisc: 0,
-      recTtl: Number(item.Qty),
+      recTtl: parseQtyNumber(item.Qty),
       // Initialize ordMemo fields (will be populated when batch is edited)
       ordMemo1: "",
       ordMemo2: "",

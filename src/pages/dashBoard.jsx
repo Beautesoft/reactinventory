@@ -7,8 +7,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
+import itemMasterApi from "@/services/itemMasterApi";
 import { toast } from "sonner";
 import { format_Date, getActiveCurrency, formatCurrency } from "@/utils/utils";
+import { Link } from "react-router-dom";
 
 function DashBoard() {
   const [loading, setLoading] = useState(true);
@@ -35,9 +37,19 @@ function DashBoard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // Fetch stock items
-      const stockQuery = `?Site=${userDetails.siteCode}`;
-      const stockResponse = await apiService1.get(`api/GetInvitems${stockQuery}`);
+      const siteCode = userDetails.siteCode;
+      if (!siteCode) {
+        toast.error("Site code not found");
+        return;
+      }
+
+      // Fetch stock items (cards / top stock value) + reorder sources for Low Stock Alert
+      const stockQuery = `?Site=${siteCode}`;
+      const [stockResponse, reorderStocks, siteStocklists] = await Promise.all([
+        apiService1.get(`api/GetInvitems${stockQuery}`),
+        itemMasterApi.getReorderActiveStocks(),
+        itemMasterApi.getItemStocklistsBySites([siteCode]),
+      ]);
       const stockItems = Array.isArray(stockResponse?.result) ? stockResponse.result : [];
 
       // Fetch transaction count (last 30 days) and recent list from Stktrns
@@ -46,22 +58,24 @@ function DashBoard() {
       const dateFilter = {
         where: {
           and: [
-            { storeNo: userDetails.siteCode },
-            { trnDate: { gte: thirtyDaysAgo.toISOString().split('T')[0] } }
-          ]
-        }
+            { storeNo: siteCode },
+            { trnDate: { gte: thirtyDaysAgo.toISOString().split("T")[0] } },
+          ],
+        },
       };
 
       // Get accurate count for Last 30 Days Transactions card
       const [countResponse, recentResponse] = await Promise.all([
         apiService.get(`Stktrns/count?filter=${encodeURIComponent(JSON.stringify(dateFilter))}`),
         apiService.get(
-          `Stktrns?filter=${encodeURIComponent(JSON.stringify({
-            ...dateFilter,
-            order: ["trnPost DESC"],
-            limit: 5
-          }))}`
-        )
+          `Stktrns?filter=${encodeURIComponent(
+            JSON.stringify({
+              ...dateFilter,
+              order: ["trnPost DESC"],
+              limit: 5,
+            })
+          )}`
+        ),
       ]);
 
       const last30DaysCount = countResponse?.count ?? recentResponse?.length ?? 0;
@@ -69,51 +83,73 @@ function DashBoard() {
       // Fetch pending documents (documents with status != 7)
       const pendingFilter = {
         where: {
-          and: [
-            { storeNo: userDetails.siteCode },
-            { docStatus: { neq: 7 } }
-          ]
-        }
+          and: [{ storeNo: siteCode }, { docStatus: { neq: 7 } }],
+        },
       };
       const pendingResponse = await apiService.get(
         `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(pendingFilter))}`
       );
 
-      // Calculate low stock items (quantity < 10)
-      const lowStockItems = stockItems
-        .filter(item => Number(item.quantity || 0) < 10 && Number(item.quantity || 0) > 0)
-        .slice(0, 5)
-        .map(item => ({
-          stockCode: item.stockCode,
-          stockName: item.stockName || "N/A",
-          quantity: item.quantity,
-          uomDescription: item.uomDescription
-        }));
+      // Low Stock Alert: current site only — same rule as Replenishment Report
+      // reorderActive + reorderMinqty > 0 + site onhandQty <= reorderMinqty
+      const stockByCode = new Map();
+      for (const stock of reorderStocks || []) {
+        if (!stock?.itemCode) continue;
+        if (stock.itemIsactive === false) continue;
+        const minQty = Number(stock.reorderMinqty);
+        if (!Number.isFinite(minQty) || minQty <= 0) continue;
+        stockByCode.set(String(stock.itemCode), stock);
+      }
+
+      const lowStockItems = (siteStocklists || [])
+        .filter((sl) => {
+          if (sl.itemsiteCode !== siteCode) return false;
+          if (sl.itemstocklistStatus === false) return false;
+          const stock = stockByCode.get(String(sl.itemCode || ""));
+          if (!stock) return false;
+          const onHand = Number(sl.onhandQty) || 0;
+          const reorderMin = Number(stock.reorderMinqty) || 0;
+          return onHand <= reorderMin;
+        })
+        .map((sl) => {
+          const stock = stockByCode.get(String(sl.itemCode || ""));
+          const onHand = Number(sl.onhandQty) || 0;
+          const reorderMin = Number(stock.reorderMinqty) || 0;
+          return {
+            stockCode: stock.itemCode,
+            stockName: stock.itemName || stock.itemDesc || "N/A",
+            quantity: onHand,
+            reorderMin,
+            suggestedQty: Math.max(0, reorderMin - onHand),
+            uomDescription: stock.itemUom || "",
+          };
+        })
+        .sort((a, b) => a.quantity - b.quantity || a.stockCode.localeCompare(b.stockCode))
+        .slice(0, 8);
 
       // Calculate top stock items by value
       const topStockItems = stockItems
-        .filter(item => Number(item.quantity || 0) > 0)
-        .map(item => {
-          // Use the same price calculation logic as in addGrn.jsx
+        .filter((item) => Number(item.quantity || 0) > 0)
+        .map((item) => {
           const price = Number(item?.item_Price) || Number(item?.Price) || Number(item?.Cost) || 0;
           const quantity = Number(item.quantity || 0);
           return {
             ...item,
             calculatedPrice: price,
-            calculatedValue: quantity * price
+            calculatedValue: quantity * price,
           };
         })
         .sort((a, b) => b.calculatedValue - a.calculatedValue)
         .slice(0, 5)
-        .map(item => ({
+        .map((item) => ({
           stockCode: item.stockCode,
           stockName: item.stockName || "N/A",
           quantity: item.quantity,
           value: item.calculatedValue,
-          uomDescription: item.uomDescription
+          uomDescription: item.uomDescription,
         }));
 
-      const inStockCount = stockItems.filter(item => Number(item.quantity || 0) > 0).length;
+      const inStockCount = stockItems.filter((item) => Number(item.quantity || 0) > 0).length;
 
       setDashboardData({
         totalStockItems: stockItems.length,
@@ -123,9 +159,8 @@ function DashBoard() {
         lowStockItems,
         recentTransactions: recentResponse || [],
         stockBalance: topStockItems,
-        stockItems: stockItems
+        stockItems: stockItems,
       });
-
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
       toast.error("Failed to load dashboard data");
@@ -283,14 +318,14 @@ function DashBoard() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <Card key={index} className={`p-6 hover:shadow-xl transition-all duration-300 border-t-4 ${stat.borderColor} overflow-hidden`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            <Card key={index} className={`p-6 gap-0 hover:shadow-xl transition-all duration-300 border-t-4 ${stat.borderColor} overflow-hidden`}>
+              <div className="flex items-center justify-between h-full">
+                <div className="min-w-0 flex-1 pr-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 min-h-[2.5rem] line-clamp-2">
                     {stat.title}
                   </p>
                   <div className="flex items-baseline mt-2">
@@ -299,7 +334,7 @@ function DashBoard() {
                     </p>
                   </div>
                 </div>
-                <div className={`p-4 rounded-2xl ${stat.bgColor} shadow-inner`}>
+                <div className={`p-4 rounded-2xl ${stat.bgColor} shadow-inner shrink-0`}>
                   <Icon className={`h-8 w-8 ${stat.color}`} />
                 </div>
               </div>
@@ -308,241 +343,256 @@ function DashBoard() {
         })}
       </div>
 
-      {/* Dashboard sections with real data */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Stock Transfers */}
-        <Card className="overflow-hidden shadow-md border border-slate-200">
-          <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-b px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white rounded-xl shadow-sm border border-slate-200">
-                <Clock className="h-5 w-5 text-blue-500" />
-              </div>
-              <h2 className="text-lg font-bold text-gray-800">Recent Stock Transfers</h2>
-            </div>
-          </div>
-          <div className="p-6 space-y-3">
-            {loading ? (
-              <div className="text-center py-4 text-gray-500">Loading...</div>
-            ) : dashboardData.recentTransactions.length > 0 ? (
-              dashboardData.recentTransactions.map((transaction, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-100">
-                  <div>
-                    <p className="font-medium text-sm">{transaction.trnDocno}</p>
-                    <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {format_Date(transaction.trnDate)}</p>
-                    <p className="text-xs text-gray-400">Amount: {getActiveCurrency()} {transaction.trnAmt || 0}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTrnTypeColor(transaction.trnType)}`}>
-                      {getTrnTypeText(transaction.trnType)}
-                    </span>
-                    <p className="text-xs text-gray-500 mt-1">Qty: {transaction.trnQty || 0}</p>
-                  </div>
+      {/* Dashboard sections — two aligned columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Left column */}
+        <div className="space-y-6">
+          {/* Recent Stock Transfers */}
+          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
+            <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-b px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-slate-200">
+                  <Clock className="h-5 w-5 text-blue-500" />
                 </div>
-              ))
-            ) : (
-              <div className="text-center py-4 text-gray-500">No recent stock transfers</div>
-            )}
-          </div>
-        </Card>
-
-           {/* Stock Balance Mini View */}
-           <Card className="overflow-hidden shadow-md border border-slate-200">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white rounded-xl shadow-sm border border-blue-100">
-              <Package className="h-5 w-5 text-blue-500" />
+                <h2 className="text-lg font-bold text-gray-800">Recent Stock Transfers</h2>
+              </div>
             </div>
-            <h2 className="text-lg font-bold text-gray-800">Stock Balance Overview</h2>
-          </div>
+            <div className="p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : dashboardData.recentTransactions.length > 0 ? (
+                dashboardData.recentTransactions.map((transaction, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-100">
+                    <div>
+                      <p className="font-medium text-sm">{transaction.trnDocno}</p>
+                      <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {format_Date(transaction.trnDate)}</p>
+                      <p className="text-xs text-gray-400">Amount: {getActiveCurrency()} {transaction.trnAmt || 0}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTrnTypeColor(transaction.trnType)}`}>
+                        {getTrnTypeText(transaction.trnType)}
+                      </span>
+                      <p className="text-xs text-gray-500 mt-1">Qty: {transaction.trnQty || 0}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">No recent stock transfers</div>
+              )}
+            </div>
+          </Card>
+
+          {/* Top Stock Items by Value */}
+          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-green-100">
+                  <DollarSign className="h-5 w-5 text-green-500" />
+                </div>
+                <h2 className="text-lg font-bold text-gray-800">Top Stock Items by Value</h2>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : dashboardData.stockBalance.length > 0 ? (
+                dashboardData.stockBalance.map((item, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 hover:bg-green-100/50 transition-colors">
+                    <div>
+                      <p className="font-medium text-sm">{item.stockCode}</p>
+                      <p className="text-xs text-gray-600">{item.stockName}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-green-600">
+                        {item.quantity} {item.uomDescription}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Value: {getActiveCurrency()} {item.value.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">No items currently in stock</div>
+              )}
+            </div>
+          </Card>
         </div>
-        <div className="p-6 space-y-3">
-          {loading ? (
-            <div className="text-center py-4 text-gray-500">Loading...</div>
-          ) : dashboardData.stockItems.length > 0 ? (
-            <>
-              {/* Summary Stats */}
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
-                  <p className="text-2xl font-bold text-blue-600">{dashboardData.stockItems.length}</p>
-                  <p className="text-xs font-medium text-blue-600 mt-1">Total Items</p>
+
+        {/* Right column */}
+        <div className="space-y-6">
+          {/* Low Stock Alert — current site, based on Re-Order Level (same as Replenishment Report) */}
+          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-orange-100">
+                  <AlertTriangle className="h-5 w-5 text-orange-500" />
                 </div>
-                <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
-                  <p className="text-2xl font-bold text-green-600">
-                    {dashboardData.stockItems.filter(item => Number(item.quantity || 0) > 0).length}
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Low Stock Alert</h2>
+                  <p className="text-xs text-gray-500">
+                    Site {userDetails?.siteCode || "—"} · on-hand ≤ reorder min
                   </p>
-                  <p className="text-xs font-medium text-green-600 mt-1">In Stock</p>
-                </div>
-                <div className="text-center p-4 bg-orange-50 rounded-xl border border-orange-100">
-                  <p className="text-2xl font-bold text-orange-600">
-                    {dashboardData.stockItems.filter(item => Number(item.quantity || 0) === 0).length}
-                  </p>
-                  <p className="text-xs font-medium text-orange-600 mt-1">Out of Stock</p>
                 </div>
               </div>
-
-              {/* Top 5 Stock Items Table */}
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-100 sticky top-0">
-                      <tr>
-                        <th className="text-left p-3 font-semibold text-slate-700">Stock Code</th>
-                        <th className="text-left p-3 font-semibold text-slate-700">Stock Name</th>
-                        <th className="text-right p-3 font-semibold text-slate-700">Qty</th>
-                        <th className="text-right p-3 font-semibold text-slate-700">Value</th>
-                        <th className="text-center p-3 font-semibold text-slate-700">Batches</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dashboardData.stockItems
-                        .filter(item => Number(item.quantity || 0) > 0)
-                        .sort((a, b) => (Number(b.quantity || 0) * Number(b.item_Price || 0)) - (Number(a.quantity || 0) * Number(a.item_Price || 0)))
-                        .slice(0, 5)
-                        .map((item, index) => (
-                          <tr key={index} className={`border-t border-slate-100 hover:bg-blue-50/50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
-                            <td className="p-3 font-semibold text-sm text-blue-600">{item.stockCode}</td>
-                            <td className="p-3 text-sm text-gray-600 truncate max-w-[150px]" title={item.stockName || "N/A"}>
-                              {item.stockName || "N/A"}
-                            </td>
-                            <td className="p-3 text-right text-sm">
-                              {Number(item.quantity || 0).toLocaleString()} {item.uomDescription}
-                            </td>
-                            <td className="p-3 text-right text-sm font-semibold text-green-600">
-                              {getActiveCurrency()} {((Number(item.quantity || 0) * (Number(item?.item_Price) || Number(item?.Price) || Number(item?.Cost) || 0))).toLocaleString()}
-                            </td>
-                            <td className="p-3 text-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleBatchClick(item)}
-                                className="cursor-pointer hover:bg-blue-100 hover:text-blue-600 transition-all duration-150 font-bold text-lg w-10 h-10 rounded-xl border-2 border-blue-200 hover:border-blue-500 hover:shadow-sm"
-                                title="View Batch Details"
-                              >
-                                B
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              
-              {/* View All Button - only show when there are in-stock items, or show contextual message */}
-              <div className="text-center pt-4">
-                {dashboardData.stockItems.filter(item => Number(item.quantity || 0) > 0).length > 0 ? (
-                  <button 
-                    onClick={() => window.location.href = '/stock-balance-live'}
-                    className="text-blue-600 hover:text-blue-800 text-sm font-semibold hover:underline transition-colors"
-                  >
-                    View Full Stock Balance →
-                  </button>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-500 mb-2">No items currently in stock</p>
-                    <button 
-                      onClick={() => window.location.href = '/stock-balance-live'}
-                      className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline transition-colors"
-                    >
-                      View Full Stock Balance page →
-                    </button>
-                  </>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-4 text-gray-500">No stock data available</div>
-          )}
-        </div>
-        </Card>
-
-  
-      </div>
-
-      {/* Top Stock Items by Value and Stock Balance Overview in same row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Stock Items by Value */}
-        <Card className="overflow-hidden shadow-md border border-slate-200">
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white rounded-xl shadow-sm border border-green-100">
-                <DollarSign className="h-5 w-5 text-green-500" />
-              </div>
-              <h2 className="text-lg font-bold text-gray-800">Top Stock Items by Value</h2>
+              <Link
+                to="/replenishment-report"
+                className="text-xs font-medium text-orange-700 hover:text-orange-900 underline-offset-2 hover:underline"
+              >
+                Full report
+              </Link>
             </div>
-          </div>
-          <div className="p-6 space-y-3">
-            {loading ? (
-              <div className="text-center py-4 text-gray-500">Loading...</div>
-            ) : dashboardData.stockBalance.length > 0 ? (
-              dashboardData.stockBalance.map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 hover:bg-green-100/50 transition-colors">
-                  <div>
-                    <p className="font-medium text-sm">{item.stockCode}</p>
-                    <p className="text-xs text-gray-600">{item.stockName}</p>
+            <div className="p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : dashboardData.lowStockItems.length > 0 ? (
+                dashboardData.lowStockItems.map((item, index) => {
+                  const qty = Number(item.quantity || 0);
+                  const isCritical = qty <= 0;
+                  return (
+                  <div key={index} className={`flex items-center justify-between p-3 rounded-xl border-l-4 ${isCritical ? "bg-red-50 border-red-400" : "bg-orange-50 border-orange-400"}`}>
+                    <div>
+                      <p className="font-medium text-sm">{item.stockCode}</p>
+                      <p className="text-xs text-gray-600">{item.stockName}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Min {item.reorderMin}
+                        {item.suggestedQty > 0 ? ` · Suggest ${item.suggestedQty}` : ""}
+                        {item.uomDescription ? ` ${item.uomDescription}` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-sm font-semibold ${isCritical ? "text-red-600" : "text-orange-600"}`}>
+                        {item.quantity}{item.uomDescription ? ` ${item.uomDescription}` : ""}
+                      </p>
+                      <p className={`text-xs font-medium ${isCritical ? "text-red-500" : "text-orange-500"}`}>
+                        {isCritical ? "Critical" : "Low Stock"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-green-600">
-                      {item.quantity} {item.uomDescription}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Value: {getActiveCurrency()} {item.value.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-4 text-gray-500">No items currently in stock</div>
-            )}
-          </div>
-        </Card>
-
-      {/* Low Stock Alert */}
-      <Card className="overflow-hidden shadow-md border border-slate-200">
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white rounded-xl shadow-sm border border-orange-100">
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
-              </div>
-              <h2 className="text-lg font-bold text-gray-800">Low Stock Alert</h2>
-            </div>
-          </div>
-          <div className="p-6 space-y-3">
-            {loading ? (
-              <div className="text-center py-4 text-gray-500">Loading...</div>
-            ) : dashboardData.lowStockItems.length > 0 ? (
-              dashboardData.lowStockItems.map((item, index) => {
-                const qty = Number(item.quantity || 0);
-                const isCritical = qty < 5;
-                return (
-                <div key={index} className={`flex items-center justify-between p-3 rounded-xl border-l-4 ${isCritical ? "bg-red-50 border-red-400" : "bg-orange-50 border-orange-400"}`}>
-                  <div>
-                    <p className="font-medium text-sm">{item.stockCode}</p>
-                    <p className="text-xs text-gray-600">{item.stockName}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-sm font-semibold ${isCritical ? "text-red-600" : "text-orange-600"}`}>{item.quantity} {item.uomDescription}</p>
-                    <p className={`text-xs font-medium ${isCritical ? "text-red-500" : "text-orange-500"}`}>{isCritical ? "Critical" : "Low Stock"}</p>
-                  </div>
-                </div>
-              );})
-            ) : (() => {
-              const hasInStockItems = dashboardData.stockItems.some(item => Number(item.quantity || 0) > 0);
-              return hasInStockItems ? (
+                );})
+              ) : (
                 <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
-                  <p className="font-medium text-green-700">All items are well stocked!</p>
+                  <p className="font-medium text-green-700">No items below reorder level at this site</p>
+                  <p className="text-xs text-green-600 mt-1">
+                    Only items with Re-Order Level enabled are checked
+                  </p>
                 </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Stock Balance Mini View */}
+          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-blue-100">
+                  <Package className="h-5 w-5 text-blue-500" />
+                </div>
+                <h2 className="text-lg font-bold text-gray-800">Stock Balance Overview</h2>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : dashboardData.stockItems.length > 0 ? (
+                <>
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
+                      <p className="text-2xl font-bold text-blue-600">{dashboardData.stockItems.length}</p>
+                      <p className="text-xs font-medium text-blue-600 mt-1">Total Items</p>
+                    </div>
+                    <div className="text-center p-4 bg-green-50 rounded-xl border border-green-100">
+                      <p className="text-2xl font-bold text-green-600">
+                        {dashboardData.stockItems.filter(item => Number(item.quantity || 0) > 0).length}
+                      </p>
+                      <p className="text-xs font-medium text-green-600 mt-1">In Stock</p>
+                    </div>
+                    <div className="text-center p-4 bg-orange-50 rounded-xl border border-orange-100">
+                      <p className="text-2xl font-bold text-orange-600">
+                        {dashboardData.stockItems.filter(item => Number(item.quantity || 0) === 0).length}
+                      </p>
+                      <p className="text-xs font-medium text-orange-600 mt-1">Out of Stock</p>
+                    </div>
+                  </div>
+
+                  {/* Top 5 Stock Items Table */}
+                  <div className="rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-100 sticky top-0">
+                          <tr>
+                            <th className="text-left p-3 font-semibold text-slate-700">Stock Code</th>
+                            <th className="text-left p-3 font-semibold text-slate-700">Stock Name</th>
+                            <th className="text-right p-3 font-semibold text-slate-700">Qty</th>
+                            <th className="text-right p-3 font-semibold text-slate-700">Value</th>
+                            <th className="text-center p-3 font-semibold text-slate-700">Batches</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dashboardData.stockItems
+                            .filter(item => Number(item.quantity || 0) > 0)
+                            .sort((a, b) => (Number(b.quantity || 0) * Number(b.item_Price || 0)) - (Number(a.quantity || 0) * Number(a.item_Price || 0)))
+                            .slice(0, 5)
+                            .map((item, index) => (
+                              <tr key={index} className={`border-t border-slate-100 hover:bg-blue-50/50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+                                <td className="p-3 font-semibold text-sm text-blue-600">{item.stockCode}</td>
+                                <td className="p-3 text-sm text-gray-600 truncate max-w-[150px]" title={item.stockName || "N/A"}>
+                                  {item.stockName || "N/A"}
+                                </td>
+                                <td className="p-3 text-right text-sm">
+                                  {Number(item.quantity || 0).toLocaleString()} {item.uomDescription}
+                                </td>
+                                <td className="p-3 text-right text-sm font-semibold text-green-600">
+                                  {getActiveCurrency()} {((Number(item.quantity || 0) * (Number(item?.item_Price) || Number(item?.Price) || Number(item?.Cost) || 0))).toLocaleString()}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleBatchClick(item)}
+                                    className="cursor-pointer hover:bg-blue-100 hover:text-blue-600 transition-all duration-150 font-bold text-lg w-10 h-10 rounded-xl border-2 border-blue-200 hover:border-blue-500 hover:shadow-sm"
+                                    title="View Batch Details"
+                                  >
+                                    B
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* View All Button - only show when there are in-stock items, or show contextual message */}
+                  <div className="text-center pt-4">
+                    {dashboardData.stockItems.filter(item => Number(item.quantity || 0) > 0).length > 0 ? (
+                      <button
+                        onClick={() => window.location.href = '/stock-balance-live'}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-semibold hover:underline transition-colors"
+                      >
+                        View Full Stock Balance →
+                      </button>
+                    ) : (
+                      <>
+                        <p className="text-sm text-gray-500 mb-2">No items currently in stock</p>
+                        <button
+                          onClick={() => window.location.href = '/stock-balance-live'}
+                          className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline transition-colors"
+                        >
+                          View Full Stock Balance page →
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
               ) : (
-                <div className="text-center py-8 bg-amber-50 rounded-xl border border-amber-200">
-                  <AlertTriangle className="h-10 w-10 text-amber-500 mx-auto mb-2" />
-                  <p className="font-medium text-amber-800">No items currently in stock</p>
-                </div>
-              );
-            })()}
-          </div>
-        </Card>
-     
+                <div className="text-center py-4 text-gray-500">No stock data available</div>
+              )}
+            </div>
+          </Card>
+        </div>
       </div>
 
       {/* Batch Details Modal */}

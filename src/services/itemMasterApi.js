@@ -154,6 +154,29 @@ export const itemMasterApi = {
     );
     return Array.isArray(res) ? res : [];
   },
+  /** Stocks with Re-Order Level enabled (threshold source for replenishment report). */
+  async getReorderActiveStocks() {
+    const filter = buildFilter(
+      { reorderActive: true },
+      0,
+      20000,
+      "itemCode ASC"
+    );
+    const res = await apiService.get(`Stocks${queryString(filter)}`);
+    return Array.isArray(res) ? res : [];
+  },
+  /** Site stock rows for one or more sites (on-hand source for replenishment report). */
+  async getItemStocklistsBySites(siteCodes = []) {
+    const codes = (siteCodes || []).filter(Boolean);
+    if (codes.length === 0) return [];
+    const where =
+      codes.length === 1
+        ? { itemsiteCode: codes[0] }
+        : { itemsiteCode: { inq: codes } };
+    const filter = buildFilter(where, 0, 50000);
+    const res = await apiService.get(`ItemStocklists${queryString(filter)}`);
+    return Array.isArray(res) ? res : [];
+  },
   async createItemStocklists(items) {
     return apiService.post("ItemStocklists", items);
   },
@@ -171,6 +194,10 @@ export const itemMasterApi = {
     const res = await apiService.get(
       `ItemUomprices${queryString({ where: filter.where })}`
     );
+    return Array.isArray(res) ? res : [];
+  },
+  async getAllItemUomprices() {
+    const res = await apiService.get("ItemUomprices");
     return Array.isArray(res) ? res : [];
   },
   async createItemUomprices(items) {
@@ -228,7 +255,17 @@ export const itemMasterApi = {
     return Array.isArray(res) ? res : [];
   },
   async createUsagelevels(payload) {
-    return apiService.post("Usagelevels", payload);
+    return apiService.post("Usagelevels", Array.isArray(payload) ? payload : [payload]);
+  },
+  async updateUsagelevel(id, payload) {
+    const filter = { where: { id } };
+    return apiService.post(
+      `Usagelevels/update?where=${encodeURIComponent(JSON.stringify(filter.where))}`,
+      payload
+    );
+  },
+  async deleteUsagelevel(id) {
+    return apiService.delete(`Usagelevels/${id}`);
   },
 
   // Voucher Conditions
@@ -240,6 +277,13 @@ export const itemMasterApi = {
   async createVoucherConditions(payload) {
     return apiService.post("VoucherConditions", payload);
   },
+  async updateVoucherConditions(itemCode, payload) {
+    const filter = { where: { itemCode } };
+    return apiService.post(
+      `VoucherConditions/update?where=${encodeURIComponent(JSON.stringify(filter.where))}`,
+      payload
+    );
+  },
 
   // Prepaid Open Conditions
   async getPrepaidOpenConditions(itemCode) {
@@ -249,6 +293,104 @@ export const itemMasterApi = {
   },
   async createPrepaidOpenConditions(payload) {
     return apiService.post("PrepaidOpenConditions", payload);
+  },
+  async updatePrepaidOpenCondition(id, payload) {
+    const filter = { where: { id } };
+    return apiService.post(
+      `PrepaidOpenConditions/update?where=${encodeURIComponent(JSON.stringify(filter.where))}`,
+      payload
+    );
+  },
+  async deletePrepaidOpenCondition(id) {
+    return apiService.delete(`PrepaidOpenConditions/${id}`);
+  },
+
+  // Package
+  async getPackageItemDetails() {
+    const res = await apiService.get("PackageItemDetails");
+    return Array.isArray(res) ? res : [];
+  },
+  async getPackageHdrs(packageCode) {
+    const filter = packageCode ? { where: { code: packageCode } } : {};
+    const res = await apiService.get(
+      `PackageHdrs${packageCode ? queryString(filter) : ""}`
+    );
+    return Array.isArray(res) ? res : [];
+  },
+  async getPackageDtls(packageCode) {
+    const filter = { where: { packageCode } };
+    const res = await apiService.get(`PackageDtls${queryString(filter)}`);
+    return Array.isArray(res) ? res : [];
+  },
+  async createPackageHdrs(payload) {
+    return apiService.post("PackageHdrs", payload);
+  },
+  async updatePackageHdrs(packageCode, payload) {
+    const filter = { where: { code: packageCode } };
+    return apiService.post(
+      `PackageHdrs/update?where=${encodeURIComponent(JSON.stringify(filter.where))}`,
+      payload
+    );
+  },
+  async createPackageDtls(items) {
+    return apiService.post("PackageDtls", items);
+  },
+  async updatePackageDtl(id, payload) {
+    const filter = { where: { id } };
+    return apiService.post(
+      `PackageDtls/update?where=${encodeURIComponent(JSON.stringify(filter.where))}`,
+      payload
+    );
+  },
+  async deletePackageDtl(id) {
+    return apiService.delete(`PackageDtls/${id}`);
+  },
+
+  // ItemFlexiservices
+  async getItemFlexiservices(itemCode) {
+    const filter = itemCode ? { where: { itemCode } } : {};
+    const res = await apiService.get(
+      `ItemFlexiservices${itemCode ? queryString(filter) : ""}`
+    );
+    return Array.isArray(res) ? res : [];
+  },
+  async saveItemFlexiservices(items) {
+    return apiService.post("ItemFlexiservices", items);
+  },
+  async updateItemFlexiservice(itmId, payload) {
+    const filter = { where: { itmId } };
+    return apiService.post(
+      `ItemFlexiservices/update?where=${encodeURIComponent(JSON.stringify(filter.where))}`,
+      payload
+    );
+  },
+  async deleteItemFlexiservice(itmId) {
+    return apiService.delete(`ItemFlexiservices/${itmId}`);
+  },
+
+  // Voucher batches (edit voucher items) — BE API when configured
+  async getLoadVoucherBatches() {
+    const beBase =
+      (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
+    const url = beBase
+      ? `${beBase.replace(/\/$/, "")}/loadvoucher`
+      : "loadvoucher";
+    return apiService.get(url);
+  },
+  async checkVoucherNumbers(voucherNumbers) {
+    const beBase =
+      (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
+    const path = `vouchercheck/?voucher_number=${encodeURIComponent(voucherNumbers)}&status=sale`;
+    const url = beBase ? `${beBase.replace(/\/$/, "")}/${path}` : path;
+    return apiService.get(url);
+  },
+  async createLoadVoucher(payload) {
+    const beBase =
+      (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
+    const url = beBase
+      ? `${beBase.replace(/\/$/, "")}/loadvoucher/`
+      : "loadvoucher/";
+    return apiService.post(url, payload);
   },
 
   // Item contents

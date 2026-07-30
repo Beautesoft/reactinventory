@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { getConfigValue } from "@/utils/utils";
+import { getPriceStep, getStockLineKey } from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import {
   Table,
   TableHeader,
@@ -298,16 +300,14 @@ function ItemTable({
                         </TableCell>
                       )} */}
                       <TableCell className="text-start">
-                        <Input
-                          type="number"
+                        <QtyInput
+                          item={item}
                           className={`w-20 text-right ${getInputStyle(item)}`}
                           value={item.Qty}
                           onChange={(e) => onQtyChange(e, startIndex + index)}
                           min={allowNegativeQty ? undefined : "0"}
-                          // Remove max restriction to allow unlimited positive quantities
-                          // step="0.01"
+                          allowNegative={allowNegativeQty}
                           disabled={!canEdit() || (item.selectedBatches && item.selectedBatches.transferType === 'specific')}
-                          placeholder="0"
                         />
                         {/* NEW: Batch Selection Indicator */}
                         {getConfigValue('BATCH_NO') === "Yes" && 
@@ -378,6 +378,7 @@ function ItemTable({
                             value={item.Price}
                             onChange={(e) => onPriceChange(e, startIndex + index)}
                             min="0"
+                            step={getPriceStep()}
                           />
                         </TableCell>
                       )}
@@ -403,9 +404,9 @@ function ItemTable({
                               onClick={() => onBatchSelection(startIndex + index, item)}
                               className="cursor-pointer hover:bg-green-50 hover:text-green-600 transition-colors duration-150"
                               title="Select Specific Batch"
-                              disabled={!canEdit() || itemBatchLoading[item.stockCode] || false}
+                              disabled={!canEdit() || itemBatchLoading[getStockLineKey(item)] || false}
                             >
-                              {itemBatchLoading[item.stockCode] ? (
+                              {itemBatchLoading[getStockLineKey(item)] ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <Info className="h-4 w-4" />

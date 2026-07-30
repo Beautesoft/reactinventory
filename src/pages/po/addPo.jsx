@@ -57,6 +57,15 @@ import {
   queryParamsGenerate,
   getConfigValue,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  isEmptyOrInvalidQty,
+  parseQtyNumber,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -228,6 +237,12 @@ const EditDialog = memo(
       if (!editData.podQty || editData.podQty <= 0) {
         errors.push("Quantity must be greater than 0");
       }
+      if (
+        editData.podQty &&
+        !isValidQtyForItem(editData.podQty, editData)
+      ) {
+        errors.push(qtyValidationMessageForItem(editData));
+      }
 
       // Validate price if user has permission
       if (userDetails?.isSettingViewPrice === "True") {
@@ -298,13 +313,12 @@ const EditDialog = memo(
               </div>
               <div className="space-y-2">
                 <Label htmlFor="qty">Quantity</Label>
-                <Input
+                <QtyInput
                   id="qty"
-                  type="number"
+                  item={editData}
                   value={editData?.podQty || ""}
                   onChange={(e) => onEditCart(e, "podQty")}
                   min="0"
-                  step="0.01"
                   disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
                 />
               </div>
@@ -324,13 +338,12 @@ const EditDialog = memo(
               )}
               <div className="space-y-2">
                 <Label htmlFor="focqty">FOC Quantity</Label>
-                <Input
+                <QtyInput
                   id="focqty"
-                  type="number"
+                  item={editData}
                   value={editData?.podFocqty || ""}
                   onChange={(e) => onEditCart(e, "podFocqty")}
                   min="0"
-                  step="0.01"
                   disabled={urlStatus == 7 && userDetails?.isSettingPostedChangePrice !== "True"}
                 />
               </div>
@@ -748,7 +761,8 @@ function AddPO() {
       }
 
       if (items) {
-        setCartData(items);
+        const enrichedItems = await enrichStockItemsWithDecimalFlag(items);
+        setCartData(enrichedItems);
       }
 
       await Promise.all([
@@ -797,14 +811,14 @@ function AddPO() {
       const stockDetails = Array.isArray(res?.result) ? res.result : [];
       
       if (stockDetails.length > 0) {
-        const items = stockDetails.map(item => ({
+        const baseItems = stockDetails.map(item => ({
           ...item,
           Qty: "",
           Price: item.costPrice || 0,
           Cost: item.costPrice || 0,
-          docUom: item.itemUom,
-          stockCode: item.itemcode,
-          stockName: item.itemdesc,
+          docUom: item.itemUom || item.uom,
+          stockCode: item.itemcode || item.stockCode,
+          stockName: item.itemdesc || item.stockName,
           Brand: item.brandname,
           BrandCode: item.brandcode,
           Range: item.rangename,
@@ -812,6 +826,8 @@ function AddPO() {
           Department: item.department,
           isActive: "True"
         }));
+
+        const items = await enrichStockItemsWithDecimalFlag(baseItems);
 
         setStockList(items);
         setOriginalStockList(items);
@@ -1014,6 +1030,10 @@ function AddPO() {
       return;
     }
 
+    if (!validateQtyForItemOrToast(qty, item, { toast })) {
+      return;
+    }
+
     const price = parseFloat(item.Price) || 0;
     const discPer = 0; // Default discount
     const discAmt = (qty * price * discPer) / 100;
@@ -1050,6 +1070,7 @@ function AddPO() {
       poId: "", // Will be set when saving
       RunningNo: "", // Will be set when saving
       docUom: item.docUom,
+      allowDecimalQty: item.allowDecimalQty ?? false,
       docBatchNo: "",
       docExpdate: "",
       itemRemark: "",
@@ -1087,6 +1108,16 @@ function AddPO() {
   // Submit edit
   const handleEditSubmit = () => {
     if (editData.editingIndex !== null) {
+      if (!validateQtyForItemOrToast(editData.podQty, editData, { toast })) {
+        return;
+      }
+      if (
+        editData.podFocqty &&
+        !validateQtyForItemOrToast(editData.podFocqty, editData, { toast })
+      ) {
+        return;
+      }
+
       const newCartData = [...cartData];
       newCartData[editData.editingIndex] = { ...editData };
       setCartData(newCartData);

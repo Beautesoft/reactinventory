@@ -51,6 +51,37 @@ const convertEmptyStringsToNull = (obj) => {
   return obj;
 };
 
+/** Strip UI-only / unsupported columns before posting reqdetails (Dragon DB has no ITEMREMARK1/2). */
+const sanitizeReqDetailPayload = (item) => {
+  if (!item || typeof item !== "object") return item;
+  const {
+    itemRemark1,
+    itemRemark2,
+    batchDetails,
+    transferType,
+    useExistingBatch,
+    allowDecimalQty,
+    ...rest
+  } = item;
+
+  if (!rest.ordMemo1 && itemRemark1) {
+    // Store transfer mode only (ordMemo1 historically holds fefo/specific)
+    rest.ordMemo1 = String(itemRemark1).includes("-")
+      ? String(itemRemark1).split("-")[0]
+      : itemRemark1;
+  }
+  if (!rest.ordMemo2 && itemRemark2) {
+    rest.ordMemo2 = itemRemark2;
+  }
+
+  return rest;
+};
+
+const prepareReqDetailsForApi = (items) =>
+  convertEmptyStringsToNull(
+    (Array.isArray(items) ? items : [items]).map(sanitizeReqDetailPayload)
+  );
+
 // Resolve approved qty; treats explicit 0 as valid (unlike || fallback)
 export const getApprovedQty = (item) => {
   if (item.reqAppqty != null && item.reqAppqty !== "") {
@@ -179,8 +210,7 @@ export const prApi = {
         item.RunningNo = runningNo;
       });
       
-      // Convert empty strings to null before sending
-      const convertedItems = convertEmptyStringsToNull(items);
+      const convertedItems = prepareReqDetailsForApi(items);
       
       // Save line items
       const response = await apiService.post("reqdetails", convertedItems);
@@ -267,8 +297,7 @@ export const prApi = {
   // Update line item (HQ approval)
   async updatePRLineItem(reqId, item) {
     try {
-      // Convert empty strings to null before sending
-      const convertedItem = convertEmptyStringsToNull(item);
+      const convertedItem = prepareReqDetailsForApi(item)[0];
       await apiService.post(`reqdetails/update?[where][reqId]=${reqId}`, convertedItem);
     } catch (error) {
       console.error("Error updating PR line item:", error);
@@ -280,8 +309,7 @@ export const prApi = {
   async updatePRLineItems(items) {
     try {
       for (const item of items) {
-        // Convert empty strings to null before sending
-        const convertedItem = convertEmptyStringsToNull(item);
+        const convertedItem = prepareReqDetailsForApi(item)[0];
         
         if (item.reqId && item.reqId !== "") {
           // Update existing item

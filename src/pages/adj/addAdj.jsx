@@ -45,6 +45,19 @@ import {
   queryParamsGenerate,
   getConfigValue,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  coerceStockListFieldValue,
+  calcDocAmtFromQtyPrice,
+  parseQtyNumber,
+  isEmptyOrInvalidQty,
+  getStockLineKey,
+  matchesStockLine,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -87,6 +100,7 @@ const BatchSelectionDialog = memo(
     onBatchSelectionSubmit,
     itemcode,
     itemdesc,
+    allowDecimalQty = false,
   }) => {
     const [selectedBatches, setSelectedBatches] = useState([]);
     const [batchQuantities, setBatchQuantities] = useState({});
@@ -363,8 +377,9 @@ console.log(combinedBatchData,'combinedBatchData');
                             <td className="p-2 text-center">
                               {batch.batchNo === "" ? (
                                 noBatchSelected ? (
-                                  <Input
-                                    type="number"
+                                  <QtyInput
+                                    item={{ allowDecimalQty }}
+                                    allowNegative={transferQty < 0}
                                     min={transferQty < 0 ? -Math.abs(transferQty) : 0}
                                     max={transferQty > 0 ? Math.abs(transferQty) : 0}
                                     value={noBatchQuantity}
@@ -379,8 +394,9 @@ console.log(combinedBatchData,'combinedBatchData');
                                   <span className="text-gray-400">-</span>
                                 )
                               ) : isSelected ? (
-                                <Input
-                                  type="number"
+                                <QtyInput
+                                  item={{ allowDecimalQty }}
+                                  allowNegative={transferQty < 0}
                                   min={transferQty < 0 ? -maxSelectableQty : 0}
                                   max={transferQty > 0 ? maxSelectableQty : 0}
                                   value={selectedQty}
@@ -529,6 +545,13 @@ const EditDialog = memo(
             errors.push("Quantity must be greater than 0");
           }
 
+          if (
+            editData?.docQty &&
+            !isValidQtyForItem(editData.docQty, editData, { allowNegative: true })
+          ) {
+            errors.push(qtyValidationMessageForItem(editData));
+          }
+
           // Check if quantity exceeds available stock for negative adjustments
           if (editData?.docQty < 0) {
             const availableQty = Number(editData?.originalQty || 0);
@@ -596,9 +619,10 @@ const EditDialog = memo(
               <>
                 <div className="space-y-2">
                   <Label htmlFor="qty">Quantity</Label>
-                  <Input
+                  <QtyInput
                     id="qty"
-                    type="number"
+                    item={editData}
+                    allowNegative
                     value={editData?.docQty || ""}
                     onChange={(e) => onEditCart(e, "docQty")}
                     className="w-full"
@@ -1288,19 +1312,20 @@ function AddAdj({ docData }) {
       // apiService1.get(`api/GetInvitems/count${countQuery}`),
       // apiService.get(`GetInvItems${query}`),
 
-      .then((res) => {
+      .then(async (res) => {
         const stockDetails = Array.isArray(res?.result) ? res.result : [];
         const count = stockDetails.length;
         setLoading(false);
-        const updatedRes = stockDetails.map((item) => ({
+        const baseRes = stockDetails.map((item) => ({
           ...item,
-          Qty: 0,
+          Qty: "",
           expiryDate: null,
           // Price: Number(item?.item_Price),
           // Price: item?.Price,
 
           docAmt: null,
         }));
+        const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
         console.log(updatedRes, "updatedRes");
         console.log(count, "count");
 
@@ -1523,8 +1548,10 @@ function AddAdj({ docData }) {
         })
       );
       
-      setCartItems(reconstructedItems);
-      setCartData(reconstructedItems);
+      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      
+      setCartItems(enrichedItems);
+      setCartData(enrichedItems);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
@@ -1663,11 +1690,11 @@ function AddAdj({ docData }) {
         i === index
           ? {
               ...item,
-              [field]: field === "expiryDate" ? value : Number(value),
+              [field]: coerceStockListFieldValue(field, value),
               docAmt:
                 field === "Qty"
-                  ? Number(value) * Number(item.Price)
-                  : Number(item.Qty) * Number(value),
+                  ? calcDocAmtFromQtyPrice(value, item.Price)
+                  : calcDocAmtFromQtyPrice(item.Qty, value),
             }
           : item
       )
@@ -1738,6 +1765,15 @@ function AddAdj({ docData }) {
       if (urlStatus != 7) {
         if (!updatedEditData.docQty || updatedEditData.docQty === 0) {
           toast.error("Quantity is required");
+          return;
+        }
+
+        if (
+          !validateQtyForItemOrToast(updatedEditData.docQty, updatedEditData, {
+            allowNegative: true,
+            toast,
+          })
+        ) {
           return;
         }
 
@@ -1879,13 +1915,13 @@ function AddAdj({ docData }) {
     }
 
     // Always check if quantity is entered and valid
-    if (!item.Qty || item.Qty === 0) {
+    if (item.Qty === "" || item.Qty === null || item.Qty === undefined) {
       toast.error("Please enter a valid quantity first");
       return;
     }
 
     // Set loading state for this specific item
-    setItemBatchLoading((prev) => ({ ...prev, [item.stockCode]: true }));
+    setItemBatchLoading((prev) => ({ ...prev, [getStockLineKey(item)]: true }));
     try {
       // Fetch ItemBatches for this item from the current store
       const filter = {
@@ -1924,7 +1960,7 @@ function AddAdj({ docData }) {
         .reduce((sum, b) => sum + b.availableQty, 0);
       const noBatchQty =
         batchBreakdown.find((b) => b.batchNo === "")?.availableQty || 0;
-      const adjustmentQty = Math.abs(Number(item.Qty));
+      const adjustmentQty = Math.abs(parseQtyNumber(item.Qty));
 
       // Generate scenario message
       let scenarioMessage = "";
@@ -1953,7 +1989,7 @@ function AddAdj({ docData }) {
       console.error("Error fetching batch data:", error);
       toast.error("Failed to fetch batch information");
     } finally {
-      setItemBatchLoading((prev) => ({ ...prev, [item.stockCode]: false }));
+      setItemBatchLoading((prev) => ({ ...prev, [getStockLineKey(item)]: false }));
     }
   };
 
@@ -2001,7 +2037,7 @@ function AddAdj({ docData }) {
       // Update the stock item to show that specific batches are selected
       setStockList((prev) =>
         prev.map((stockItem) =>
-          stockItem.stockCode === editData.stockCode
+          matchesStockLine(stockItem, editData)
             ? {
                 ...stockItem,
                 selectedBatches: {
@@ -2040,7 +2076,7 @@ function AddAdj({ docData }) {
       // No specific batches or No Batch selected, use FEFO
       setStockList((prev) =>
         prev.map((stockItem) =>
-          stockItem.stockCode === editData.stockCode
+          matchesStockLine(stockItem, editData)
             ? {
                 ...stockItem,
                 selectedBatches: null,
@@ -2058,10 +2094,10 @@ function AddAdj({ docData }) {
     setShowBatchDialog(false);
   };
 
-  const handleRemoveBatchSelection = (index, item) => {
+  const handleRemoveBatchSelection = (_index, item) => {
     setStockList((prev) =>
       prev.map((stockItem) =>
-        stockItem.stockCode === item.stockCode
+        matchesStockLine(stockItem, item)
           ? {
               ...stockItem,
               selectedBatches: null,
@@ -2788,7 +2824,7 @@ function AddAdj({ docData }) {
       prev.map((stockItem, i) =>
         i === index ? { 
           ...stockItem, 
-          Qty: 0,
+          Qty: "",
           selectedBatches: null // Clear batch selection when added to cart
         } : stockItem
       )
@@ -2929,8 +2965,12 @@ function AddAdj({ docData }) {
   };
 
   const addToCart = async (index, item) => {
-    if (!item.Qty || item.Qty === 0) {
+    if (item.Qty === "" || item.Qty === null || item.Qty === undefined) {
       toast.error("Please enter a valid quantity (positive or negative)");
+      return;
+    }
+
+    if (!validateQtyForItemOrToast(item.Qty, item, { allowNegative: true, toast })) {
       return;
     }
 
@@ -2938,7 +2978,7 @@ function AddAdj({ docData }) {
     if (item.Qty < 0) {
       const availableQty = Number(item.quantity) || 0;
 
-      if (Math.abs(Number(item.Qty)) > availableQty) {
+      if (Math.abs(parseQtyNumber(item.Qty)) > availableQty) {
         toast.error(
           `Cannot decrease stock by ${Math.abs(
             Number(item.Qty)
@@ -2954,7 +2994,7 @@ function AddAdj({ docData }) {
       return;
     }
 
-    const amount = Number(item.Qty) * Number(item.Price);
+    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
 
     // Check if specific batches are selected
     const hasSpecificBatches =
@@ -3003,9 +3043,9 @@ function AddAdj({ docData }) {
       createDate: stockHdrs.docDate,
       itemcode: item.stockCode,
       itemdesc: item.stockName,
-      docQty: Number(item.Qty),
+      docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
-      docTtlqty: Number(item.Qty),
+      docTtlqty: parseQtyNumber(item.Qty),
       docPrice: Number(item.Price),
       itemprice: Number(item.Cost) || 0, // Use item.Cost for consistency with other modules
       docPdisc: 0,
@@ -3022,6 +3062,7 @@ function AddAdj({ docData }) {
       itmBrandDesc: item.brand,
       itmRangeDesc: item.range || "",
       DOCUOMDesc: item.uomDescription,
+      allowDecimalQty: item.allowDecimalQty ?? false,
       itemRemark: "",
       docMdisc: 0,
       recTtl: 0,
@@ -4538,6 +4579,7 @@ function AddAdj({ docData }) {
         onBatchSelectionSubmit={handleBatchSelectionSubmit}
         itemcode={editData?.stockCode}
         itemdesc={editData?.stockName}
+        allowDecimalQty={editData?.allowDecimalQty ?? false}
       />
       <AdjustmentPreviewModal
         showPreviewModal={showPreviewModal}

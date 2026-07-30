@@ -57,6 +57,19 @@ import {
   queryParamsGenerate,
   getConfigValue,
 } from "@/utils/utils";
+import {
+  enrichStockItemsWithDecimalFlag,
+  validateQtyForItemOrToast,
+  isValidQtyForItem,
+  qtyValidationMessageForItem,
+  coerceStockListFieldValue,
+  parseQtyNumber,
+  isEmptyOrInvalidQty,
+  getStockLineKey,
+  findStockLineIndex,
+  matchesCartStockLine,
+} from "@/utils/uomDecimalQty";
+import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -172,6 +185,7 @@ const StockTakeBatchSelectionDialog = memo(
     onBatchSelectionSubmit,
     itemcode,
     itemdesc,
+    allowDecimalQty = false,
   }) => {
     // Helper function to create unique batch key from batchNo and expDate
     const getBatchKey = (batch) => {
@@ -455,8 +469,8 @@ const StockTakeBatchSelectionDialog = memo(
                               </TableCell>
                               <TableCell>
                                 {isSelected ? (
-                                  <Input
-                                    type="number"
+                                  <QtyInput
+                                    item={{ allowDecimalQty }}
                                     className="w-24 text-right"
                                     value={selectedQty}
                                     onChange={(e) =>
@@ -466,7 +480,6 @@ const StockTakeBatchSelectionDialog = memo(
                                       )
                                     }
                                     min="0"
-                                    step="1"
                                   />
                                 ) : (
                                   <span className="text-gray-400">-</span>
@@ -497,15 +510,14 @@ const StockTakeBatchSelectionDialog = memo(
                           </TableCell>
                           <TableCell>
                             {noBatchSelected ? (
-                              <Input
-                                type="number"
+                              <QtyInput
+                                item={{ allowDecimalQty }}
                                 className="w-24 text-right"
                                 value={noBatchQuantity}
                                 onChange={(e) =>
                                   handleNoBatchQuantityChange(e.target.value)
                                 }
                                 min="0"
-                                step="1"
                               />
                             ) : (
                               <span className="text-gray-400">-</span>
@@ -625,9 +637,9 @@ const EditDialog = memo(
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="qty">Quantity</Label>
-            <Input
+            <QtyInput
               id="qty"
-              type="number"
+              item={editData}
               min="0"
               value={editData?.docQty || ""}
               onChange={(e) => onEditCart(e, "docQty")}
@@ -843,13 +855,14 @@ function AddTake({ docData }) {
   };
 
   // Handle item selection in Step 1
-  const handleItemSelection = (stockCode, checked) => {
+  const handleItemSelection = (item, checked) => {
+    const key = getStockLineKey(item);
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
       if (checked) {
-        newSet.add(stockCode);
+        newSet.add(key);
       } else {
-        newSet.delete(stockCode);
+        newSet.delete(key);
       }
       return newSet;
     });
@@ -858,23 +871,23 @@ function AddTake({ docData }) {
   // Handle select all items in Step 1 (selects all visible items in current filtered list)
   const handleSelectAll = (checked) => {
     if (checked) {
-      const allCodes = stockList
+      const allKeys = stockList
         .filter((item) => item.isActive === "True")
-        .map((item) => item.stockCode);
+        .map((item) => getStockLineKey(item));
       // Add to existing selected items (don't replace, in case user selected items from different pages/filters)
       setSelectedItems((prev) => {
         const newSet = new Set(prev);
-        allCodes.forEach((code) => newSet.add(code));
+        allKeys.forEach((key) => newSet.add(key));
         return newSet;
       });
     } else {
       // Only unselect currently visible items
-      const visibleCodes = stockList
+      const visibleKeys = stockList
         .filter((item) => item.isActive === "True")
-        .map((item) => item.stockCode);
+        .map((item) => getStockLineKey(item));
       setSelectedItems((prev) => {
         const newSet = new Set(prev);
-        visibleCodes.forEach((code) => newSet.delete(code));
+        visibleKeys.forEach((key) => newSet.delete(key));
         return newSet;
       });
     }
@@ -901,7 +914,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       // Filter originalStockList to only include selected items (not filtered stockList)
       // This ensures all selected items are included even if they're filtered out by search/filters
       const selectedStockList = originalStockList.filter(
-        (item) => item.isActive === "True" && selectedItems.has(item.stockCode)
+        (item) => item.isActive === "True" && selectedItems.has(getStockLineKey(item))
       );
       console.log(selectedStockList, "selectedStockList1");
 
@@ -928,9 +941,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       const itemsForEntry = selectedStockList.map((item) => {
         // Check if this item exists in cartData (for editing existing documents)
         // Handle both new format (ONE entry per item with ordMemo) and old format (multiple entries per item)
-        const existingItems = cartData.filter(
-        (cartItem) => cartItem.itemcode === item.stockCode
-      );
+        const existingItems = cartData.filter((cartItem) =>
+          matchesCartStockLine(cartItem, item)
+        );
 
       if (!existingItems || existingItems.length === 0) {
         return {
@@ -1027,11 +1040,21 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
   // Handle quantity change in Step 2
   const handleCountedQtyChange = (index, value) => {
-    const newQty = parseFloat(value) || 0;
     setStockTakeItems((prev) => {
+      const item = prev[index];
+      if (
+        value !== "" &&
+        value !== "-" &&
+        !isValidQtyForItem(value, item)
+      ) {
+        toast.error(qtyValidationMessageForItem(item));
+        return prev;
+      }
+
       const updated = [...prev];
       const onHandQty = parseFloat(updated[index].onHandQty) || 0;
       const oldQty = parseFloat(updated[index].countedQty) || 0;
+      const newQty = value === "" ? "" : parseFloat(value) || 0;
       
       updated[index] = {
         ...updated[index],
@@ -1040,14 +1063,18 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       };
       
       // If quantity changed significantly, clear batch breakdown (user needs to re-select)
-      if (getConfigValue("BATCH_NO") === "Yes" && Math.abs(newQty - oldQty) > 0.01) {
+      if (
+        getConfigValue("BATCH_NO") === "Yes" &&
+        newQty !== "" &&
+        Math.abs(Number(newQty) - oldQty) > 0.01
+      ) {
         const existingBatchTotal = updated[index].batchBreakdown?.reduce(
           (sum, b) => sum + (b.countedQty || 0),
           0
         ) || 0;
         
         // Clear batch breakdown if new quantity doesn't match existing batch total
-        if (Math.abs(existingBatchTotal - newQty) > 0.01) {
+        if (Math.abs(existingBatchTotal - Number(newQty)) > 0.01) {
           updated[index].batchBreakdown = undefined;
           updated[index].hasBatchBreakdown = false;
         }
@@ -1074,7 +1101,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       // Remove from selectedItems Set in Step 1
       setSelectedItems((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(itemToRemove.stockCode);
+        newSet.delete(getStockLineKey(itemToRemove));
         return newSet;
       });
     }
@@ -1094,6 +1121,16 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     if (confirmedItems.length === 0) {
       toast.error("Please confirm at least one item to update");
       return null;
+    }
+
+    for (const item of confirmedItems) {
+      if (
+        item.countedQty !== "" &&
+        item.countedQty != null &&
+        !validateQtyForItemOrToast(item.countedQty, item, { toast })
+      ) {
+        return null;
+      }
     }
 
     // Validate batch breakdown for items with batch functionality
@@ -1156,6 +1193,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         cancelQty: 0,
         createUser: userDetails?.username || "SYSTEM",
         docUom: item.uom || "",
+        allowDecimalQty: item.allowDecimalQty ?? false,
         itmBrand: item.brandCode,
         itmRange: item.rangeCode,
         itmBrandDesc: item.brand,
@@ -1189,8 +1227,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
       // Check if this item already exists in cartData (for updating existing documents)
       // If it exists, preserve the docId so we update instead of create+delete
-      const existingItem = cartData.find(
-        (cartItem) => cartItem.itemcode === item.stockCode
+      const existingItem = cartData.find((cartItem) =>
+        matchesCartStockLine(cartItem, item)
       );
       const docId = existingItem?.docId || null; // Preserve docId if updating
 
@@ -1770,22 +1808,20 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       workflowStep === 1
     ) {
       // Set selected items from existing cartData
-      const existingItemCodes = new Set(
-        cartData.map((item) => item.itemcode)
-      );
-      setSelectedItems(existingItemCodes);
+      const existingItemKeys = new Set(cartData.map((item) => getStockLineKey(item)));
+      setSelectedItems(existingItemKeys);
 
       // Filter stockList to only include selected items
       const selectedStockList = stockList.filter((item) =>
-        existingItemCodes.has(item.stockCode)
+        existingItemKeys.has(getStockLineKey(item))
       );
 
       // Convert selected items to stockTakeItems format with existing cartData
       // Handle both new format (ONE entry per item with ordMemo) and old format (multiple entries per item)
       const itemsForEntry = selectedStockList.map((item) => {
         // Find all entries for this item (for backward compatibility with old format)
-        const existingItems = cartData.filter(
-          (cartItem) => cartItem.itemcode === item.stockCode
+        const existingItems = cartData.filter((cartItem) =>
+          matchesCartStockLine(cartItem, item)
         );
 
         if (!existingItems || existingItems.length === 0) {
@@ -2002,16 +2038,17 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       // apiService1.get(`api/GetInvitems/count${countQuery}`),
       // apiService.get(`GetInvItems${query}`),
 
-      .then((res) => {
+      .then(async (res) => {
         const stockDetails = Array.isArray(res?.result) ? res.result : [];
-        const updatedRes = stockDetails.map((item) => ({
+        const baseRes = stockDetails.map((item) => ({
           ...item,
-          Qty: 0,
+          Qty: "",
           expiryDate: null,
           batchNo: "",
           remarks: "",
           docAmt: null,
         }));
+        const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
 
         // Store original unfiltered data
         setOriginalStockList(updatedRes);
@@ -2337,8 +2374,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         })
       );
       
-      setCartItems(reconstructedItems);
-      setCartData(reconstructedItems);
+      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      setCartItems(enrichedItems);
+      setCartData(enrichedItems);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching stock header details:", err);
@@ -3377,11 +3415,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
          i === index
            ? {
                ...item,
-               [field]:
-                 field === "expiryDate" || field === "batchNo"
-                   ? value
-                   : Number(value),
-               // docAmt calculation removed as it's not displayed
+               [field]: coerceStockListFieldValue(field, value),
              }
            : item
        )
@@ -3494,6 +3528,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
        toast.error("Quantity is required");
        return;
      }
+
+     if (!validateQtyForItemOrToast(editData.docQty, editData, { toast })) {
+       return;
+     }
  
      const updatedItem = {
        ...editData,
@@ -3538,19 +3576,23 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
     setStockList((prev) =>
       prev.map((stockItem, i) =>
-        i === index ? { ...stockItem, Qty: 0 } : stockItem
+        i === index ? { ...stockItem, Qty: "" } : stockItem
       )
     );
   };
 
      const addToCart = (index, item) => {
-     if (!item.Qty || item.Qty <= 0) {
+     if (isEmptyOrInvalidQty(item.Qty)) {
        toast.error("Please enter a valid quantity");
+       return;
+     }
+
+     if (!validateQtyForItemOrToast(item.Qty, item, { toast })) {
        return;
      }
  
      // Amount calculation kept for backend processing but not displayed
-     const amount = Number(item.Qty) * Number(item.Price);
+     const amount = parseQtyNumber(item.Qty) * Number(item.Price);
 
          const newCartItem = {
        id: cartData.length + 1,
@@ -3562,7 +3604,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
        docLineno: null,
        itemcode: item.stockCode,
        itemdesc: item.stockName,
-       docQty: Number(item.Qty), // Counted quantity
+       docQty: parseQtyNumber(item.Qty), // Counted quantity
        docFocqty: 0,
        docTtlqty: Number(item.quantity), // System Quantity (what system shows)
        docPrice: Number(item.Price),
@@ -3572,8 +3614,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
        postedQty: 0,
        cancelQty: 0,
        createUser: userDetails?.username || "SYSTEM",
-       docUom: item.uom || "",
-       docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.expiryDate || "") : "",
+        docUom: item.uom || "",
+        allowDecimalQty: item.allowDecimalQty ?? false,
+        docExpdate: getConfigValue('EXPIRY_DATE') === "Yes" ? (item.expiryDate || "") : "",
        itmBrand: item.brandCode,
        itmRange: item.rangeCode,
        itmBrandDesc: item.brand,
@@ -3587,9 +3630,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
        }),
      };
 
-    const existingItemIndex = cartData.findIndex(
-      (cartItem) =>
-        cartItem.itemcode === item.stockCode && cartItem.docUom === item.itemUom
+    const existingItemIndex = cartData.findIndex((cartItem) =>
+      matchesCartStockLine(cartItem, item)
     );
 
     if (existingItemIndex !== -1) {
@@ -3798,7 +3840,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     const itemsToPrint = printAll
       ? stockList.filter((item) => item.isActive === "True")
       : stockList.filter(
-          (item) => item.isActive === "True" && selectedItems.has(item.stockCode)
+          (item) => item.isActive === "True" && selectedItems.has(getStockLineKey(item))
         );
 
     // Use the imported print function
@@ -4187,7 +4229,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                   <Checkbox
                                     checked={
                                       stockList.filter(item => item.isActive === "True").length > 0 &&
-                                      stockList.filter(item => item.isActive === "True").every(item => selectedItems.has(item.stockCode))
+                                      stockList.filter(item => item.isActive === "True").every(item => selectedItems.has(getStockLineKey(item)))
                                     }
                                     onCheckedChange={handleSelectAll}
                                   />
@@ -4271,14 +4313,14 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                   )
                                   .map((item, index) => (
                                     <TableRow
-                                      key={index}
+                                      key={getStockLineKey(item)}
                                       className="hover:bg-gray-50 transition-colors duration-150"
                                     >
                                       <TableCell>
                                         <Checkbox
-                                          checked={selectedItems.has(item.stockCode)}
+                                          checked={selectedItems.has(getStockLineKey(item))}
                                           onCheckedChange={(checked) =>
-                                            handleItemSelection(item.stockCode, checked)
+                                            handleItemSelection(item, checked)
                                           }
                                         />
                                       </TableCell>
@@ -4398,8 +4440,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                   )
                                   .map((item, index) => {
                                     // Find original index in stockTakeItems array by stockCode
-                                    const actualIndex = stockTakeItems.findIndex(
-                                      (originalItem) => originalItem.stockCode === item.stockCode
+                                    const actualIndex = findStockLineIndex(
+                                      stockTakeItems,
+                                      item
                                     );
                                     const variance = item.variance || 0;
                                     const varianceStyle =
@@ -4410,7 +4453,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                         : "text-gray-600";
                                     return (
                                       <TableRow
-                                        key={`${item.stockCode}-${actualIndex}`}
+                                        key={getStockLineKey(item)}
                                         className={
                                           variance !== 0
                                             ? "bg-yellow-50"
@@ -4429,8 +4472,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                             "-"}
                                         </TableCell>
                                         <TableCell>
-                                          <Input
-                                            type="number"
+                                          <QtyInput
+                                            item={item}
                                             className="w-20 text-right"
                                             value={item.countedQty || ""}
                                             onChange={(e) =>
@@ -4440,7 +4483,6 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                               )
                                             }
                                             min="0"
-                                            placeholder="0"
                                             disabled={!canEdit()}
                                           />
                                         </TableCell>
@@ -4782,6 +4824,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           onBatchSelectionSubmit={handleBatchSelectionSubmit}
           itemcode={batchSelectionDialog.item?.stockCode || ""}
           itemdesc={batchSelectionDialog.item?.stockName || ""}
+          allowDecimalQty={batchSelectionDialog.item?.allowDecimalQty ?? false}
         />
       )}
       <StockTakeBatchPreviewModal
