@@ -88,7 +88,6 @@ function ItemMasterForm() {
   const [allItemTypes, setAllItemTypes] = useState([]);
   const [uomOptions, setUomOptions] = useState([]);
   const [siteOptions, setSiteOptions] = useState([]);
-  const [linkOptions, setLinkOptions] = useState([]);
   const [supplyOptions, setSupplyOptions] = useState([]);
   const [taxType1Options, setTaxType1Options] = useState([]);
   const [taxType2Options, setTaxType2Options] = useState([]);
@@ -219,8 +218,6 @@ function ItemMasterForm() {
   // Link Code State (per-item links)
   const [linkList, setLinkList] = useState([]);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
-  const [newLinkCode, setNewLinkCode] = useState("");
-  const [newLinkDesc, setNewLinkDesc] = useState("");
 
   // Item Usage State
   const [usageItems, setUsageItems] = useState([]);
@@ -375,7 +372,7 @@ function ItemMasterForm() {
 
   const loadLookups = useCallback(async () => {
     try {
-      const [divs, depts, brands, classes, ranges, types, uom, sitesRes, links, supplies, tax1, tax2, commGroups, voucherValidPeriods] =
+      const [divs, depts, brands, classes, ranges, types, uom, sitesRes, supplies, tax1, tax2, commGroups, voucherValidPeriods] =
         await Promise.all([
           itemMasterApi.getItemDivs(),
           itemMasterApi.getItemDepts(),
@@ -385,7 +382,6 @@ function ItemMasterForm() {
           itemMasterApi.getItemTypes(),
           itemMasterApi.getItemUom(),
           itemMasterApi.getItemSitelists(),
-          itemMasterApi.getItemLinks(),
           itemMasterApi.getItemSupplies().catch(() => []),
           itemMasterApi.getTaxType1Codes().catch(() => []),
           itemMasterApi.getTaxType2Codes().catch(() => []),
@@ -444,9 +440,6 @@ function ItemMasterForm() {
           label: x.itemsiteDesc || x.siteDesc || x.itemsiteCode || x.siteCode,
           isActive: true,
         }))
-      );
-      setLinkOptions(
-        (links || []).map((x) => ({ value: x.linkCode, label: `${x.linkCode} - ${x.linkDesc || ""}` }))
       );
       setSupplyOptions(
         (supplies || []).map((x) => ({ value: String(x.splyCode ?? x.suppCode ?? ""), label: x.supplydesc ?? x.suppDesc ?? String(x.splyCode ?? x.suppCode ?? "") }))
@@ -999,22 +992,32 @@ function ItemMasterForm() {
     }
   };
 
-  const addLink = () => {
-    if (!newLinkCode?.trim() || !newLinkDesc?.trim()) {
-      toast.error("Link Code and Description are required");
-      return;
+  const refreshItemLinks = async () => {
+    if (!itemCode) return;
+    try {
+      const itemLinks = await itemMasterApi.getItemLinksByItem(itemCode);
+      setLinkList(
+        (itemLinks || []).map((l) => ({
+          itmId: l.itmId,
+          linkCode: l.linkCode,
+          linkDesc: l.linkDesc,
+          rptCodeStatus: l.rptCodeStatus === true,
+        }))
+      );
+    } catch (err) {
+      console.warn("Failed to refresh item links:", err);
     }
-    if (linkList.some((l) => l.linkCode === newLinkCode.trim())) {
+  };
+
+  const addLink = ({ linkCode, linkDesc }) => {
+    if (linkList.some((l) => l.linkCode === linkCode)) {
       toast.error("Link Code already added");
       return;
     }
     setLinkList((prev) => [
       ...prev,
-      { linkCode: newLinkCode.trim(), linkDesc: newLinkDesc.trim(), rptCodeStatus: false },
+      { linkCode, linkDesc, rptCodeStatus: false },
     ]);
-    setNewLinkCode("");
-    setNewLinkDesc("");
-    setAddLinkOpen(false);
   };
 
   const toggleLinkRptCode = (linkCode) => {
@@ -2384,24 +2387,6 @@ function ItemMasterForm() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="pt-6">
-                <div className="flex flex-col md:flex-row gap-4 mb-6 md:items-end bg-gray-50/30 p-4 rounded-md border">
-                  <div className="flex-1 w-full">
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Link Code</Label>
-                    <Input value={newLinkCode} onChange={(e) => setNewLinkCode(e.target.value)} placeholder="Enter Code" className="mt-1.5" />
-                  </div>
-                  <div className="flex-[2] w-full">
-                    <Label className="text-xs font-medium text-gray-500 uppercase">Description</Label>
-                    <Input value={newLinkDesc} onChange={(e) => setNewLinkDesc(e.target.value)} placeholder="Enter Description" className="mt-1.5" />
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-                    <Button type="button" variant="outline" size="sm" className="h-9" onClick={() => setAddLinkOpen(true)}>
-                      Add Master Link
-                    </Button>
-                    <Button type="button" className="h-9" onClick={addLink}>
-                      <Plus className="w-4 h-4 mr-2" /> Add Link
-                    </Button>
-                  </div>
-                </div>
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader className="bg-gray-50/50">
@@ -2409,7 +2394,7 @@ function ItemMasterForm() {
                         <TableHead>Link Code</TableHead>
                         <TableHead>Link Description</TableHead>
                         <TableHead className="w-[100px] text-center">Rpt Code</TableHead>
-                        <TableHead className="w-[60px]"></TableHead>
+                        <TableHead className="w-[80px]">Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -2453,6 +2438,21 @@ function ItemMasterForm() {
                       )}
                     </TableBody>
                   </Table>
+                </div>
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    className="h-9"
+                    onClick={() => {
+                      if (!form.stockname?.trim()) {
+                        toast.error("Enter Stock Name first");
+                        return;
+                      }
+                      setAddLinkOpen(true);
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" /> Add Row
+                  </Button>
                 </div>
               </CardContent>
             </CollapsibleContent>
@@ -3072,18 +3072,15 @@ function ItemMasterForm() {
         <AddLinkModal
           open={addLinkOpen}
           onOpenChange={setAddLinkOpen}
-          onSuccess={async () => {
-            const links = await itemMasterApi.getItemLinks();
-            setLinkOptions(
-              (links || []).map((x) => ({ value: x.linkCode, label: `${x.linkCode} - ${x.linkDesc || ""}` }))
-            );
-          }}
+          linkDesc={form.stockname?.trim() || ""}
+          existingCodes={linkList.map((l) => l.linkCode)}
+          onSuccess={addLink}
         />
         <EditLinkModal
           open={editLinkOpen}
           onOpenChange={setEditLinkOpen}
           link={editingLink}
-          onSuccess={() => loadLookups()}
+          onSuccess={refreshItemLinks}
         />
         <CostHistoryTimelineModal
           open={costHistoryOpen}
