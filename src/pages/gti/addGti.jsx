@@ -54,6 +54,7 @@ import {
   queryParamsGenerate,
   getConfigValue,
   normalizeExpDate,
+  filterActiveItemSites,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -1231,7 +1232,7 @@ function AddGti({ docData }) {
   const getStoreList = async () => {
     try {
       const res = await apiService.get("/ItemSitelists");
-      const options = res
+      const options = filterActiveItemSites(res)
         .filter((store) => store.itemsiteCode)
         .map((store) => ({
           label: store.itemsiteDesc,

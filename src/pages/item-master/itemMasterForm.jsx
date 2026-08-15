@@ -57,6 +57,7 @@ import {
   saveUsageLevelsDiff,
   saveVoucherCondition,
 } from "@/utils/itemMaster/itemMasterSave";
+import { filterActiveItemSites } from "@/utils/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -438,10 +439,10 @@ function ItemMasterForm() {
         (uom || []).filter((x) => x.uomIsactive).map((x) => ({ value: x.uomCode, label: x.uomDesc }))
       );
       setSiteOptions(
-        (sitesRes || []).map((x) => ({
+        filterActiveItemSites(sitesRes || []).map((x) => ({
           value: x.itemsiteCode || x.siteCode,
           label: x.itemsiteDesc || x.siteDesc || x.itemsiteCode || x.siteCode,
-          isActive: x.itemsiteIsactive !== false,
+          isActive: true,
         }))
       );
       setLinkOptions(

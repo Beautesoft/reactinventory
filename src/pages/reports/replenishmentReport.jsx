@@ -11,7 +11,7 @@ import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import itemMasterApi from "@/services/itemMasterApi";
 import { toast } from "sonner";
-import { buildFilterQuery } from "@/utils/utils";
+import { buildFilterQuery, filterActiveItemSites } from "@/utils/utils";
 import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
 
@@ -90,7 +90,7 @@ const ReplenishmentReport = () => {
         JSON.parse(localStorage.getItem("userDetails"))?.siteCode || "NIL";
 
       const sitesResponse = await apiService.get("ItemSitelists", { signal });
-      setSites(Array.isArray(sitesResponse) ? sitesResponse : []);
+      setSites(filterActiveItemSites(sitesResponse));
 
       const [brandResponse, rangeResponse, deptResponse] = await Promise.all([
         apiService1.get(`/api/Brand?siteCode=${siteCode}`, { signal }),

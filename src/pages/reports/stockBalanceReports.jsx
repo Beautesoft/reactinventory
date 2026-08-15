@@ -12,7 +12,7 @@ import moment from "moment";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
 import apiService1, { ApiService1 } from "@/services/apiService1";
-import { buildFilterQuery } from "@/utils/utils";
+import { buildFilterQuery, filterActiveItemSites } from "@/utils/utils";
 import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
 
@@ -102,7 +102,7 @@ const StockBalanceReports = () => {
 
       // Load sites - using the same pattern as addGrn.jsx
       const sitesResponse = await apiService.get("ItemSitelists", { signal });
-      setSites(Array.isArray(sitesResponse) ? sitesResponse : []);
+      setSites(filterActiveItemSites(sitesResponse));
 
       // Load brands - using the correct API endpoint from ASP.NET code
       const brandResponse = await apiService1.get(`/api/Brand?siteCode=${siteCode}`, { signal });

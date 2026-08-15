@@ -500,6 +500,15 @@ export const getConfigValue = (key) => {
   return config[key];
 };
 
+export function isItemSiteActive(site) {
+  const v = site?.itemsiteIsactive;
+  return v === true || v === "True" || v === "true" || v === 1 || v === "1";
+}
+
+export function filterActiveItemSites(sites = []) {
+  return (Array.isArray(sites) ? sites : []).filter(isItemSiteActive);
+}
+
 // Currency utility functions
 export const getActiveCurrency = () => {
   const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");

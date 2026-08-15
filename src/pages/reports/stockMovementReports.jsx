@@ -11,13 +11,12 @@ import moment from "moment";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
-import { buildFilterQuery } from "@/utils/utils";
+import { buildFilterQuery, filterActiveItemSites, formatCurrentDate } from "@/utils/utils";
 import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { saveAs } from "file-saver";
-import { formatCurrentDate } from "@/utils/utils";
 
 const StockMovementReports = () => {
   const [filters, setFilters] = useState({
@@ -123,7 +122,7 @@ const StockMovementReports = () => {
 
       // Load sites
       const sitesResponse = await apiService.get("ItemSitelists", { signal });
-      setSites(Array.isArray(sitesResponse) ? sitesResponse : []);
+      setSites(filterActiveItemSites(sitesResponse));
 
       // Load suppliers
       const supplierResponse = await apiService1.get(`/api/Supplier?siteCode=${siteCode}`, { signal });
