@@ -64,6 +64,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   calcDocAmtFromQtyPrice,
+  roundMoney,
+  roundStockLineMoney,
   parseQtyNumber,
   isEmptyOrInvalidQty,
   getStockLineKey,
@@ -94,8 +96,8 @@ const calculateTotals = (cartData) => {
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty || 0),
       totalFoc: acc.totalFoc + Number(item.docFocqty || 0),
-      totalDisc: acc.totalDisc + Number(item.docDisc || 0),
-      totalAmt: acc.totalAmt + Number(item.docAmt || 0),
+      totalDisc: roundMoney(acc.totalDisc + Number(item.docDisc || 0)),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt || 0)),
     }),
     { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
   );
@@ -1009,6 +1011,12 @@ function AddGto({ docData }) {
         ...item,
         Qty: "",
         expiryDate: null,
+        Price: roundMoney(
+          Number(item?.item_Price) ||
+            Number(item?.Price) ||
+            Number(item?.Cost) ||
+            0
+        ),
         docAmt: null,
       }));
 
@@ -1228,14 +1236,7 @@ function AddGto({ docData }) {
           
           // Format all amount fields to exactly 2 decimal places when loading from database
           // This prevents floating point precision errors from database values (e.g., 11.279999732971191)
-          const formattedItem = {
-            ...item,
-            docPrice: parseFloat((parseFloat(item.docPrice) || 0).toFixed(2)),
-            docPdisc: parseFloat((parseFloat(item.docPdisc) || 0).toFixed(2)),
-            docDisc: parseFloat((parseFloat(item.docDisc) || 0).toFixed(2)),
-            docAmt: parseFloat((parseFloat(item.docAmt) || 0).toFixed(2)),
-            itemprice: parseFloat((parseFloat(item.itemprice) || 0).toFixed(2)),
-          };
+          const formattedItem = roundStockLineMoney(item);
           
           if (batchState) {
             return {
@@ -1805,7 +1806,7 @@ function AddGto({ docData }) {
     console.log(item, "item in add to cart");
 
     // Create cart item based on whether specific batches are selected
-    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
+    const amount = roundMoney(parseQtyNumber(item.Qty) * Number(item.Price));
     const hasSpecificBatches =
       item.selectedBatches && item.selectedBatches.transferType === "specific";
 
@@ -1869,7 +1870,7 @@ function AddGto({ docData }) {
       docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
       docTtlqty: parseQtyNumber(item.Qty) + 0, // Will be updated when FOC is added
-      docPrice: Number(item.Price),
+      docPrice: roundMoney(item.Price),
       docPdisc: 0,
       docDisc: 0,
       // Store batch quantities in recQty fields
@@ -2021,7 +2022,7 @@ function AddGto({ docData }) {
           ...item,
           transferType: transferType, // Preserve normalized transferType
           docQty: Number(item.docQty) || 0,
-          docAmt: Number(item.docAmt) || 0,
+          docAmt: roundMoney(item.docAmt),
           batchDetails: item.batchDetails || { individualBatches: [] },
           fefoBatches: item.fefoBatches || [],
           docLinenos: [item.docLineno], // Track all line numbers for audit
@@ -2029,7 +2030,9 @@ function AddGto({ docData }) {
       } else {
         const existing = grouped.get(key);
         existing.docQty += Number(item.docQty) || 0;
-        existing.docAmt += Number(item.docAmt) || 0;
+        existing.docAmt = roundMoney(
+          existing.docAmt + (Number(item.docAmt) || 0)
+        );
         existing.docLinenos.push(item.docLineno); // Track line numbers
         
         // Merge batch details if present
@@ -6126,13 +6129,13 @@ function AddGto({ docData }) {
                           </TableCell>
                           <TableCell>{item.docFocqty || 0}</TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell>{item.docPrice}</TableCell>
+                            <TableCell>{roundMoney(item.docPrice).toFixed(2)}</TableCell>
                           )}
                           <TableCell>{item.docPdisc || 0}%</TableCell>
                           <TableCell>{item.docDisc || 0}</TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
-                              {item.docAmt}
+                              {roundMoney(item.docAmt).toFixed(2)}
                             </TableCell>
                           )}
                           <TableCell>

@@ -64,6 +64,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   calcDocAmtFromQtyPrice,
+  roundMoney,
+  roundStockLineMoney,
   parseQtyNumber,
   isEmptyOrInvalidQty,
 } from "@/utils/uomDecimalQty";
@@ -92,7 +94,7 @@ const calculateTotals = (cartData) => {
   return cartData.reduce(
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty),
-      totalAmt: acc.totalAmt + Number(item.docAmt),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt)),
     }),
     { totalQty: 0, totalAmt: 0 }
   );
@@ -1098,10 +1100,12 @@ function AddGrn({ docData }) {
           Qty: "",
           expiryDate: null,
           Price:
-            Number(item?.item_Price) ||
-            Number(item?.Price) ||
-            Number(item?.Cost) ||
-            0,
+            roundMoney(
+              Number(item?.item_Price) ||
+                Number(item?.Price) ||
+                Number(item?.Cost) ||
+                0
+            ),
           docAmt: null,
         }));
         const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
@@ -1325,7 +1329,9 @@ function AddGrn({ docData }) {
         })
       );
 
-      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      const enrichedItems = (
+        await enrichStockItemsWithDecimalFlag(reconstructedItems)
+      ).map(roundStockLineMoney);
 
       setCartItems(enrichedItems);
       setCartData(enrichedItems);
@@ -1601,9 +1607,10 @@ function AddGrn({ docData }) {
       const updatedItem = {
         ...updatedEditData,
         docQty: Number(updatedEditData.docQty),
-        docPrice: Number(updatedEditData.docPrice),
-        docAmt:
-          Number(updatedEditData.docQty) * Number(updatedEditData.docPrice),
+        docPrice: roundMoney(updatedEditData.docPrice),
+        docAmt: roundMoney(
+          Number(updatedEditData.docQty) * Number(updatedEditData.docPrice)
+        ),
         // Add ordMemo fields for batch persistence
         ...ordMemoFields,
       };
@@ -1716,8 +1723,8 @@ function AddGrn({ docData }) {
     }
 
     // Ensure we have a valid price, fallback to 0 if undefined/null
-    const price = Number(item.Price) || 0;
-    const amount = parseQtyNumber(item.Qty) * price;
+    const price = roundMoney(item.Price);
+    const amount = roundMoney(parseQtyNumber(item.Qty) * price);
 
     // Debug logging
     console.log("Adding item to cart:", {
@@ -1806,13 +1813,15 @@ function AddGrn({ docData }) {
         grouped.set(key, {
           ...item,
           docQty: Number(item.docQty) || 0,
-          docAmt: Number(item.docAmt) || 0,
+          docAmt: roundMoney(item.docAmt),
           batchDetails: { individualBatches: [] },
         });
       } else {
         const existing = grouped.get(key);
         existing.docQty += Number(item.docQty) || 0;
-        existing.docAmt += Number(item.docAmt) || 0;
+        existing.docAmt = roundMoney(
+          existing.docAmt + (Number(item.docAmt) || 0)
+        );
       }
 
       const g = grouped.get(key);
@@ -3597,12 +3606,12 @@ function AddGrn({ docData }) {
                           </TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell>
-                              {isNaN(item.docPrice) ? 0 : item.docPrice || 0}
+                              {isNaN(item.docPrice) ? "0.00" : roundMoney(item.docPrice).toFixed(2)}
                             </TableCell>
                           )}
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
-                              {isNaN(item.docAmt) ? 0 : item.docAmt || 0}
+                              {isNaN(item.docAmt) ? "0.00" : roundMoney(item.docAmt).toFixed(2)}
                             </TableCell>
                           )}
                           {getConfigValue('BATCH_NO') === "Yes" && (

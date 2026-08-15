@@ -64,6 +64,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   parseQtyNumber,
+  roundMoney,
+  roundStockLineMoney,
   isEmptyOrInvalidQty,
   getStockLineKey,
   findStockLineIndex,
@@ -95,7 +97,7 @@ const calculateTotals = (cartData) => {
   return cartData.reduce(
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty),
-      totalAmt: acc.totalAmt + Number(item.docAmt),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt)),
       systemQty: acc.systemQty + Number(item.docTtlqty || 0),
       variance: acc.variance + ((Number(item.docQty) || 0) - (Number(item.docTtlqty) || 0)),
     }),
@@ -1185,7 +1187,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         itemcode: item.stockCode,
         itemdesc: item.stockName,
         docFocqty: 0,
-        docPrice: Number(item.Price || 0),
+        docPrice: roundMoney(item.Price || 0),
         docPdisc: 0,
         docDisc: 0,
         recQty1: 0,
@@ -1212,7 +1214,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       // Create ONE entry per item (following Stock Adjustment pattern)
       // Batch breakdown is stored in ordMemo fields, not as separate entries
       // This matches the pattern used in Stock Adjustment for consistency
-      const totalAmount = Number(item.countedQty) * Number(item.Price || 0);
+      const totalAmount = roundMoney(Number(item.countedQty) * Number(item.Price || 0));
       
       // Calculate total system quantity from batch breakdown or use onHandQty
       // IMPORTANT: For existing items, preserve the original docTtlqty from saved document
@@ -2042,11 +2044,17 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         const stockDetails = Array.isArray(res?.result) ? res.result : [];
         const baseRes = stockDetails.map((item) => ({
           ...item,
-          Qty: "",
-          expiryDate: null,
-          batchNo: "",
-          remarks: "",
-          docAmt: null,
+        Qty: "",
+        expiryDate: null,
+        batchNo: "",
+        remarks: "",
+        Price: roundMoney(
+          Number(item?.item_Price) ||
+            Number(item?.Price) ||
+            Number(item?.Cost) ||
+            0
+        ),
+        docAmt: null,
         }));
         const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
 
@@ -2374,7 +2382,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         })
       );
       
-      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      const enrichedItems = (
+        await enrichStockItemsWithDecimalFlag(reconstructedItems)
+      ).map(roundStockLineMoney);
       setCartItems(enrichedItems);
       setCartData(enrichedItems);
       setLoading(false);
@@ -2509,7 +2519,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           return {
             ...item,
             docQty: Math.abs(variance), // Use absolute value for adjustment
-            docAmt: Math.abs(variance) * (parseFloat(item.docPrice) || 0),
+            docAmt: roundMoney(
+              Math.abs(variance) * (parseFloat(item.docPrice) || 0)
+            ),
             trnQty: variance, // Keep signed variance for backend processing
             remarks: `Stock Take Variance - ${stockTakeDocNo}`,
             docBatchNo: item.docBatchNo || null,
@@ -2520,7 +2532,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
             itmBrandDesc: item.itmBrandDesc || item.brand || "",
             itmRangeDesc: item.itmRangeDesc || item.range || "",
             docUom: item.docUom || item.itemUom || "",
-            docPrice: item.docPrice || item.Price || 0,
+            docPrice: roundMoney(item.docPrice || item.Price || 0),
             docTtlqty: item.docTtlqty || item.quantity || 0,
           };
         });
@@ -2545,9 +2557,11 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         (sum, item) => sum + Math.abs(parseFloat(item.trnQty) || 0),
         0
       );
-      const totalAmt = adjustmentItems.reduce(
-        (sum, item) => sum + (parseFloat(item.docAmt) || 0),
-        0
+      const totalAmt = roundMoney(
+        adjustmentItems.reduce(
+          (sum, item) => sum + (parseFloat(item.docAmt) || 0),
+          0
+        )
       );
 
       // Step 5: Create Stock Adjustment header
@@ -3537,8 +3551,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
        ...editData,
        docQty: Number(editData.docQty),
        // Keep existing price and amount values
-       docPrice: editData.docPrice || 0,
-       docAmt: (Number(editData.docQty) * Number(editData.docPrice || 0)),
+       docPrice: roundMoney(editData.docPrice || 0),
+       docAmt: roundMoney(Number(editData.docQty) * Number(editData.docPrice || 0)),
      };
 
     setCartData((prev) =>
@@ -3592,7 +3606,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
      }
  
      // Amount calculation kept for backend processing but not displayed
-     const amount = parseQtyNumber(item.Qty) * Number(item.Price);
+     const amount = roundMoney(parseQtyNumber(item.Qty) * Number(item.Price));
 
          const newCartItem = {
        id: cartData.length + 1,
@@ -3607,7 +3621,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
        docQty: parseQtyNumber(item.Qty), // Counted quantity
        docFocqty: 0,
        docTtlqty: Number(item.quantity), // System Quantity (what system shows)
-       docPrice: Number(item.Price),
+       docPrice: roundMoney(item.Price),
        docPdisc: 0,
        docDisc: 0,
        recQty1: 0,

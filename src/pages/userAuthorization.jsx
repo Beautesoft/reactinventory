@@ -17,18 +17,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Users, Shield, RefreshCw, UserPlus, Save } from "lucide-react";
+import { Users, Shield, RefreshCw, UserPlus, Save, Search } from "lucide-react";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
 
 const UserAuthorization = () => {
   const [userList, setUserList] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [userSearch, setUserSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Authorization data from API
@@ -119,12 +118,20 @@ const UserAuthorization = () => {
     }
   };
 
-  // Handle user selection
   const handleUserSelect = (userCode) => {
     const user = userList.find(u => u.itemCode === userCode);
     setSelectedUser(user);
     fetchUserAuthorizations(userCode);
   };
+
+  const searchText = userSearch.trim().toLowerCase();
+  const filteredUsers = searchText
+    ? userList.filter((user) => {
+        const name = String(user.itemDesc || "").toLowerCase();
+        const code = String(user.itemCode || "").toLowerCase();
+        return name.includes(searchText) || code.includes(searchText);
+      })
+    : userList;
 
   // Save individual authorization
   const saveAuthorization = async (userCode, reportCode, active) => {
@@ -236,25 +243,45 @@ const UserAuthorization = () => {
             User Selection
           </CardTitle>
           <CardDescription>
-            Select a user to manage their authorizations
+            Type a name or user code to search, then click a user
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* User Dropdown */}
           <div className="space-y-2">
-            <Label htmlFor="user-select">Select User</Label>
-            <Select onValueChange={handleUserSelect} value={selectedUser?.itemCode || ""}>
-              <SelectTrigger className="w-full cursor-pointer">
-                <SelectValue placeholder="Choose a user..." />
-              </SelectTrigger>
-              <SelectContent>
-                {userList.map((user) => (
-                  <SelectItem key={user.itemCode} value={user.itemCode}>
-                    {user.itemDesc} ({user.itemCode})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="user-search">Search user</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <Input
+                id="user-search"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Type to search by name or user code"
+                className="pl-10"
+                autoComplete="off"
+              />
+            </div>
+            <div className="max-h-56 overflow-y-auto rounded-md border">
+              {filteredUsers.length === 0 ? (
+                <p className="p-3 text-sm text-gray-500">No users match your search</p>
+              ) : (
+                filteredUsers.map((user) => {
+                  const isSelected = selectedUser?.itemCode === user.itemCode;
+                  return (
+                    <button
+                      key={user.itemCode}
+                      type="button"
+                      onClick={() => handleUserSelect(user.itemCode)}
+                      className={`flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                        isSelected ? "bg-blue-50 text-blue-900" : ""
+                      }`}
+                    >
+                      <span>{user.itemDesc}</span>
+                      <span className="text-xs text-gray-500">{user.itemCode}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           {/* Selected User Info */}
@@ -359,7 +386,7 @@ const UserAuthorization = () => {
                 No User Selected
               </h3>
               <p className="text-gray-600">
-                Select a user from the dropdown to manage their form authorizations
+                Search and select a user above to manage their form authorizations
               </p>
             </div>
           )}

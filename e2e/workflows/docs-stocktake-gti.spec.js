@@ -27,6 +27,10 @@ const ALL_OUTLETS = [
 
 test.describe("Docs — Stock Take + GTI (careful)", () => {
   test("verify outlets, post Stock Take + GTI, capture screens", async ({ page }) => {
+    test.skip(
+      process.env.E2E_RUN_STOCKTAKE_GTI !== "1",
+      "Set E2E_RUN_STOCKTAKE_GTI=1 to run Dragon-specific Stock Take + GTI docs capture"
+    );
     test.setTimeout(18 * 60_000);
     const cfg = getWorkflowEnv();
     const itemCode = cfg.itemCode;

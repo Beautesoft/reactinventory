@@ -52,6 +52,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   calcDocAmtFromQtyPrice,
+  roundMoney,
+  roundStockLineMoney,
   parseQtyNumber,
   isEmptyOrInvalidQty,
   getStockLineKey,
@@ -508,7 +510,7 @@ const calculateTotals = (cartData) => {
   return cartData.reduce(
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty),
-      totalAmt: acc.totalAmt + Number(item.docAmt),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt)),
     }),
     { totalQty: 0, totalAmt: 0 }
   );
@@ -1320,9 +1322,12 @@ function AddAdj({ docData }) {
           ...item,
           Qty: "",
           expiryDate: null,
-          // Price: Number(item?.item_Price),
-          // Price: item?.Price,
-
+          Price: roundMoney(
+            Number(item?.item_Price) ||
+              Number(item?.Price) ||
+              Number(item?.Cost) ||
+              0
+          ),
           docAmt: null,
         }));
         const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
@@ -1548,7 +1553,9 @@ function AddAdj({ docData }) {
         })
       );
       
-      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      const enrichedItems = (
+        await enrichStockItemsWithDecimalFlag(reconstructedItems)
+      ).map(roundStockLineMoney);
       
       setCartItems(enrichedItems);
       setCartData(enrichedItems);
@@ -1813,12 +1820,15 @@ function AddAdj({ docData }) {
         docQty: Number(updatedEditData.docQty),
         docPrice:
           userDetails?.isSettingViewPrice === "True"
-            ? Number(updatedEditData.docPrice)
+            ? roundMoney(updatedEditData.docPrice)
             : updatedEditData.docPrice,
         docAmt:
           userDetails?.isSettingViewPrice === "True"
-            ? Number(updatedEditData.docQty) * Number(updatedEditData.docPrice)
-            : updatedEditData.docAmt,
+            ? roundMoney(
+                Number(updatedEditData.docQty) *
+                  Number(updatedEditData.docPrice)
+              )
+            : roundMoney(updatedEditData.docAmt),
       };
 
       setCartData((prev) =>
@@ -2636,7 +2646,7 @@ function AddAdj({ docData }) {
           ...item,
           transferType: transferType, // Preserve normalized transferType
           docQty: Number(item.docQty) || 0, // Can be positive or negative for adjustments
-          docAmt: Number(item.docAmt) || 0,
+          docAmt: roundMoney(item.docAmt),
           batchDetails: { individualBatches: [] },
           fefoBatches: item.fefoBatches || [], // Preserve fefoBatches
           // Preserve selectedBatches and transferType if present
@@ -2646,7 +2656,9 @@ function AddAdj({ docData }) {
       } else {
         const existing = grouped.get(key);
         existing.docQty += Number(item.docQty) || 0; // Sum signed quantities (can be positive or negative)
-        existing.docAmt += Number(item.docAmt) || 0;
+        existing.docAmt = roundMoney(
+          existing.docAmt + (Number(item.docAmt) || 0)
+        );
         existing.docLinenos.push(item.docLineno); // Track line numbers
         
         // Merge fefoBatches if present
@@ -2994,7 +3006,7 @@ function AddAdj({ docData }) {
       return;
     }
 
-    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
+    const amount = roundMoney(parseQtyNumber(item.Qty) * Number(item.Price));
 
     // Check if specific batches are selected
     const hasSpecificBatches =
@@ -3046,7 +3058,7 @@ function AddAdj({ docData }) {
       docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
       docTtlqty: parseQtyNumber(item.Qty),
-      docPrice: Number(item.Price),
+      docPrice: roundMoney(item.Price),
       itemprice: Number(item.Cost) || 0, // Use item.Cost for consistency with other modules
       docPdisc: 0,
       docDisc: 0,
@@ -4407,12 +4419,12 @@ function AddAdj({ docData }) {
                             {item.docQty}
                           </TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell>{item.docPrice}</TableCell>
+                            <TableCell>{roundMoney(item.docPrice).toFixed(2)}</TableCell>
                           )}
 
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
-                              {item.docAmt}
+                              {roundMoney(item.docAmt).toFixed(2)}
                             </TableCell>
                           )}
                           {/* NEW: Adjustment Type column instead of batch columns */}

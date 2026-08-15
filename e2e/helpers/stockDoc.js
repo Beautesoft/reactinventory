@@ -25,8 +25,8 @@ export function getWorkflowEnv() {
     price: String(process.env.E2E_ITEM_PRICE || "1").trim(),
     term: String(process.env.E2E_TERM || "30").trim(),
     batchNo: resolveBatchNo(process.env.E2E_BATCH_NO),
-    toOutlet: String(process.env.E2E_TO_OUTLET || "DRAGON HEALTH HQ").trim(),
-    hqOutlet: String(process.env.E2E_HQ_OUTLET || "DRAGON HEALTH HQ").trim(),
+    toOutlet: String(process.env.E2E_TO_OUTLET || "").trim().replace(/^['"]+|['"]+$/g, ""),
+    hqOutlet: String(process.env.E2E_HQ_OUTLET || process.env.E2E_TO_OUTLET || "").trim().replace(/^['"]+|['"]+$/g, ""),
   };
 }
 
@@ -52,13 +52,104 @@ export async function waitForStockRows(page) {
   return itemsTable;
 }
 
-export async function searchAndAddItem(page, { itemCode, qty, price }) {
+export async function resolveItemCode(page, preferredCode) {
+  const searchBox = page.getByPlaceholder("Search items...");
+  await searchBox.fill("");
+  const applyBtn = page.getByRole("button", { name: /^Apply Filters$/i });
+  if (await applyBtn.isVisible().catch(() => false)) {
+    await applyBtn.click();
+    await page.waitForTimeout(2000);
+  }
+
+  if (preferredCode) {
+    await searchBox.fill("");
+    await searchBox.fill(preferredCode);
+    await page.waitForTimeout(1600);
+    const preferredRow = page
+      .locator("table")
+      .first()
+      .locator("tbody tr")
+      .filter({ hasText: preferredCode })
+      .first();
+    if (await preferredRow.isVisible().catch(() => false)) {
+      return preferredCode;
+    }
+  }
+
+  await searchBox.fill("");
+  await page.waitForTimeout(2000);
   const itemsTable = await waitForStockRows(page);
+  const firstRow = itemsTable.locator("tbody tr").filter({ hasNotText: /No items Found/i }).first();
+  const code = (await firstRow.locator("td").first().innerText()).trim();
+  if (!code) {
+    throw new Error("No items available for E2E posting at this outlet. Set E2E_ITEM_CODE in e2e/.env.");
+  }
+  if (preferredCode && code !== preferredCode) {
+    console.log(`E2E item fallback: ${preferredCode} not found, using ${code}`);
+  }
+  return code;
+}
+
+/**
+ * Read item row from stock document item picker.
+ * Columns: Item Code, Description, UOM, Brand, Link Code, Bar Code, Range, On Hand Qty, Qty, Price, Action
+ */
+export async function getItemStockSnapshot(page, itemCode) {
+  const searchBox = page.getByPlaceholder("Search items...");
+  await searchBox.waitFor({ state: "visible", timeout: 45_000 });
+  await searchBox.fill("");
+  await searchBox.fill(itemCode);
+  await page.waitForTimeout(1600);
+
+  const itemsTable = page.locator("table").first();
+  const itemRow = itemsTable.locator("tbody tr").filter({ hasText: itemCode }).first();
+  await itemRow.waitFor({ state: "visible", timeout: 20_000 });
+
+  const cells = itemRow.locator("td");
+  const description = ((await cells.nth(1).innerText()) || "").trim();
+  const uom = ((await cells.nth(2).innerText()) || "").trim();
+  const onHandText = ((await cells.nth(7).innerText()) || "0").trim();
+  const onHand = Math.max(0, Number(String(onHandText).replace(/,/g, "")) || 0);
+
+  return { itemCode, description, uom, onHand };
+}
+
+/** Read Bal Qty from Stock Balance Live for the current site. */
+export async function readStockBalanceQty(page, itemCode) {
+  await page.goto("/stock-balance-live");
+  await page.getByRole("heading", { name: /Stock Balance/i }).waitFor({ state: "visible", timeout: 45_000 });
+  await page.getByPlaceholder(/Search by Stock Code/i).fill(itemCode);
+  await page.waitForTimeout(2500);
+
+  const row = page.locator("table tbody tr").filter({ hasText: itemCode }).first();
+  await row.waitFor({ state: "visible", timeout: 30_000 });
+  const cells = row.locator("td");
+  const balText = ((await cells.nth(6).innerText()) || "0").trim();
+  return Math.max(0, Number(String(balText).replace(/,/g, "")) || 0);
+}
+
+/**
+ * GRN qty needed so ADJ (+1) then three outbound (-1 each) can succeed.
+ * Returns 0 when opening on-hand is already sufficient (skip GRN).
+ */
+export function computeGrnReceiveQty(openingOnHand, { outboundTotal = 3, adjAdd = 1 } = {}) {
+  const stockAfterAdj = openingOnHand + adjAdd;
+  const shortfall = outboundTotal - stockAfterAdj;
+  return Math.max(0, shortfall);
+}
+
+export function formatStockNote({ phase, outlet, snapshot, extra = "" }) {
+  const base = `[${phase}] outlet=${outlet || "?"}, item=${snapshot.itemCode}, onHand=${snapshot.onHand} ${snapshot.uom || ""}, desc=${snapshot.description || ""}`;
+  return extra ? `${base}, ${extra}` : base;
+}
+
+export async function searchAndAddItem(page, { itemCode, qty, price }) {
   const searchBox = page.getByPlaceholder("Search items...");
   await searchBox.fill("");
   await searchBox.fill(itemCode);
   await page.waitForTimeout(1600);
 
+  const itemsTable = page.locator("table").first();
   const itemRow = itemsTable.locator("tbody tr").filter({ hasText: itemCode }).first();
   await itemRow.waitFor({ state: "visible", timeout: 20_000 });
 

@@ -51,6 +51,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   calcDocAmtFromQtyPrice,
+  roundMoney,
+  roundStockLineMoney,
   parseQtyNumber,
   isEmptyOrInvalidQty,
   getStockLineKey,
@@ -388,7 +390,7 @@ const calculateTotals = (cartData) => {
   return cartData.reduce(
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty),
-      totalAmt: acc.totalAmt + Number(item.docAmt),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt)),
     }),
     { totalQty: 0, totalAmt: 0 }
   );
@@ -1082,9 +1084,12 @@ function AddSum({ docData }) {
           ...item,
           Qty: "",
           expiryDate: null,
-          // Price: Number(item?.item_Price),
-          // Price: item?.Price,
-
+          Price: roundMoney(
+            Number(item?.item_Price) ||
+              Number(item?.Price) ||
+              Number(item?.Cost) ||
+              0
+          ),
           docAmt: null,
         }));
         const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
@@ -1195,7 +1200,9 @@ function AddSum({ docData }) {
       const response = await apiService.get(
         `StkMovdocDtls${buildFilterQuery(filter ?? filter)}`
       );
-      const enrichedItems = await enrichStockItemsWithDecimalFlag(response);
+      const enrichedItems = (
+        await enrichStockItemsWithDecimalFlag(response)
+      ).map(roundStockLineMoney);
       setCartItems(enrichedItems);
       setCartData(enrichedItems);
       setLoading(false);
@@ -1434,10 +1441,10 @@ function AddSum({ docData }) {
       const updatedItem = {
         ...updatedEditData,
         docQty: Number(updatedEditData.docQty),
-        docPrice: userDetails?.isSettingViewPrice === "True" ? Number(updatedEditData.docPrice) : updatedEditData.docPrice,
+        docPrice: userDetails?.isSettingViewPrice === "True" ? roundMoney(updatedEditData.docPrice) : updatedEditData.docPrice,
         docAmt: userDetails?.isSettingViewPrice === "True" 
-          ? Number(updatedEditData.docQty) * Number(updatedEditData.docPrice)
-          : updatedEditData.docAmt,
+          ? roundMoney(Number(updatedEditData.docQty) * Number(updatedEditData.docPrice))
+          : roundMoney(updatedEditData.docAmt),
       };
 
       setCartData((prev) =>
@@ -1726,7 +1733,7 @@ function AddSum({ docData }) {
       return;
     }
 
-    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
+    const amount = roundMoney(parseQtyNumber(item.Qty) * Number(item.Price));
 
     const hasSpecificBatches = item.selectedBatches && item.selectedBatches.transferType === 'specific';
 
@@ -1759,7 +1766,7 @@ function AddSum({ docData }) {
       docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
       docTtlqty: parseQtyNumber(item.Qty),
-      docPrice: Number(item.Price),
+      docPrice: roundMoney(item.Price),
       docPdisc: 0,
       docDisc: 0,
       recQty1: 0,
@@ -1817,7 +1824,9 @@ function AddSum({ docData }) {
       if (grouped.has(key)) {
         const existing = grouped.get(key);
         existing.docQty = Number(existing.docQty) + Number(item.docQty);
-        existing.docAmt = Number(existing.docAmt) + Number(item.docAmt);
+        existing.docAmt = roundMoney(
+          Number(existing.docAmt) + Number(item.docAmt)
+        );
         
         // Merge batch details if present
         if (item.batchDetails?.individualBatches?.length) {
@@ -2860,12 +2869,12 @@ function AddSum({ docData }) {
                             {item.docQty}
                           </TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell>{item.docPrice}</TableCell>
+                            <TableCell>{roundMoney(item.docPrice).toFixed(2)}</TableCell>
                           )}
                           
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
-                              {item.docAmt}
+                              {roundMoney(item.docAmt).toFixed(2)}
                             </TableCell>
                           )}
                           {getConfigValue('BATCH_NO') === "Yes" && (

@@ -65,6 +65,8 @@ import {
   qtyValidationMessageForItem,
   isEmptyOrInvalidQty,
   parseQtyNumber,
+  roundMoney,
+  roundStockLineMoney,
 } from "@/utils/uomDecimalQty";
 import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
@@ -111,8 +113,8 @@ const calculateTotals = (cartData) => {
   );
   
   // Format amounts to 2 decimal places to prevent floating point precision issues
-  result.totalDisc = parseFloat(parseFloat(result.totalDisc).toFixed(2));
-  result.totalAmt = parseFloat(parseFloat(result.totalAmt).toFixed(2));
+  result.totalDisc = roundMoney(result.totalDisc);
+  result.totalAmt = roundMoney(result.totalAmt);
   
   // If no items have explicit reqAppqty set, show null (for display purposes)
   // But we still calculate the sum using reqdQty as fallback
@@ -1306,7 +1308,9 @@ function AddPR() {
           ...item,
           reqAppqty: resolveReqAppqtyForLoad(item, pr?.reqStatus),
         }));
-        const enrichedItems = await enrichStockItemsWithDecimalFlag(itemsWithApprovedQty);
+        const enrichedItems = (
+          await enrichStockItemsWithDecimalFlag(itemsWithApprovedQty)
+        ).map(roundStockLineMoney);
         setCartData(enrichedItems);
       }
 
@@ -1364,7 +1368,7 @@ function AddPR() {
         ...item,
         Qty: "",
         expiryDate: null,
-        Price: Number(item?.Price) || Number(item?.Cost) || 0,
+        Price: roundMoney(Number(item?.Price) || Number(item?.Cost) || 0),
         docAmt: null,
         // Map the fields to match the expected structure
         stockCode: item.stockCode,
@@ -2007,11 +2011,11 @@ function AddPR() {
       }
     }
 
-    const price = parseFloat(item.Price) || 0;
+    const price = roundMoney(item.Price);
     const discPer = 0; // Default discount
     // Calculate and format to exactly 2 decimal places to prevent floating point precision errors
-    const discAmt = parseFloat(((qty * price * discPer) / 100).toFixed(2));
-    const amount = parseFloat(((qty * price) - discAmt).toFixed(2));
+    const discAmt = roundMoney((qty * price * discPer) / 100);
+    const amount = roundMoney(qty * price - discAmt);
 
     // Prepare batch data for storage in reqdetails fields
     // Store transfer type with UOM: "fefo-PCS", "specific-BOTTLE", etc.
@@ -2097,12 +2101,12 @@ function AddPR() {
       status: "Active",
       reqdItemcode: item.stockCode,
       reqdItemdesc: item.stockName,
-      reqdItemprice: parseFloat(price.toFixed(2)), // Format to 2 decimal places as number
+      reqdItemprice: roundMoney(price), // Format to 2 decimal places as number
       reqdQty: qty,
       reqAppqty: null,
       reqdFocqty: 0,
       reqdTtlqty: qty,
-      reqdPrice: parseFloat(price.toFixed(2)), // Format to 2 decimal places as number
+      reqdPrice: roundMoney(price), // Format to 2 decimal places as number
       reqdDiscper: discPer,
       reqdDiscamt: discAmt, // Already formatted to 2 decimal places
       reqdAmt: amount, // Already formatted to 2 decimal places
@@ -2193,16 +2197,16 @@ function AddPR() {
         
         // Calculate discount amount (only on regular quantity)
         // Format to exactly 2 decimal places immediately to prevent floating point precision errors
-        const discAmt = parseFloat(((qty * price * discPer) / 100).toFixed(2));
+        const discAmt = roundMoney((qty * price * discPer) / 100);
         
         // Calculate final amount (regular quantity * price - discount)
         // Format to exactly 2 decimal places immediately to prevent floating point precision errors
-        const finalAmt = parseFloat(((qty * price) - discAmt).toFixed(2));
+        const finalAmt = roundMoney(qty * price - discAmt);
         
         // Format all amounts to 2 decimal places and store as numbers
         updated.reqdTtlqty = totalQty;
-        updated.reqdItemprice = parseFloat(price.toFixed(2));
-        updated.reqdPrice = parseFloat(price.toFixed(2));
+        updated.reqdItemprice = roundMoney(price);
+        updated.reqdPrice = roundMoney(price);
         updated.reqdDiscamt = discAmt; // Already formatted to 2 decimal places
         updated.reqdAmt = finalAmt; // Already formatted to 2 decimal places
       }
@@ -2234,14 +2238,14 @@ function AddPR() {
       const discPer = parseFloat(editData.reqdDiscper || 0);
       
       // Recalculate and format discount amount and amount to prevent floating point errors
-      const discAmt = parseFloat(((qty * price * discPer) / 100).toFixed(2));
-      const amount = parseFloat(((qty * price) - discAmt).toFixed(2));
+      const discAmt = roundMoney((qty * price * discPer) / 100);
+      const amount = roundMoney(qty * price - discAmt);
       
       // Create updated item with properly formatted amounts
       const updatedItem = {
         ...editData,
-        reqdItemprice: parseFloat(price.toFixed(2)),
-        reqdPrice: parseFloat(price.toFixed(2)),
+        reqdItemprice: roundMoney(price),
+        reqdPrice: roundMoney(price),
         reqdDiscamt: discAmt, // Already formatted to 2 decimal places
         reqdAmt: amount, // Already formatted to 2 decimal places
         reqdTtlqty: qty + focQty,
@@ -2269,8 +2273,8 @@ function AddPR() {
       ...prev,
       reqTtqty: totals.totalQty,
       reqTtfoc: totals.totalFoc,
-      reqTtdisc: parseFloat(parseFloat(totals.totalDisc || 0).toFixed(2)),
-      reqTtamt: parseFloat(parseFloat(totals.totalAmt || 0).toFixed(2)),
+      reqTtdisc: roundMoney(totals.totalDisc || 0),
+      reqTtamt: roundMoney(totals.totalAmt || 0),
     }));
   }, [totals.totalQty, totals.totalFoc, totals.totalDisc, totals.totalAmt]);
 

@@ -260,8 +260,41 @@ export function coerceStockListFieldValue(field, value) {
   return Number(value);
 }
 
+export function roundMoney(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return parseFloat(n.toFixed(2));
+}
+
+const MONEY_LINE_KEYS = [
+  "docPrice",
+  "docAmt",
+  "docDisc",
+  "docPdisc",
+  "itemprice",
+  "podPrice",
+  "podAmt",
+  "podItemprice",
+  "podDiscamt",
+  "reqdPrice",
+  "reqdAmt",
+  "reqdItemprice",
+  "reqdDiscamt",
+];
+
+export function roundStockLineMoney(item) {
+  if (!item || typeof item !== "object") return item;
+  const next = { ...item };
+  for (const key of MONEY_LINE_KEYS) {
+    if (next[key] != null && next[key] !== "") {
+      next[key] = roundMoney(next[key]);
+    }
+  }
+  return next;
+}
+
 export function calcDocAmtFromQtyPrice(qty, price) {
-  return parseQtyNumber(qty) * (Number(price) || 0);
+  return roundMoney(parseQtyNumber(qty) * (Number(price) || 0));
 }
 
 export function isQtyInputInvalid(value, item, options = {}) {

@@ -64,6 +64,8 @@ import {
   qtyValidationMessageForItem,
   isEmptyOrInvalidQty,
   parseQtyNumber,
+  roundMoney,
+  roundStockLineMoney,
 } from "@/utils/uomDecimalQty";
 import QtyInput from "@/components/QtyInput";
 import { useParams } from "react-router-dom";
@@ -91,8 +93,8 @@ const calculateTotals = (cartData) => {
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.podQty || 0),
       totalFoc: acc.totalFoc + Number(item.podFocqty || 0),
-      totalDisc: acc.totalDisc + Number(item.podDiscamt || 0),
-      totalAmt: acc.totalAmt + Number(item.podAmt || 0),
+      totalDisc: roundMoney(acc.totalDisc + Number(item.podDiscamt || 0)),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.podAmt || 0)),
     }),
     { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
   );
@@ -761,7 +763,9 @@ function AddPO() {
       }
 
       if (items) {
-        const enrichedItems = await enrichStockItemsWithDecimalFlag(items);
+        const enrichedItems = (
+          await enrichStockItemsWithDecimalFlag(items)
+        ).map(roundStockLineMoney);
         setCartData(enrichedItems);
       }
 
@@ -814,8 +818,8 @@ function AddPO() {
         const baseItems = stockDetails.map(item => ({
           ...item,
           Qty: "",
-          Price: item.costPrice || 0,
-          Cost: item.costPrice || 0,
+          Price: roundMoney(item.costPrice || item.Price || item.Cost || 0),
+          Cost: roundMoney(item.costPrice || 0),
           docUom: item.itemUom || item.uom,
           stockCode: item.itemcode || item.stockCode,
           stockName: item.itemdesc || item.stockName,
@@ -1034,10 +1038,10 @@ function AddPO() {
       return;
     }
 
-    const price = parseFloat(item.Price) || 0;
+    const price = roundMoney(item.Price);
     const discPer = 0; // Default discount
-    const discAmt = (qty * price * discPer) / 100;
-    const amount = (qty * price) - discAmt;
+    const discAmt = roundMoney((qty * price * discPer) / 100);
+    const amount = roundMoney(qty * price - discAmt);
 
     const newItem = {
       poNo: formData.poNo,
@@ -1045,15 +1049,15 @@ function AddPO() {
       status: "Active",
       podItemcode: item.stockCode,
       podItemdesc: item.stockName,
-      podItemprice: price.toFixed(2),
+      podItemprice: price,
       podQty: qty,
       poAppqty: 0,
       podFocqty: 0,
       podTtlqty: qty,
-      podPrice: price.toFixed(2),
+      podPrice: price,
       podDiscper: discPer,
-      podDiscamt: discAmt.toFixed(2),
-      podAmt: amount.toFixed(2),
+      podDiscamt: discAmt,
+      podAmt: amount,
       podRecqty: 0,
       podCancelqty: 0,
       podOutqty: qty,
@@ -1118,8 +1122,22 @@ function AddPO() {
         return;
       }
 
+      const qty = parseQtyNumber(editData.podQty);
+      const price = roundMoney(editData.podItemprice || editData.podPrice);
+      const discPer = Number(editData.podDiscper || 0);
+      const discAmt = roundMoney((qty * price * discPer) / 100);
+      const amount = roundMoney(qty * price - discAmt);
+
       const newCartData = [...cartData];
-      newCartData[editData.editingIndex] = { ...editData };
+      newCartData[editData.editingIndex] = {
+        ...editData,
+        podQty: qty,
+        podItemprice: price,
+        podPrice: price,
+        podDiscper: discPer,
+        podDiscamt: discAmt,
+        podAmt: amount,
+      };
       setCartData(newCartData);
     }
     setShowEditDialog(false);
@@ -1756,10 +1774,10 @@ function AddPO() {
                     <TableCell>{item.docUom}</TableCell>
                       <TableCell>{item.podQty}</TableCell>
                     {userDetails?.isSettingViewPrice === "True" && (
-                      <TableCell>{item.podItemprice}</TableCell>
+                      <TableCell>{roundMoney(item.podItemprice).toFixed(2)}</TableCell>
                     )}
                     {userDetails?.isSettingViewPrice === "True" && (
-                      <TableCell>{item.podAmt}</TableCell>
+                      <TableCell>{roundMoney(item.podAmt).toFixed(2)}</TableCell>
                     )}
                     {getConfigValue('BATCH_NO') === "Yes" && (
                       <TableCell>{item.docBatchNo || "-"}</TableCell>
@@ -1805,11 +1823,11 @@ function AddPO() {
               </div>
               <div>
                 <Label>Total Discount</Label>
-                <Input value={totals.totalDisc} readOnly className="bg-gray-50" />
+                <Input value={roundMoney(totals.totalDisc).toFixed(2)} readOnly className="bg-gray-50" />
               </div>
               <div>
                 <Label>Total Amount</Label>
-                <Input value={totals.totalAmt} readOnly className="bg-gray-50" />
+                <Input value={roundMoney(totals.totalAmt).toFixed(2)} readOnly className="bg-gray-50" />
               </div>
             </div>
         </div>

@@ -94,8 +94,11 @@ const Login = () => {
         `${window.APP_CONFIG?.API_BASE_URL}/ItemSitelists`
       );
 
-      setSalonDetail(response.data);
-      const sites = response.data.map((item) => ({
+      const activeSites = response.data.filter(
+        (item) => item.itemsiteIsactive === true
+      );
+      setSalonDetail(activeSites);
+      const sites = activeSites.map((item) => ({
         label: item.itemsiteDesc,
         value: item.itemsiteCode,
       }));

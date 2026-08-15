@@ -30,35 +30,47 @@ Use **UAT / train** only. After create/post tests, run your **DB cleanup**.
 # Fast: menus open only (no documents created)
 npm run test:e2e:smoke
 
+# UAT: smoke + post all stock docs + replenishment report (recommended)
+npm run test:e2e:uat
+
+# Posting only (GRN, ADJ, SUM, RTN, GTO, PR)
+npm run test:e2e:post
+
+# View HTML report after any run
+npm run test:e2e:report
+
 # Screenshots for user manual → docs/manual-screenshots/
 npm run docs:screenshots
 
-# Create real GRN (Save → Post) + print screenshot
-# Requires E2E_ITEM_CODE
+# Legacy GRN-only workflow
 npm run test:e2e:workflows
 
 # Rebuild Word manual (embeds PNGs when present)
 npm run docs:manual
 
-# Everything
+# Everything (includes doc capture specs if present)
 npm run test:e2e
 ```
 
-## Recommended release / UAT flow
+## Recommended UAT flow (Inyeon / any client)
 
-1. `npm run docs:screenshots` — capture menus/forms  
-2. Set `E2E_ITEM_CODE` → `npm run test:e2e:workflows` — create GRN + print shot  
-3. `npm run docs:manual` — refresh `docs/React_Inventory_User_Manual.docx`  
-4. **DB cleanup** for docs with Remarks `E2E_TEST` / Ref `E2E-...`  
-5. Optionally `npm run test:e2e:smoke` anytime for a quick health check  
+1. Set `e2e/.env`: `E2E_OUTLET`, `E2E_TO_OUTLET` (different store for GTO), `E2E_ITEM_CODE`
+2. `npm run test:e2e:uat` — smoke + posting + replenishment report
+3. `npm run test:e2e:report` — open pass/fail HTML report
+4. **DB cleanup** — see `docs/E2E_Inyeon_UAT_Cleanup.md` (or run `npm run docs:e2e-cleanup` for Word)
 
 ## What each suite does
 
 | Suite | Creates docs? | Screenshots? |
 |-------|---------------|--------------|
 | `e2e/smoke` | No | No |
+| `e2e/workflows/post-all` | Yes (GRN/ADJ/SUM/RTN/GTO/PR) | No — logs **pre/post on-hand** in report annotations |
+| `e2e/workflows/item-master-create` | Yes (8 items: all division × type combos) | No — names tagged `E2E` |
+| `e2e/workflows/replenishment` | No | No |
+| `e2e/workflows/replenishment` | No | No |
 | `e2e/docs` | No | Yes (manual pages) |
-| `e2e/workflows` | Yes (GRN) | Updates list/form/print shots |
+| `e2e/workflows/docs-populate` | Yes + screenshots | Yes |
+| `e2e/workflows/docs-stocktake-gti` | Yes (skipped unless `E2E_RUN_STOCKTAKE_GTI=1`) | Yes |
 
 ## Notes
 

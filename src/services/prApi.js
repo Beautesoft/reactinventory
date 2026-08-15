@@ -1,5 +1,6 @@
 import apiService from "./apiService";
 import moment from "moment-timezone";
+import { roundMoney } from "@/utils/uomDecimalQty";
 
 const BASE_URL = ""; // Will use the base URL from apiService
 
@@ -695,8 +696,8 @@ export const prApi = {
       );
       
       // Format totals to 2 decimal places
-      totals.totalDisc = parseFloat(totals.totalDisc.toFixed(2));
-      totals.totalAmt = parseFloat(totals.totalAmt.toFixed(2));
+      totals.totalDisc = roundMoney(totals.totalDisc);
+      totals.totalAmt = roundMoney(totals.totalAmt);
 
       // 3. Create GTI header (StkMovdocHdrs) - Status 0 (Open), at destination store
       const gtiHeader = {
@@ -735,14 +736,12 @@ export const prApi = {
         const approvedQty = getApprovedQty(item);
         const focQty = parseFloat(item.reqdFocqty || 0);
         const totalQty = approvedQty + focQty;
-        const price = parseFloat(parseFloat(item.reqdItemprice || item.reqdPrice || 0).toFixed(2));
-        const discPer = parseFloat(parseFloat(item.reqdDiscper || 0).toFixed(2));
+        const price = roundMoney(item.reqdItemprice || item.reqdPrice || 0);
+        const discPer = roundMoney(item.reqdDiscper || 0);
         
         // Recalculate discount amount and amount from base values to ensure precision
-        // This prevents floating point precision errors (e.g., 37.599998474121094)
-        // Format to exactly 2 decimal places using toFixed(2) and parseFloat
-        const discAmt = parseFloat(((approvedQty * price * discPer) / 100).toFixed(2));
-        const amount = parseFloat(((approvedQty * price) - discAmt).toFixed(2));
+        const discAmt = roundMoney((approvedQty * price * discPer) / 100);
+        const amount = roundMoney(approvedQty * price - discAmt);
         
         // Parse batch information from PR fields
         // itemRemark1 format: "fefo-UOM" or "specific-UOM" (e.g., "fefo-PCS", "specific-BOTTLE")
@@ -902,10 +901,10 @@ export const prApi = {
         // Format all amount fields to exactly 2 decimal places before posting
         // Use parseFloat(value.toFixed(2)) to ensure exactly 2 decimal places
         // This prevents floating point precision errors when posting to database
-        const formattedPrice = parseFloat(price.toFixed(2));
-        const formattedDiscPer = parseFloat(discPer.toFixed(2));
-        const formattedDiscAmt = parseFloat(discAmt.toFixed(2));
-        const formattedAmount = parseFloat(amount.toFixed(2));
+        const formattedPrice = roundMoney(price);
+        const formattedDiscPer = roundMoney(discPer);
+        const formattedDiscAmt = roundMoney(discAmt);
+        const formattedAmount = roundMoney(amount);
 
         return {
           docNo: docNo,

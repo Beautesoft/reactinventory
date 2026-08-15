@@ -92,6 +92,7 @@ export function AppSidebar() {
       { title: "Item Master", url: "/item-master", icon: FiPackage },
     ].filter(item => hasAuthorization(item.title));
 
+
     // Report items (shown under Reports compartment)
     const reportItems = [
       { title: "Stock Balance Report", url: "/stock-balance", icon: FiBarChart2 },

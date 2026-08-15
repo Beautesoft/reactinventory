@@ -62,6 +62,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   calcDocAmtFromQtyPrice,
+  roundMoney,
+  roundStockLineMoney,
   parseQtyNumber,
   isEmptyOrInvalidQty,
   getStockLineKey,
@@ -93,8 +95,8 @@ const calculateTotals = (cartData) => {
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty || 0),
       totalFoc: acc.totalFoc + Number(item.docFocqty || 0),
-      totalDisc: acc.totalDisc + Number(item.docDisc || 0),
-      totalAmt: acc.totalAmt + Number(item.docAmt || 0),
+      totalDisc: roundMoney(acc.totalDisc + Number(item.docDisc || 0)),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt || 0)),
     }),
     { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
   );
@@ -996,6 +998,12 @@ function AddGti({ docData }) {
         ...item,
         Qty: "",
         expiryDate: null,
+        Price: roundMoney(
+          Number(item?.item_Price) ||
+            Number(item?.Price) ||
+            Number(item?.Cost) ||
+            0
+        ),
         docAmt: null,
       }));
 
@@ -1209,7 +1217,9 @@ function AddGti({ docData }) {
         })
       );
       
-      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      const enrichedItems = (
+        await enrichStockItemsWithDecimalFlag(reconstructedItems)
+      ).map(roundStockLineMoney);
 
       setCartItems(enrichedItems);
       setCartData(enrichedItems);
@@ -1451,8 +1461,10 @@ function AddGti({ docData }) {
     const updatedItem = {
       ...editData,
       docQty: Number(editData.docQty),
-      docPrice: userDetails?.isSettingViewPrice === "True" ? Number(editData.docPrice) : editData.docPrice,
-      docAmt: userDetails?.isSettingViewPrice === "True" ? Number(editData.docQty) * Number(editData.docPrice) : editData.docAmt,
+      docPrice: userDetails?.isSettingViewPrice === "True" ? roundMoney(editData.docPrice) : editData.docPrice,
+      docAmt: userDetails?.isSettingViewPrice === "True"
+        ? roundMoney(Number(editData.docQty) * Number(editData.docPrice))
+        : roundMoney(editData.docAmt),
     };
 
     setCartData((prev) =>
@@ -1627,7 +1639,7 @@ function AddGti({ docData }) {
     // }
 
     // Create cart item based on whether specific batches are selected
-    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
+    const amount = roundMoney(parseQtyNumber(item.Qty) * Number(item.Price));
     const hasSpecificBatches = item.selectedBatches && item.selectedBatches.transferType === 'specific';
 
     // Prepare batch data for storage in database fields
@@ -1675,7 +1687,7 @@ function AddGti({ docData }) {
       docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
       docTtlqty: parseQtyNumber(item.Qty) + 0, // Will be updated when FOC is added
-      docPrice: Number(item.Price),
+      docPrice: roundMoney(item.Price),
       docPdisc: 0,
       docDisc: 0,
       // Store batch quantities in recQty fields
@@ -1897,7 +1909,7 @@ function AddGti({ docData }) {
           ...item,
           transferType: transferType, // Preserve normalized transferType
           docQty: Number(item.docQty) || 0,
-          docAmt: Number(item.docAmt) || 0,
+          docAmt: roundMoney(item.docAmt),
           batchDetails: item.batchDetails || { individualBatches: [] },
           fefoBatches: item.fefoBatches || [],
           docLinenos: [item.docLineno], // Track all line numbers for audit
@@ -1905,7 +1917,9 @@ function AddGti({ docData }) {
       } else {
         const existing = grouped.get(key);
         existing.docQty += Number(item.docQty) || 0;
-        existing.docAmt += Number(item.docAmt) || 0;
+        existing.docAmt = roundMoney(
+          existing.docAmt + (Number(item.docAmt) || 0)
+        );
         existing.docLinenos.push(item.docLineno); // Track line numbers
         
         // Merge batch details if present
@@ -5219,13 +5233,13 @@ function AddGti({ docData }) {
                           </TableCell>
                           <TableCell>{item.docFocqty || 0}</TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell>{item.docPrice}</TableCell>
+                            <TableCell>{roundMoney(item.docPrice).toFixed(2)}</TableCell>
                           )}
                           <TableCell>{item.docPdisc || 0}%</TableCell>
                           <TableCell>{item.docDisc || 0}</TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
-                              {item.docAmt}
+                              {roundMoney(item.docAmt).toFixed(2)}
                             </TableCell>
                           )}
                           {/* NEW: Transfer Type column instead of batch columns */}

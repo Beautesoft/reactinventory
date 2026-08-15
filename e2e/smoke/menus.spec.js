@@ -65,9 +65,11 @@ test.describe("Smoke — menus load", () => {
           }
         }
 
-        const bodyText = await page.locator("body").innerText();
-        if (bodyText.length < 20) {
-          failures.push(`${route.name}: page body looks empty`);
+        if (!route.optional) {
+          const bodyText = await page.locator("body").innerText();
+          if (bodyText.length < 20) {
+            failures.push(`${route.name}: page body looks empty`);
+          }
         }
       });
     }

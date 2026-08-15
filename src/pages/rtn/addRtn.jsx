@@ -62,6 +62,8 @@ import {
   qtyValidationMessageForItem,
   coerceStockListFieldValue,
   calcDocAmtFromQtyPrice,
+  roundMoney,
+  roundStockLineMoney,
   parseQtyNumber,
   isEmptyOrInvalidQty,
   getStockLineKey,
@@ -391,7 +393,7 @@ const calculateTotals = (cartData) => {
   return cartData.reduce(
     (acc, item) => ({
       totalQty: acc.totalQty + Number(item.docQty),
-      totalAmt: acc.totalAmt + Number(item.docAmt),
+      totalAmt: roundMoney(acc.totalAmt + Number(item.docAmt)),
     }),
     { totalQty: 0, totalAmt: 0 }
   );
@@ -1089,9 +1091,12 @@ function AddRtn({ docData }) {
           ...item,
           Qty: "",
           expiryDate: null,
-          // Price: Number(item?.item_Price),
-          // Price: item?.Price,
-
+          Price: roundMoney(
+            Number(item?.item_Price) ||
+              Number(item?.Price) ||
+              Number(item?.Cost) ||
+              0
+          ),
           docAmt: null,
         }));
         const updatedRes = await enrichStockItemsWithDecimalFlag(baseRes);
@@ -1322,7 +1327,9 @@ function AddRtn({ docData }) {
         })
       );
       
-      const enrichedItems = await enrichStockItemsWithDecimalFlag(reconstructedItems);
+      const enrichedItems = (
+        await enrichStockItemsWithDecimalFlag(reconstructedItems)
+      ).map(roundStockLineMoney);
       setCartItems(enrichedItems);
       setCartData(enrichedItems);
       setLoading(false);
@@ -1584,10 +1591,10 @@ function AddRtn({ docData }) {
       const updatedItem = {
         ...updatedEditData,
         docQty: Number(updatedEditData.docQty),
-        docPrice: userDetails?.isSettingViewPrice === "True" ? Number(updatedEditData.docPrice) : updatedEditData.docPrice,
+        docPrice: userDetails?.isSettingViewPrice === "True" ? roundMoney(updatedEditData.docPrice) : updatedEditData.docPrice,
         docAmt: userDetails?.isSettingViewPrice === "True" 
-          ? Number(updatedEditData.docQty) * Number(updatedEditData.docPrice)
-          : updatedEditData.docAmt,
+          ? roundMoney(Number(updatedEditData.docQty) * Number(updatedEditData.docPrice))
+          : roundMoney(updatedEditData.docAmt),
       };
 
       setCartData((prev) =>
@@ -1705,7 +1712,7 @@ function AddRtn({ docData }) {
 
 
 
-    const amount = parseQtyNumber(item.Qty) * Number(item.Price);
+    const amount = roundMoney(parseQtyNumber(item.Qty) * Number(item.Price));
 
     // Check if specific batches are selected
     const hasSpecificBatches = item.selectedBatches && item.selectedBatches.transferType === 'specific';
@@ -1743,7 +1750,7 @@ function AddRtn({ docData }) {
       docQty: parseQtyNumber(item.Qty),
       docFocqty: 0,
       docTtlqty: parseQtyNumber(item.Qty),
-      docPrice: Number(item.Price),
+      docPrice: roundMoney(item.Price),
       docPdisc: 0,
       docDisc: 0,
       // Store batch quantities in recQty fields
@@ -1965,7 +1972,7 @@ function AddRtn({ docData }) {
           ...item,
           transferType: transferType, // Preserve normalized transferType
           docQty: Number(item.docQty) || 0,
-          docAmt: Number(item.docAmt) || 0,
+          docAmt: roundMoney(item.docAmt),
           batchDetails: item.batchDetails || { individualBatches: [] },
           fefoBatches: item.fefoBatches || [],
           // Preserve selectedBatches and transferType if present
@@ -1975,7 +1982,9 @@ function AddRtn({ docData }) {
       } else {
         const existing = grouped.get(key);
         existing.docQty += Number(item.docQty) || 0;
-        existing.docAmt += Number(item.docAmt) || 0;
+        existing.docAmt = roundMoney(
+          existing.docAmt + (Number(item.docAmt) || 0)
+        );
         existing.docLinenos.push(item.docLineno); // Track line numbers
         
         // Merge batch details if present
@@ -3923,12 +3932,12 @@ function AddRtn({ docData }) {
                             {item.docQty}
                           </TableCell>
                           {userDetails?.isSettingViewPrice === "True" && (
-                            <TableCell>{item.docPrice}</TableCell>
+                            <TableCell>{roundMoney(item.docPrice).toFixed(2)}</TableCell>
                           )}
                           
                           {userDetails?.isSettingViewPrice === "True" && (
                             <TableCell className="font-semibold text-slate-700">
-                              {item.docAmt}
+                              {roundMoney(item.docAmt).toFixed(2)}
                             </TableCell>
                           )}
                           {/* NEW: Transfer Type column instead of batch columns */}

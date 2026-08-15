@@ -462,6 +462,7 @@ export const MENU_AUTH_MAPPING = {
   "Stock Movement Report": "F10011",
   "Purchase Requisition": "F10012",
   "Item Master": "F10016",
+  "Replenishment Report": "F10017",
 };
 
 export const checkMenuAuthorization = (menuTitle) => {
