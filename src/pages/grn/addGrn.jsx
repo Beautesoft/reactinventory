@@ -70,6 +70,7 @@ import {
   isEmptyOrInvalidQty,
 } from "@/utils/uomDecimalQty";
 import QtyInput from "@/components/QtyInput";
+import { AddSupplierModal } from "@/components/grn/AddSupplierModal";
 import { useParams } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
@@ -521,6 +522,7 @@ function AddGrn({ docData }) {
   const [searchValue, setSearchValue] = useState("");
   const debouncedSearchValue = useDebounce(searchValue, 1000);
   const [supplyOptions, setSupplyOptions] = useState([]);
+  const [addSupplierOpen, setAddSupplierOpen] = useState(false);
   const [stockList, setStockList] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
@@ -1127,13 +1129,12 @@ function AddGrn({ docData }) {
       });
   };
 
-  const getSupplyList = async (supplycode) => {
+  const getSupplyList = async (supplycode, { selectAlways } = {}) => {
     try {
-      const res = await apiService.get(
-        `ItemSupplies${queryParamsGenerate(filter)}`
-      );
+      const res = await apiService.get("ItemSupplies");
+      const list = Array.isArray(res) ? res : [];
 
-      const supplyOption = res
+      const supplyOption = list
         .filter((item) => item.splyCode)
         .map((item) => ({
           label: item.supplydesc,
@@ -1142,8 +1143,7 @@ function AddGrn({ docData }) {
 
       setSupplyOptions(supplyOption);
 
-      if (!urlDocNo) {
-        console.log("ddd1");
+      if (selectAlways || !urlDocNo) {
         setStockHdrs((prev) => ({
           ...prev,
           supplyNo: supplycode ? supplycode : supplyOption[0]?.value || null,
@@ -1151,12 +1151,12 @@ function AddGrn({ docData }) {
       }
     } catch (err) {
       console.error("Error fetching supply list:", err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to fetch supply list",
-      });
+      toast.error("Failed to fetch supply list");
     }
+  };
+
+  const handleSupplierCreated = async (created) => {
+    await getSupplyList(created?.splyCode, { selectAlways: true });
   };
 
   const getDocNo = async () => {
@@ -3132,27 +3132,45 @@ function AddGrn({ docData }) {
                     <Label>
                       Supply No<span className="text-red-500">*</span>
                     </Label>
-                    <Select
-                      disabled={
-                        urlStatus == 7 &&
-                        userDetails?.isSettingPostedChangePrice !== "True"
-                      }
-                      value={stockHdrs.supplyNo}
-                      onValueChange={(value) =>
-                        setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
-                      }
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select supplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supplyOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-2 items-center">
+                      <div className="flex-1 min-w-0">
+                        <Select
+                          disabled={
+                            urlStatus == 7 &&
+                            userDetails?.isSettingPostedChangePrice !== "True"
+                          }
+                          value={stockHdrs.supplyNo}
+                          onValueChange={(value) =>
+                            setStockHdrs((prev) => ({ ...prev, supplyNo: value }))
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select supplier" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {supplyOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        title="Create supplier"
+                        disabled={
+                          urlStatus == 7 &&
+                          userDetails?.isSettingPostedChangePrice !== "True"
+                        }
+                        onClick={() => setAddSupplierOpen(true)}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>
@@ -3704,6 +3722,11 @@ function AddGrn({ docData }) {
           )}
         </div>
       )}
+      <AddSupplierModal
+        open={addSupplierOpen}
+        onOpenChange={setAddSupplierOpen}
+        onSuccess={handleSupplierCreated}
+      />
       <EditDialog
         showEditDialog={showEditDialog}
         setShowEditDialog={setShowEditDialog}

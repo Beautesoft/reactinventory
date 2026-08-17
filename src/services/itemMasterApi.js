@@ -102,6 +102,19 @@ export const itemMasterApi = {
     const res = await apiService.get("ItemSupplies");
     return Array.isArray(res) ? res : [];
   },
+  async getSupplierControlNo(siteCode) {
+    const filter = {
+      where: {
+        controlDescription: "Supplier Code",
+        siteCode,
+      },
+    };
+    const res = await apiService.get(`ControlNos${queryString({ where: filter.where })}`);
+    return res?.[0] || null;
+  },
+  async createItemSupply(payload) {
+    return apiService.post("ItemSupplies", payload);
+  },
   async getVoucherValidPeriods() {
     const res = await apiService.get("VoucherValidPeriods");
     return Array.isArray(res) ? res : [];

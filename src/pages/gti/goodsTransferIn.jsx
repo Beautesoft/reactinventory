@@ -273,12 +273,14 @@ function GoodsTransferIn() {
                   </Button>
                 ) : (
                   <>
+                    {/* Hidden for now
                     <Button
                       onClick={handleVerifyRecords}
                       variant="outline"
                     >
                       Verify Records
                     </Button>
+                    */}
                     <Button
                       onClick={handleRoute}
                       className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"

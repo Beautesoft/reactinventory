@@ -184,6 +184,7 @@ function GoodsTransferOut() {
   };
 
   const handlePageChange = (newPage) => {
+
     setPagination((prev) => ({
       ...prev,
       skip: (newPage - 1) * prev.limit,
@@ -274,12 +275,14 @@ function GoodsTransferOut() {
                   </Button>
                 ) : (
                   <>
+                    {/* Hidden for now
                     <Button
                       onClick={handleVerifyRecords}
                       variant="outline"
                     >
                       Verify Records
                     </Button>
+                    */}
                     <Button
                       onClick={handleRoute}
                       className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
