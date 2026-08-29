@@ -35,6 +35,8 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+// Hidden until void/reverse is complete
+// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
   buildCountQuery,
@@ -2536,6 +2538,12 @@ function AddSum({ docData }) {
               >
                 Cancel
               </Button>
+              {/* Hidden until void/reverse is complete
+              <ReverseDocumentButton
+                header={stockHdrs}
+                listPath="/stock-usage-memo?tab=all"
+              />
+              */}
               <Button
                 onClick={(e) => {
                   onSubmit(e, "save");

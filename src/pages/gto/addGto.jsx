@@ -45,6 +45,8 @@ import { toast, Toaster } from "sonner";
 import moment from "moment";
 import TableSpinner from "@/components/tabelSpinner";
 import apiService from "@/services/apiService";
+// Hidden until void/reverse is complete
+// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
   buildCountObject,
@@ -5678,6 +5680,12 @@ function AddGto({ docData }) {
               >
                 Cancel
               </Button>
+              {/* Hidden until void/reverse is complete
+              <ReverseDocumentButton
+                header={stockHdrs}
+                listPath="/goods-transfer-out"
+              />
+              */}
               <Button
                 disabled={stockHdrs.docStatus === 7 || saveLoading}
                 onClick={(e) => {

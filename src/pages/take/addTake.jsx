@@ -47,6 +47,8 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+// Hidden until void/reverse is complete
+// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
   buildCountObject,
@@ -3916,6 +3918,12 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
               >
                 Cancel
               </Button>
+              {/* Hidden until void/reverse is complete
+              <ReverseDocumentButton
+                header={stockHdrs}
+                listPath="/stock-take?tab=all"
+              />
+              */}
               
               {/* Save and Post buttons - show only in Step 2 when creating new or when status is Open */}
               {showActionButtons && (

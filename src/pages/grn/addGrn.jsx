@@ -46,6 +46,8 @@ import { toast, Toaster } from "sonner";
 import moment from "moment-timezone";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
+// Hidden until void/reverse is complete
+// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 
 import {
   buildCountObject,
@@ -3040,6 +3042,12 @@ function AddGrn({ docData }) {
               >
                 Cancel
               </Button>
+              {/* Hidden until void/reverse is complete
+              <ReverseDocumentButton
+                header={stockHdrs}
+                listPath="/goods-receive-note?tab=all"
+              />
+              */}
               <Button
                 disabled={stockHdrs.docStatus === 7 || saveLoading}
                 onClick={(e) => {
