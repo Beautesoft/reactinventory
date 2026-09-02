@@ -84,14 +84,14 @@ export function AddSupplierModal({ open, onOpenChange, onSuccess }) {
           toast.error("Site code not found");
           return;
         }
-        const rec = await itemMasterApi.getSupplierControlNo(siteCode);
-        if (!rec) {
+        const next = await itemMasterApi.getNextAvailableSupplierCode(siteCode);
+        if (!next) {
           toast.error("Supplier Code control number not found for this site");
           return;
         }
-        setMenuCode(`${rec.controlPrefix ?? ""}${rec.controlNo ?? ""}`);
-        setControlId(rec.controlId);
-        setControlNo(rec.controlNo);
+        setMenuCode(next.menuCode);
+        setControlId(next.controlId);
+        setControlNo(next.controlNo);
       } catch (err) {
         toast.error(
           err?.response?.data?.error?.message || "Failed to load supplier code"
@@ -118,19 +118,32 @@ export function AddSupplierModal({ open, onOpenChange, onSuccess }) {
   };
 
   const handleSubmit = async () => {
-    if (!menuCode || !form.supplierName?.trim() || !form.date) {
+    if (!form.supplierName?.trim() || !form.date) {
       toast.error("Please check required field");
-      return;
-    }
-    if (controlId == null || controlNo == null) {
-      toast.error("Supplier Code control number not found for this site");
       return;
     }
 
     setLoading(true);
     try {
+      const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+      const siteCode = userDetails?.siteCode;
+      if (!siteCode) {
+        toast.error("Site code not found");
+        return;
+      }
+
+      const next = await itemMasterApi.getNextAvailableSupplierCode(siteCode);
+      if (!next?.menuCode || next.controlId == null || next.controlNo == null) {
+        toast.error("Supplier Code control number not found for this site");
+        return;
+      }
+
+      setMenuCode(next.menuCode);
+      setControlId(next.controlId);
+      setControlNo(next.controlNo);
+
       const payload = {
-        splyCode: menuCode,
+        splyCode: next.menuCode,
         supplydesc: form.supplierName.trim(),
         splyDate: `${moment(form.date).format("YYYY-MM-DD")}T00:00:00.000Z`,
         splyAttn: form.supplierAttn || "",
@@ -170,11 +183,11 @@ export function AddSupplierModal({ open, onOpenChange, onSuccess }) {
       };
 
       await itemMasterApi.createItemSupply(payload);
-      await itemMasterApi.updateControlNo(controlId, Number(controlNo) + 1);
+      await itemMasterApi.updateControlNo(next.controlId, Number(next.controlNo) + 1);
 
       toast.success("Supplier created");
       onSuccess?.({
-        splyCode: menuCode,
+        splyCode: next.menuCode,
         supplydesc: payload.supplydesc,
       });
       onOpenChange(false);

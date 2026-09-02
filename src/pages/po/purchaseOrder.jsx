@@ -192,10 +192,16 @@ function PurchaseOrder() {
         </div>
       ) : (
         <div className="h-screen w-full mt-6 light">
-          <div className="ml-2 mb-7">
+          <div className="ml-2 mb-7 flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-900">
               Purchase Order
             </h1>
+            <Button
+              onClick={handleRoute}
+              className="shrink-0 bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
+            >
+              + Create New
+            </Button>
           </div>
 
           <Tabs
@@ -205,8 +211,8 @@ function PurchaseOrder() {
               handleTabChange(value);
             }}
           >
-            <div className="flex items-center justify-between space-x-2 mb-6">
-              <div className="flex gap-4 items-center w-[60%]">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+              <div className="flex flex-wrap gap-4 items-center min-w-0">
                 <div className="w-[280px] relative">
                   <Input
                     placeholder="Search by PO no, Ref no, Total amount"
@@ -243,27 +249,20 @@ function PurchaseOrder() {
                 </Select>
               </div>
 
-              <TabsList className="w-[25%] bg-gray-200 h-[38px]">
-                <TabsTrigger className="cursor-pointer" value="all">
+              <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[380px]">
+                <TabsTrigger className="cursor-pointer px-4" value="all">
                   All
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="open">
+                <TabsTrigger className="cursor-pointer px-4" value="open">
                   Open
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="posted">
+                <TabsTrigger className="cursor-pointer px-4" value="posted">
                   Posted
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="approved">
+                <TabsTrigger className="cursor-pointer px-4" value="approved">
                   Approved
                 </TabsTrigger>
               </TabsList>
-
-              <Button
-                onClick={handleRoute}
-                className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
-              >
-                + Create New
-              </Button>
             </div>
 
             <TabsContent value="all">

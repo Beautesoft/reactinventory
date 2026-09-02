@@ -47,7 +47,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is complete
+// Hidden until void/reverse is released to clients
 // import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
@@ -58,6 +58,7 @@ import {
   format_Date,
   queryParamsGenerate,
   getConfigValue,
+  isVoidDocStatus,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -710,6 +711,7 @@ function AddTake({ docData }) {
   const statusOptions = [
     { value: 0, label: "Open" },
     { value: 1, label: "Posted" },
+    { value: 4, label: "Void" },
   ];
 
   const [activeTab, setActiveTab] = useState("detail");
@@ -1968,6 +1970,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         docStatus: data.docStatus,
         storeNo: data.storeNo,
         docRemk1: data.docRemk1,
+        createUser: data.createUser,
+        staffNo: data.staffNo,
+        createDate: data.createDate,
       }));
       setSupplierInfo({
         Attn: data?.docAttn,
@@ -3879,7 +3884,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       ) : (
         <div className="container mx-auto p-6 space-y-6">
           {/* Header Section */}
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
             <div>
               <h1 className="text-2xl font-semibold text-gray-800">
                 {!stockHdrs.docNo
@@ -3888,6 +3893,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                   ? "Open Stock Take"
                   : stockHdrs.docStatus === 1
                   ? "Posted Stock Take"
+                  : isVoidDocStatus(stockHdrs.docStatus)
+                  ? "Void Stock Take"
                   : "Stock Take"}
               </h1>
               {/* Progress Indicator */}
@@ -3918,13 +3925,13 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is complete
+              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/stock-take?tab=all"
               />
               */}
-              
+               
               {/* Save and Post buttons - show only in Step 2 when creating new or when status is Open */}
               {showActionButtons && (
                   <>

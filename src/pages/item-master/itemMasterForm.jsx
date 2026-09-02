@@ -1532,7 +1532,7 @@ function ItemMasterForm() {
 
   return (
     <div className="w-full mt-6 px-4 max-w-[1400px] mx-auto pb-20">
-      <div className="flex items-center justify-between gap-4 mb-8">
+      <div className="flex flex-row-reverse items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
           <Button
             variant="outline"

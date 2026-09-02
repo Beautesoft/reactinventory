@@ -35,7 +35,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is complete
+// Hidden until void/reverse is released to clients
 // import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
@@ -45,6 +45,7 @@ import {
   format_Date,
   queryParamsGenerate,
   getConfigValue,
+  isVoidDocStatus,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -543,6 +544,7 @@ function AddSum({ docData }) {
   const statusOptions = [
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
+    { value: 4, label: "Void" },
   ];
 
   const [activeTab, setActiveTab] = useState("detail");
@@ -952,6 +954,9 @@ function AddSum({ docData }) {
         storeNo: data.storeNo,
         docRemk1: data.docRemk1,
         postDate: moment(data.postDate).format("YYYY-MM-DD"),
+        createUser: data.createUser,
+        staffNo: data.staffNo,
+        createDate: data.createDate,
       }));
       // setSupplierInfo({
       //   Attn: data?.docAttn,
@@ -2522,7 +2527,7 @@ function AddSum({ docData }) {
       ) : (
         <div className="container mx-auto p-6 space-y-6">
           {/* Header Section */}
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
                 ? "View Stock Usage Memo"
@@ -2538,7 +2543,7 @@ function AddSum({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is complete
+              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/stock-usage-memo?tab=all"
@@ -2548,7 +2553,7 @@ function AddSum({ docData }) {
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
-                disabled={stockHdrs.docStatus === 7}
+                disabled={stockHdrs.docStatus === 7 || isVoidDocStatus(stockHdrs.docStatus)}
                 className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
               >
                 Save
@@ -2559,7 +2564,7 @@ function AddSum({ docData }) {
                   onSubmit(e, "post");
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={(stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True")}
+                disabled={isVoidDocStatus(stockHdrs.docStatus) || (stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True")}
               >
                 Post
               </Button>

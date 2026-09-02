@@ -124,8 +124,14 @@ function ItemMasterList() {
         <PageLoader />
       ) : (
         <div className="h-screen w-full mt-6 light">
-          <div className="ml-2 mb-7">
+          <div className="ml-2 mb-7 flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-900">Item Master</h1>
+            <Button
+              onClick={() => navigate("/item-master/add")}
+              className="shrink-0 bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
+            >
+              + Create New
+            </Button>
           </div>
 
           <Tabs
@@ -136,39 +142,28 @@ function ItemMasterList() {
               setPagination((p) => ({ ...p, page: 1 }));
             }}
           >
-            <div className="overflow-x-auto min-w-0 mb-6">
-              <div className="flex items-center justify-between gap-4 min-w-max pr-2">
-                <div className="flex gap-4 items-center min-w-0 flex-1">
-                  <div className="w-[380px] min-w-[240px] flex-shrink-0 relative">
-                    <Input
-                      placeholder="Search by Stock Code, Name, Link Code..."
-                      value={searchValue}
-                      onChange={(e) => setSearchValue(e.target.value)}
-                      className="pl-10"
-                    />
-                    <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                  </div>
-                </div>
-
-                <TabsList className="flex-shrink-0 w-[25%] min-w-[200px] bg-gray-200 h-[38px]">
-                  <TabsTrigger className="cursor-pointer" value="all">
-                    All
-                  </TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="active">
-                    Active
-                  </TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="inactive">
-                    Inactive
-                  </TabsTrigger>
-                </TabsList>
-
-                <Button
-                  onClick={() => navigate("/item-master/add")}
-                  className="flex-shrink-0 bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
-                >
-                  + Create New
-                </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+              <div className="w-[380px] max-w-full min-w-0 relative">
+                <Input
+                  placeholder="Search by Stock Code, Name, Link Code..."
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  className="pl-10"
+                />
+                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
               </div>
+
+              <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[300px]">
+                <TabsTrigger className="cursor-pointer px-4" value="all">
+                  All
+                </TabsTrigger>
+                <TabsTrigger className="cursor-pointer px-4" value="active">
+                  Active
+                </TabsTrigger>
+                <TabsTrigger className="cursor-pointer px-4" value="inactive">
+                  Inactive
+                </TabsTrigger>
+              </TabsList>
             </div>
 
             <TabsContent value="all">

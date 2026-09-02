@@ -274,20 +274,28 @@ function PurchaseRequisition() {
         </div>
       ) : (
         <div className="h-screen w-full mt-6 light">
-          <div className="ml-2 mb-7">
+          <div className="ml-2 mb-7 flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-900">
               Purchase Requisition
             </h1>
+            {(!isHQUser || mainTab === "pr") && (
+              <Button
+                onClick={handleRoute}
+                className="shrink-0 bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
+              >
+                + Create New
+              </Button>
+            )}
           </div>
 
           {isHQUser ? (
             // HQ User: Two main tabs structure
             <Tabs value={mainTab} onValueChange={handleMainTabChange} className="w-full">
-              <TabsList className="w-[30%] bg-gray-200 h-[38px] mb-4">
-                <TabsTrigger className="cursor-pointer" value="pr">
+              <TabsList className="w-[320px] bg-gray-200 h-[38px] mb-4">
+                <TabsTrigger className="cursor-pointer px-4" value="pr">
                   Purchase Requisition
                 </TabsTrigger>
-                <TabsTrigger className="cursor-pointer" value="approval">
+                <TabsTrigger className="cursor-pointer px-4" value="approval">
                   Approval
                 </TabsTrigger>
               </TabsList>
@@ -295,8 +303,8 @@ function PurchaseRequisition() {
               <TabsContent value="pr">
                 {/* Nested tabs for PR status */}
                 <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-                  <div className="flex items-center justify-between space-x-2 mb-6">
-                    <div className="flex gap-4 items-center w-[60%]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                    <div className="flex flex-wrap gap-4 items-center min-w-0">
                       <div className="w-[280px] relative">
                         <Input
                           placeholder="Search by PR no, Ref no, Total amount"
@@ -333,20 +341,13 @@ function PurchaseRequisition() {
                       </Select>
                     </div>
 
-                    <TabsList className="w-[25%] bg-gray-200 h-[38px]">
-                      <TabsTrigger className="cursor-pointer" value="all">All</TabsTrigger>
-                      <TabsTrigger className="cursor-pointer" value="open">Open</TabsTrigger>
-                      <TabsTrigger className="cursor-pointer" value="posted">Posted</TabsTrigger>
-                      <TabsTrigger className="cursor-pointer" value="approved">Approved</TabsTrigger>
-                      <TabsTrigger className="cursor-pointer" value="rejected">Rejected</TabsTrigger>
+                    <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[460px]">
+                      <TabsTrigger className="cursor-pointer px-4" value="all">All</TabsTrigger>
+                      <TabsTrigger className="cursor-pointer px-4" value="open">Open</TabsTrigger>
+                      <TabsTrigger className="cursor-pointer px-4" value="posted">Posted</TabsTrigger>
+                      <TabsTrigger className="cursor-pointer px-4" value="approved">Approved</TabsTrigger>
+                      <TabsTrigger className="cursor-pointer px-4" value="rejected">Rejected</TabsTrigger>
                     </TabsList>
-
-                    <Button
-                      onClick={handleRoute}
-                      className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
-                    >
-                      + Create New
-                    </Button>
                   </div>
 
                   <TabsContent value="all">
@@ -400,8 +401,8 @@ function PurchaseRequisition() {
               <TabsContent value="approval">
                 {/* Approval tab content with nested tabs */}
                 <Tabs value={approvalTab} onValueChange={handleApprovalTabChange} className="w-full">
-                  <div className="flex items-center justify-between space-x-2 mb-6">
-                    <div className="flex gap-4 items-center w-[60%]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                    <div className="flex flex-wrap gap-4 items-center min-w-0">
                       <div className="w-[280px] relative">
                         <Input
                           placeholder="Search by PR no, Ref no, Total amount"
@@ -438,10 +439,10 @@ function PurchaseRequisition() {
                       </Select>
                     </div>
 
-                    <TabsList className="w-[35%] bg-gray-200 h-[38px]">
-                      <TabsTrigger className="cursor-pointer" value="posted">Posted</TabsTrigger>
-                      <TabsTrigger className="cursor-pointer" value="approved">Approved by HQ</TabsTrigger>
-                      <TabsTrigger className="cursor-pointer" value="rejected">Rejected by HQ</TabsTrigger>
+                    <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[420px]">
+                      <TabsTrigger className="cursor-pointer px-4" value="posted">Posted</TabsTrigger>
+                      <TabsTrigger className="cursor-pointer px-4" value="approved">Approved by HQ</TabsTrigger>
+                      <TabsTrigger className="cursor-pointer px-4" value="rejected">Rejected by HQ</TabsTrigger>
                     </TabsList>
                   </div>
 
@@ -492,8 +493,8 @@ function PurchaseRequisition() {
           ) : (
             // Non-HQ User: Existing structure unchanged
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-              <div className="flex items-center justify-between space-x-2 mb-6">
-                <div className="flex gap-4 items-center w-[60%]">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                <div className="flex flex-wrap gap-4 items-center min-w-0">
                   <div className="w-[280px] relative">
                     <Input
                       placeholder="Search by PR no, Ref no, Total amount"
@@ -530,20 +531,13 @@ function PurchaseRequisition() {
                   </Select>
                 </div>
 
-                <TabsList className="w-[25%] bg-gray-200 h-[38px]">
-                  <TabsTrigger className="cursor-pointer" value="all">All</TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="open">Open</TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="posted">Posted</TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="approved">Approved</TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="rejected">Rejected</TabsTrigger>
+                <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[460px]">
+                  <TabsTrigger className="cursor-pointer px-4" value="all">All</TabsTrigger>
+                  <TabsTrigger className="cursor-pointer px-4" value="open">Open</TabsTrigger>
+                  <TabsTrigger className="cursor-pointer px-4" value="posted">Posted</TabsTrigger>
+                  <TabsTrigger className="cursor-pointer px-4" value="approved">Approved</TabsTrigger>
+                  <TabsTrigger className="cursor-pointer px-4" value="rejected">Rejected</TabsTrigger>
                 </TabsList>
-
-                <Button
-                  onClick={handleRoute}
-                  className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
-                >
-                  + Create New
-                </Button>
               </div>
 
               <TabsContent value="all">

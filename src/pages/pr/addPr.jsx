@@ -2823,7 +2823,7 @@ function AddPR() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header Section */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
         <h1 className="text-2xl font-semibold text-gray-800">
           {approvalMode 
             ? (formData.reqStatus === "Approved" 
@@ -3049,7 +3049,7 @@ function AddPR() {
                 Created By<span className="text-red-500">*</span>
               </Label>
               <Input
-                value={userDetails?.username || ""}
+                value={formData.reqUser || ""}
                 disabled
                 className="bg-gray-50"
               />

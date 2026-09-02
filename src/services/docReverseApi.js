@@ -1,5 +1,11 @@
 import apiService from "./apiService";
-import { getConfigValue } from "@/utils/utils";
+import {
+  getConfigValue,
+  isVoidDocStatus,
+  VOID_DOC_STATUS,
+} from "@/utils/utils";
+
+export const VOID_TRN_REF = "VOID";
 
 /** Reverse order: undo transfers/usage before receives. */
 export const MOV_TYPE_META = [
@@ -146,26 +152,115 @@ async function undoItemBatches(stktrn, batches) {
   });
 }
 
-async function deleteStktrnAndBatches(stktrn) {
-  const batches = await getStktrnbatches(stktrn.id);
+export function isVoidStktrn(trn) {
+  return String(trn?.trnRef || "").toUpperCase() === VOID_TRN_REF;
+}
+
+function negateNumber(value) {
+  if (value == null || value === "") return value;
+  const n = Number(value);
+  return Number.isFinite(n) ? -n : value;
+}
+
+function hasVoidTwin(original, allTrns) {
+  const targetQty = reverseQtyForStktrn(original.trnQty);
+  return allTrns.some(
+    (t) =>
+      isVoidStktrn(t) &&
+      t.itemcode === original.itemcode &&
+      t.storeNo === original.storeNo &&
+      t.itemUom === original.itemUom &&
+      Number(t.trnQty) === targetQty
+  );
+}
+
+function postTimeNow() {
+  const today = new Date();
+  return (
+    ("0" + today.getHours()).slice(-2) +
+    ("0" + today.getMinutes()).slice(-2) +
+    ("0" + today.getSeconds()).slice(-2)
+  );
+}
+
+function buildReverseStktrn(original, reverseQty, onHandAfter) {
+  return {
+    trnPost: new Date().toISOString().split("T")[0],
+    trnDate: original.trnDate,
+    trnNo: null,
+    postTime: postTimeNow(),
+    aperiod: original.aperiod ?? null,
+    itemcode: original.itemcode,
+    storeNo: original.storeNo,
+    tstoreNo: original.tstoreNo,
+    fstoreNo: original.fstoreNo,
+    trnDocno: original.trnDocno,
+    trnType: original.trnType,
+    trnDbQty: negateNumber(original.trnDbQty),
+    trnCrQty: negateNumber(original.trnCrQty),
+    trnQty: reverseQty,
+    trnBalqty: onHandAfter != null ? onHandAfter : reverseQty,
+    trnBalcst: negateNumber(original.trnBalcst),
+    trnAmt: negateNumber(original.trnAmt),
+    trnCost: negateNumber(original.trnCost),
+    trnRef: VOID_TRN_REF,
+    hqUpdate: false,
+    lineNo: original.lineNo,
+    itemUom: original.itemUom,
+    itemBatch: original.itemBatch ?? null,
+    movType: original.movType,
+    itemBatchCost: original.itemBatchCost,
+    stockIn: original.stockIn ?? null,
+    transPackageLineNo: original.transPackageLineNo ?? null,
+    docExpdate: original.docExpdate ?? null,
+  };
+}
+
+async function insertReverseStktrn(original, reverseQty) {
+  const onHand = await getOnHandQty(
+    original.itemcode,
+    original.storeNo,
+    original.itemUom
+  );
+  const onHandAfter =
+    onHand == null ? null : Number(onHand) + Number(reverseQty);
+  const payload = buildReverseStktrn(original, reverseQty, onHandAfter);
+  const created = await apiService.post("Stktrns", [payload]);
+  if (Array.isArray(created)) return created[0];
+  return created;
+}
+
+async function insertReverseBatches(newStktrnId, original, batches) {
+  if (!newStktrnId || !Array.isArray(batches) || batches.length === 0) return;
   for (const batch of batches) {
-    const id = batch.id ?? batch.stkTrnBatchId;
-    if (id == null) continue;
-    await apiService.delete(`Stktrnbatches/${id}`);
-  }
-  if (stktrn.id != null) {
-    await apiService.delete(`Stktrns/${stktrn.id}`);
+    const batchQty = reverseQtyForStktrn(original.trnQty, batch.batchQty);
+    await apiService.post("Stktrnbatches", {
+      batchNo: batch.batchNo || "No Batch",
+      stkTrnId: newStktrnId,
+      batchQty,
+    });
   }
 }
 
+async function setHeaderVoid(docNo) {
+  await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
+    docStatus: VOID_DOC_STATUS,
+  });
+}
+
 export async function loadDocReversePlan(header) {
-  const stktrns = await getStktrnsByDocNo(header.docNo);
+  const allStktrns = await getStktrnsByDocNo(header.docNo);
+  const originals = allStktrns.filter((t) => !isVoidStktrn(t));
   const lines = [];
-  for (const trn of stktrns) {
+  for (const trn of originals) {
     const batches = await getStktrnbatches(trn.id);
-    lines.push({ stktrn: trn, batches });
+    lines.push({
+      stktrn: trn,
+      batches,
+      alreadyReversed: hasVoidTwin(trn, allStktrns),
+    });
   }
-  return { header, stktrns, lines };
+  return { header, stktrns: originals, allStktrns, lines };
 }
 
 /**
@@ -185,18 +280,21 @@ export async function previewReverseSet(headers) {
 
   for (const plan of plans) {
     const { header, stktrns, lines } = plan;
-    if (!stktrns.length) {
+    const pendingLines = lines.filter((l) => !l.alreadyReversed);
+    if (!pendingLines.length) {
       steps.push({
         header,
         kind: "header-only",
-        message: "No Stktrns — stock will not change",
+        message: stktrns.length
+          ? "Already reversed — header will be set to Void"
+          : "No Stktrns — header will be set to Void",
         movements: [],
       });
       continue;
     }
 
     const movements = [];
-    for (const { stktrn, batches } of lines) {
+    for (const { stktrn, batches } of pendingLines) {
       const key = balanceKey(stktrn.itemcode, stktrn.storeNo, stktrn.itemUom);
       if (!onHandCache.has(key)) {
         onHandCache.set(
@@ -228,7 +326,7 @@ export async function previewReverseSet(headers) {
     steps.push({
       header,
       kind: "stock",
-      message: `${stktrns.length} stock movement(s)`,
+      message: `${pendingLines.length} stock movement(s) to reverse`,
       movements,
     });
   }
@@ -237,25 +335,44 @@ export async function previewReverseSet(headers) {
 }
 
 export async function reverseDocument(header, { onProgress } = {}) {
-  const plan = await loadDocReversePlan(header);
-  if (!plan.stktrns.length) {
-    onProgress?.({ docNo: header.docNo, status: "skipped", detail: "No Stktrns" });
-    return { status: "skipped", detail: "No stock movement for this document" };
+  if (isVoidDocStatus(header?.docStatus)) {
+    return { status: "skipped", detail: "Document is already Void" };
   }
 
-  for (const { stktrn, batches } of plan.lines) {
-    await undoItemBatches(stktrn, batches);
-    await deleteStktrnAndBatches(stktrn);
+  const plan = await loadDocReversePlan(header);
+  const preview = await previewReverseSet([header]);
+  if (preview.issues.length) {
+    const detail = preview.issues.join("; ");
+    onProgress?.({ docNo: header.docNo, status: "error", detail });
+    return { status: "error", detail };
   }
+
+  const pending = plan.lines.filter((l) => !l.alreadyReversed);
+
+  for (const { stktrn, batches } of pending) {
+    const reverseQty = reverseQtyForStktrn(stktrn.trnQty);
+    onProgress?.({
+      docNo: header.docNo,
+      status: "running",
+      detail: `Reversing ${trimItemCode(stktrn.itemcode)} @ ${stktrn.storeNo}`,
+    });
+
+    const created = await insertReverseStktrn(stktrn, reverseQty);
+    const newId = created?.id;
+    await insertReverseBatches(newId, stktrn, batches);
+    await undoItemBatches(stktrn, batches);
+  }
+
+  await setHeaderVoid(header.docNo);
 
   onProgress?.({
     docNo: header.docNo,
     status: "ok",
-    detail: `Reversed ${plan.stktrns.length} Stktrns; header left Posted`,
+    detail: `Voided. Reversed ${pending.length} movement(s). Status set to Void.`,
   });
   return {
     status: "ok",
-    detail: `Reversed ${plan.stktrns.length} movement(s). Document stays Posted.`,
+    detail: `Voided. Reversed ${pending.length} movement(s). Document status is Void.`,
   };
 }
 

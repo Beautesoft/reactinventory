@@ -500,6 +500,34 @@ export const getConfigValue = (key) => {
   return config[key];
 };
 
+export const VOID_DOC_STATUS = 4;
+
+export function isVoidDocStatus(status) {
+  return status === VOID_DOC_STATUS || status === String(VOID_DOC_STATUS);
+}
+
+export function isPostedDocStatus(status, movCode) {
+  if (isVoidDocStatus(status)) return false;
+  if (movCode === "TKE") {
+    return status === 1 || status === "1" || status === 7 || status === "7";
+  }
+  return status === 7 || status === "7";
+}
+
+export function docStatusLabel(status, type) {
+  if (isVoidDocStatus(status)) return "Void";
+  if (type === "tke") {
+    if (status === 2 || status === "2") return "Approved";
+    if (status === 1 || status === "1" || status === 7 || status === "7") {
+      return "Posted";
+    }
+    if (status === 3 || status === "3") return "Rejected";
+    return "Open";
+  }
+  if (status === 7 || status === "7") return "Posted";
+  return "Open";
+}
+
 export function isItemSiteActive(site) {
   const v = site?.itemsiteIsactive;
   return v === true || v === "True" || v === "true" || v === 1 || v === "1";

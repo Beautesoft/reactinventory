@@ -45,7 +45,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is complete
+// Hidden until void/reverse is released to clients
 // import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
@@ -55,6 +55,7 @@ import {
   format_Date,
   queryParamsGenerate,
   getConfigValue,
+  isVoidDocStatus,
   normalizeExpDate,
 } from "@/utils/utils";
 import {
@@ -558,6 +559,7 @@ function AddRtn({ docData }) {
   const statusOptions = [
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
+    { value: 4, label: "Void" },
   ];
 
   const [activeTab, setActiveTab] = useState("detail");
@@ -1010,6 +1012,9 @@ function AddRtn({ docData }) {
         deliveryDate: moment(data.recExpect).format("YYYY-MM-DD"),
         postDate: data.postDate,
         docLines: data.docLines,
+        createUser: data.createUser,
+        staffNo: data.staffNo,
+        createDate: data.createDate,
         // postDate: data.postDate
       }));
       setSupplierInfo({
@@ -3391,7 +3396,7 @@ function AddRtn({ docData }) {
       ) : (
         <div className="container mx-auto p-6 space-y-6">
           {/* Header Section */}
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
                 ? "View Goods Return Note"
@@ -3408,7 +3413,7 @@ function AddRtn({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is complete
+              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/goods-return-note?tab=all"
@@ -3416,8 +3421,9 @@ function AddRtn({ docData }) {
               */}
               <Button
                 disabled={
-                  (stockHdrs.docStatus === 7 
+                  (stockHdrs.docStatus === 7
                    ) ||
+                  isVoidDocStatus(stockHdrs.docStatus) ||
                   saveLoading
                 }
                 onClick={(e) => {
@@ -3441,6 +3447,7 @@ function AddRtn({ docData }) {
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
                 disabled={
+                  isVoidDocStatus(stockHdrs.docStatus) ||
                   (stockHdrs.docStatus === 7 &&
                     userDetails?.isSettingPostedChangePrice !== "True") ||
                   postLoading

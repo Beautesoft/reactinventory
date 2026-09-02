@@ -14,6 +14,7 @@ import { useGrn } from "@/context/grnContext";
 import { useGto } from "@/context/gtoContext";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
+import { docStatusLabel, isVoidDocStatus } from "@/utils/utils";
 
 function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOptions = [], approvalContext = false }) {
   const navigate = useNavigate();
@@ -174,7 +175,13 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       : null;
     const status = type === "pr"
       ? prStatus
-      : (item.docStatus === 7 ? "7" : "0");
+      : isVoidDocStatus(item.docStatus)
+        ? "4"
+        : type === "tke" && (item.docStatus === 1 || item.docStatus === "1")
+          ? "1"
+          : (item.docStatus === 7 || item.docStatus === "7")
+            ? "7"
+            : "0";
     console.log(type)
     const basePath = 
       type === "grn" ? "goods-receive-note" 
@@ -441,7 +448,9 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                       </TableCell>
                       <TableCell
                         className={`text-center font-semibold ${
-                          item.docStatus === 2
+                          isVoidDocStatus(item.docStatus)
+                            ? "text-red-600"
+                            : item.docStatus === 2
                             ? "text-green-600"
                             : item.docStatus === 1
                             ? "text-blue-600"
@@ -450,10 +459,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                             : "text-yellow-600"
                         }`}
                       >
-                        {item.docStatus === 2 ? "Approved" 
-                         : item.docStatus === 1 ? "Posted" 
-                         : item.docStatus === 3 ? "Rejected" 
-                         : "Open"}
+                        {docStatusLabel(item.docStatus, "tke")}
                       </TableCell>
                       <TableCell className="text-center">
                         <PrinterIcon
@@ -519,12 +525,14 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                       {showTotalAmount && <TableCell>{parseFloat(item.docAmt || 0).toFixed(2)}</TableCell>}
                       <TableCell
                         className={
-                          item.docStatus === 7
+                          isVoidDocStatus(item.docStatus)
+                            ? "text-red-600 font-semibold"
+                            : item.docStatus === 7
                             ? "text-green-600 font-semibold"
                             : "text-yellow-600 font-semibold"
                         }
                       >
-                        {item.docStatus === 7 ? "Posted" : "Open"}
+                        {docStatusLabel(item.docStatus, type)}
                       </TableCell>
                       <TableCell className="text-left flex pr-4">
                         <PrinterIcon

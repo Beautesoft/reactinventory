@@ -224,10 +224,26 @@ function GoodsTransferIn() {
         </div>
       ) : (
         <div className="h-screen w-full mt-6 light">
-          <div className="ml-2 mb-7">
+          <div className="ml-2 mb-7 flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-900">
               {showOwnRecords ? "Verify Records" : "Goods Transfer In"}
             </h1>
+            {showOwnRecords ? (
+              <Button
+                onClick={handleVerifyRecords}
+                variant="outline"
+                className="shrink-0 bg-gray-100"
+              >
+                Back to GTI
+              </Button>
+            ) : (
+              <Button
+                onClick={handleRoute}
+                className="shrink-0 bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
+              >
+                + Create New
+              </Button>
+            )}
           </div>
 
           <Tabs
@@ -237,7 +253,7 @@ function GoodsTransferIn() {
               handleTabChange(value);
             }}
           >
-            <div className="flex items-center justify-between space-x-2 mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
               <div className="w-[300px] relative">
                 <Input
                   placeholder="Search by Doc no, Ref no, Total qty"
@@ -249,47 +265,18 @@ function GoodsTransferIn() {
               </div>
 
               {!showOwnRecords && (
-                <TabsList className="w-[25%] bg-gray-200 h-[38px] mr-40">
-                  <TabsTrigger className="cursor-pointer" value="all">
+                <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[300px]">
+                  <TabsTrigger className="cursor-pointer px-4" value="all">
                     All
                   </TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="open">
+                  <TabsTrigger className="cursor-pointer px-4" value="open">
                     Open
                   </TabsTrigger>
-                  <TabsTrigger className="cursor-pointer" value="posted">
+                  <TabsTrigger className="cursor-pointer px-4" value="posted">
                     Posted
                   </TabsTrigger>
                 </TabsList>
               )}
-
-              <div className="flex items-center gap-2">
-                {showOwnRecords ? (
-                  <Button
-                    onClick={handleVerifyRecords}
-                    variant="outline"
-                    className="bg-gray-100"
-                  >
-                    Back to GTI
-                  </Button>
-                ) : (
-                  <>
-                    {/* Hidden for now
-                    <Button
-                      onClick={handleVerifyRecords}
-                      variant="outline"
-                    >
-                      Verify Records
-                    </Button>
-                    */}
-                    <Button
-                      onClick={handleRoute}
-                      className="bg-blue-950 text-white hover:bg-blue-700 cursor-pointer"
-                    >
-                      + Create New
-                    </Button>
-                  </>
-                )}
-              </div>
             </div>
 
             {showOwnRecords ? (

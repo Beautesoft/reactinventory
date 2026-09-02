@@ -24,14 +24,7 @@ import {
   previewReverseSet,
   reverseDocument,
 } from "@/services/docReverseApi";
-
-function isPostedHeader(header) {
-  const status = header?.docStatus;
-  if (header?.movCode === "TKE") {
-    return status === 1 || status === "1" || status === 7 || status === "7";
-  }
-  return status === 7 || status === "7";
-}
+import { isPostedDocStatus, isVoidDocStatus } from "@/utils/utils";
 
 function ReverseDocumentButton({ header, listPath }) {
   const navigate = useNavigate();
@@ -45,14 +38,21 @@ function ReverseDocumentButton({ header, listPath }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(null);
 
-  // Hidden until void/reverse functionality is complete
+  // Hidden until void/reverse is released to clients
   if (true) return null;
 
-  if (!isAdmin || !header?.docNo || !isPostedHeader(header)) return null;
+  if (
+    !isAdmin ||
+    !header?.docNo ||
+    isVoidDocStatus(header?.docStatus) ||
+    !isPostedDocStatus(header?.docStatus, header?.movCode)
+  ) {
+    return null;
+  }
 
   const step = preview?.steps?.[0];
   const blocked = Boolean(preview?.issues?.length);
-  const nothingToReverse = step?.kind === "header-only";
+  const headerOnly = step?.kind === "header-only";
 
   const handlePreview = async () => {
     setPreviewing(true);
@@ -75,7 +75,7 @@ function ReverseDocumentButton({ header, listPath }) {
   };
 
   const handleConfirmReverse = async () => {
-    if (confirmText.trim().toUpperCase() !== "REVERSE") return;
+    if (confirmText.trim().toUpperCase() !== "VOID") return;
     setConfirmText("");
     setRunning(true);
     setProgress(null);
@@ -84,23 +84,23 @@ function ReverseDocumentButton({ header, listPath }) {
         onProgress: (entry) => setProgress(entry),
       });
       if (result.status === "error") {
-        toast.error(result.detail || "Reverse failed");
+        toast.error(result.detail || "Void failed");
         return;
       }
       if (result.status === "skipped") {
-        toast.info(result.detail || "No stock movements to reverse");
+        toast.info(result.detail || "Nothing to void");
         setPreviewOpen(false);
         setPreview(null);
         return;
       }
       toast.success(
-        "Reversed. Header stays Posted. Stock movements were removed."
+        "Voided. Stock qty reversed, reverse Stktrn posted, status set to Void."
       );
       setPreviewOpen(false);
       setPreview(null);
       if (listPath) navigate(listPath);
     } catch (err) {
-      toast.error(err?.message || "Reverse failed");
+      toast.error(err?.message || "Void failed");
     } finally {
       setRunning(false);
     }
@@ -144,8 +144,9 @@ function ReverseDocumentButton({ header, listPath }) {
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <p className="text-sm text-gray-600">
-              Undo on-hand qty, then delete Stktrns. This document stays Posted
-              and is not deleted.
+              Reverse ItemBatches qty, insert a reverse Stktrn (originals are
+              kept), then set status to Void (4). Only posted stock movements
+              for this document are reversed.
             </p>
             {preview?.issues?.length > 0 && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 space-y-1">
@@ -170,7 +171,7 @@ function ReverseDocumentButton({ header, listPath }) {
                     </TableHeader>
                     <TableBody>
                       {step.movements.map((m, i) => (
-                        <TableRow key={`${m.itemcode}-${i}`}>
+                        <TableRow key={`${m.itemcode}-${m.storeNo}-${i}`}>
                           <TableCell>{m.itemcode}</TableCell>
                           <TableCell>{m.storeNo}</TableCell>
                           <TableCell>{m.trnQty}</TableCell>
@@ -192,13 +193,13 @@ function ReverseDocumentButton({ header, listPath }) {
                 {progress.status}: {progress.detail}
               </p>
             )}
-            {!blocked && !nothingToReverse && (
+            {!blocked && (
               <div className="space-y-2 pt-2 border-t">
-                <Label>Type REVERSE to confirm</Label>
+                <Label>Type VOID to confirm</Label>
                 <Input
                   value={confirmText}
                   onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder="REVERSE"
+                  placeholder="VOID"
                   disabled={running}
                 />
               </div>
@@ -215,9 +216,8 @@ function ReverseDocumentButton({ header, listPath }) {
             <Button
               disabled={
                 blocked ||
-                nothingToReverse ||
                 running ||
-                confirmText.trim().toUpperCase() !== "REVERSE"
+                confirmText.trim().toUpperCase() !== "VOID"
               }
               onClick={handleConfirmReverse}
             >
@@ -226,7 +226,7 @@ function ReverseDocumentButton({ header, listPath }) {
               ) : (
                 <Undo2 className="h-4 w-4 mr-2" />
               )}
-              {running ? "Reverting…" : "Void/Revert"}
+              {running ? "Voiding…" : "Void/Revert"}
             </Button>
           </DialogFooter>
         </DialogContent>

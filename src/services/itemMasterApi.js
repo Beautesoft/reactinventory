@@ -115,6 +115,42 @@ export const itemMasterApi = {
   async createItemSupply(payload) {
     return apiService.post("ItemSupplies", payload);
   },
+  /**
+   * Next unused supplier code for this site.
+   * Uses one Supplier Code ControlNos row, then skips any splyCode already in ItemSupplies.
+   */
+  async getNextAvailableSupplierCode(siteCode) {
+    const rec = await this.getSupplierControlNo(siteCode);
+    if (!rec) return null;
+
+    const supplies = await this.getItemSupplies();
+    const used = new Set(
+      (supplies || [])
+        .map((s) => String(s.splyCode || "").trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const prefix = rec.controlPrefix ?? "";
+    const startStr = String(rec.controlNo ?? "0");
+    const startNum = parseInt(startStr, 10);
+    const n0 = Number.isFinite(startNum) ? startNum : 0;
+    const padLen = /^\d+$/.test(startStr) ? startStr.length : 0;
+
+    for (let i = 0; i < 1000; i++) {
+      const num = n0 + i;
+      const numStr = padLen > 0 ? String(num).padStart(padLen, "0") : String(num);
+      const menuCode = `${prefix}${numStr}`;
+      if (!used.has(menuCode.toLowerCase())) {
+        return {
+          controlId: rec.controlId,
+          controlNo: num,
+          menuCode,
+        };
+      }
+    }
+
+    return null;
+  },
   async getVoucherValidPeriods() {
     const res = await apiService.get("VoucherValidPeriods");
     return Array.isArray(res) ? res : [];

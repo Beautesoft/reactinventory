@@ -15,8 +15,8 @@ import AddGrn from "./pages/grn/addGrn.jsx";
 import PrintPreview from "./pages/grn/printPreview";
 import GoodsTransferOut from "./pages/gto/goodsTransferOut";
 import AddGto from "./pages/gto/addGto";
-import Settings from "./pages/settings";
 import AddGti from "./pages/gti/addGti";
+import SettingsPage from "./pages/settings/settingsPage";
 import GoodsTransferIn from "./pages/gti/goodsTransferIn";
 import GoodsReturnNote from "./pages/rtn/goodsReturnNote";
 import AddRtn from "./pages/rtn/addRtn";
@@ -26,7 +26,6 @@ import StockUsageMemo from "./pages/sum/stockUsageMemo";
 import AddSum from "./pages/sum/addSum";
 import AddTake from "./pages/take/addTake";
 import StockTake from "./pages/take/stockTake";
-import UserAuthorization from "./pages/userAuthorization";
 import StockBalanceReport from "./pages/reports/stockBalanceReports";
 import StockBalance from "./pages/stockBalance";
 import StockMovementReport from "./pages/reports/stockMovementReports";
@@ -148,7 +147,7 @@ function App() {
                   {/* Other Routes */}
                   <Route path="sales-order" element={<h1>Sales Order</h1>} />
                   <Route path="stock-transfer" element={<h1>Stock Transfer</h1>} />
-                  <Route path="settings" element={<UserAuthorization />} />
+                  <Route path="settings" element={<SettingsPage />} />
                 </Route>
                 </Routes>
               </Router>

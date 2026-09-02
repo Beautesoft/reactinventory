@@ -45,7 +45,7 @@ import { toast, Toaster } from "sonner";
 import moment from "moment";
 import TableSpinner from "@/components/tabelSpinner";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is complete
+// Hidden until void/reverse is released to clients
 // import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
@@ -56,6 +56,7 @@ import {
   format_Date,
   queryParamsGenerate,
   getConfigValue,
+  isVoidDocStatus,
   normalizeExpDate,
   normalizeExpDateToISO,
   filterActiveItemSites,
@@ -679,6 +680,7 @@ function AddGto({ docData }) {
   const statusOptions = [
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
+    { value: 4, label: "Void" },
   ];
 
   const [activeTab, setActiveTab] = useState("detail");
@@ -949,6 +951,9 @@ function AddGto({ docData }) {
         tstoreNo: data.tstoreNo,
         fstoreNo: data?.fstoreNo || userDetails?.siteCode,
         docRemk1: data.docRemk1,
+        createUser: data.createUser,
+        staffNo: data.staffNo,
+        createDate: data.createDate,
         // postDate: moment(data.postDate).format("YYYY-MM-DD"),
       }));
 
@@ -5663,7 +5668,7 @@ function AddGto({ docData }) {
         </div>
       ) : (
         <div className="container mx-auto p-6 space-y-6">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
                 ? "View Goods Transfer Out"
@@ -5680,14 +5685,14 @@ function AddGto({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is complete
+              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/goods-transfer-out"
               />
               */}
               <Button
-                disabled={stockHdrs.docStatus === 7 || saveLoading}
+                disabled={stockHdrs.docStatus === 7 || isVoidDocStatus(stockHdrs.docStatus) || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -5709,6 +5714,7 @@ function AddGto({ docData }) {
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
                 disabled={
+                  isVoidDocStatus(stockHdrs.docStatus) ||
                   (stockHdrs.docStatus === 7 &&
                     userDetails?.isSettingPostedChangePrice !== "True") ||
                   postLoading

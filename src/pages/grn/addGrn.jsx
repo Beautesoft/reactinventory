@@ -46,7 +46,7 @@ import { toast, Toaster } from "sonner";
 import moment from "moment-timezone";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
-// Hidden until void/reverse is complete
+// Hidden until void/reverse is released to clients
 // import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 
 import {
@@ -58,6 +58,7 @@ import {
   queryParamsGenerate,
   getConfigValue,
   normalizeExpDate,
+  isVoidDocStatus,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -511,6 +512,7 @@ function AddGrn({ docData }) {
   const statusOptions = [
     { value: 0, label: "Open" },
     { value: 7, label: "Posted" },
+    { value: 4, label: "Void" },
   ];
   console.log(getConfigValue('BATCH_SNO'), "bnoooo");
   const [activeTab, setActiveTab] = useState("detail");
@@ -989,6 +991,9 @@ function AddGrn({ docData }) {
         deliveryDate: moment(data.recExpect).format("YYYY-MM-DD"),
         postDate: data.postDate,
         docLines: data.docLines,
+        createUser: data.createUser,
+        staffNo: data.staffNo,
+        createDate: data.createDate,
         // postDate: data.postDate
       }));
       setSupplierInfo({
@@ -3025,7 +3030,7 @@ function AddGrn({ docData }) {
       ) : (
         <div className="container mx-auto p-6 space-y-6">
           {/* Header Section */}
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
               {urlStatus == 7
                 ? "View Goods Receive Note"
@@ -3042,14 +3047,14 @@ function AddGrn({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is complete
+              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/goods-receive-note?tab=all"
               />
               */}
               <Button
-                disabled={stockHdrs.docStatus === 7 || saveLoading}
+                disabled={stockHdrs.docStatus === 7 || isVoidDocStatus(stockHdrs.docStatus) || saveLoading}
                 onClick={(e) => {
                   onSubmit(e, "save");
                 }}
@@ -3071,6 +3076,7 @@ function AddGrn({ docData }) {
                 }}
                 className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
                 disabled={
+                  isVoidDocStatus(stockHdrs.docStatus) ||
                   (stockHdrs.docStatus === 7 &&
                     userDetails?.isSettingPostedChangePrice !== "True") ||
                   postLoading
@@ -3273,7 +3279,7 @@ function AddGrn({ docData }) {
                     Created By<span className="text-red-500">*</span>
                   </Label>
                   <Input
-                    value={userDetails.username}
+                    value={stockHdrs.createUser || ""}
                     disabled
                     className="bg-gray-50"
                   />

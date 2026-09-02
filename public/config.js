@@ -8,9 +8,10 @@ window.APP_CONFIG = {
     // API_LOGIN_URL: "http://103.253.15.75:7018/Webbeapi/",
 
     // API_LOGIN_URL: "http://103.253.15.75:7040/Webinventoryapi_train/",
-    // API_LOGIN_URL: "http://103.253.15.75:9612/Webinventoryapi_train/",
+    API_LOGIN_URL: "http://103.253.15.75:9612/Webinventoryapi_train/",
     // API_LOGIN_URL: "https://inyeoninventory.beautecloud.com/inventoryapi/",
-    API_LOGIN_URL: "http://103.253.15.75:9619/WebInventoryAPI_ForReact/",
+    // API_LOGIN_URL: "http://103.253.15.75:9619/WebInventoryAPI_ForReact/",
+    // API_LOGIN_URL: "http://103.253.15.75:9597/WebInventoryAPI_ForReact/",
 
 
     // 
@@ -25,18 +26,20 @@ window.APP_CONFIG = {
 
 
     // API_BASE_URL: "https://zenthtrain.beautecloud.com/lb/api",
-    // API_BASE_URL: "https://dragonhealth.beautecloud.com/lb/api",
+    API_BASE_URL: "https://dragonhealth.beautecloud.com/lb/api",
     // API_BASE_URL: "https://inyeon.beautecloud.com/lb/api",
-    API_BASE_URL: "https://syy.beautecloud.com/lb/api",
-
-
+    // API_BASE_URL: "https://syy.beautecloud.com/lb/api",
+    // API_BASE_URL: "https://hairdreams.beautecloud.com/lb/api",
     // API_BASE_URL: "https://inyeontrain.beautecloud.com/lb/api",
+
+
     // API_BE_BASE_URL: "https://inyeontrain.beautecloud.com/be/api",
     // API_BASE_URL: "https://mirage.beautecloud.com/lb/api",
     // API_BE_BASE_URL: "https://mirage.beautecloud.com/be/api",
-    // API_BE_BASE_URL: "https://dragonhealth.beautecloud.com/be/api",
+    API_BE_BASE_URL: "https://dragonhealth.beautecloud.com/be/api",
         // API_BE_BASE_URL: "https://inyeon.beautecloud.com/be/api",
-        API_BE_BASE_URL: "https://syy.beautecloud.com/be/api",
+        // API_BE_BASE_URL: "https://syy.beautecloud.com/be/api",
+        // API_BE_BASE_URL: "https://hairdreams.beautecloud.com/be/api",
 
 
 
