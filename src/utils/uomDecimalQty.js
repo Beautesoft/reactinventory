@@ -134,6 +134,55 @@ export function formatQtyInputValue(value) {
  * Filters qty input while typing. Returns null when the change should be rejected
  * (e.g. pasted decimal on integer-only UOM).
  */
+// export function sanitizeQtyInputValue(raw, item, options = {}) {
+//   const { allowNegative = false } = options;
+//   const allowDecimal = item?.allowDecimalQty === true;
+
+//   if (raw === "" || raw === null || raw === undefined) {
+//     return "";
+//   }
+
+//   const str = String(raw).replace(/,/g, ".");
+
+//   if (!allowDecimal) {
+//     if (/[.]/.test(str)) {
+//       return null;
+//     }
+
+//     if (allowNegative) {
+//       const negative = str.startsWith("-");
+//       const digits = str.replace(/[^\d]/g, "");
+//       if (negative) {
+//         return digits.length > 0 ? `-${digits}` : "-";
+//       }
+//       return digits;
+//     }
+
+//     return str.replace(/[^\d]/g, "");
+//   }
+
+//   let negative = false;
+//   let body = str;
+//   if (allowNegative && body.startsWith("-")) {
+//     negative = true;
+//     body = body.slice(1);
+//   }
+
+//   body = body.replace(/[^0-9.]/g, "");
+//   const dotIndex = body.indexOf(".");
+//   if (dotIndex !== -1) {
+//     body =
+//       body.slice(0, dotIndex + 1) +
+//       body.slice(dotIndex + 1).replace(/\./g, "");
+//   }
+
+//   if (!/^(\d+\.?\d*|\.\d*)$/.test(body)) {
+//     return null;
+//   }
+
+//   return negative ? `-${body}` : body;
+// }
+
 export function sanitizeQtyInputValue(raw, item, options = {}) {
   const { allowNegative = false } = options;
   const allowDecimal = item?.allowDecimalQty === true;
@@ -144,7 +193,14 @@ export function sanitizeQtyInputValue(raw, item, options = {}) {
 
   const str = String(raw).replace(/,/g, ".");
 
+  // Allow "-" as an intermediate value while typing
+  if (allowNegative && str === "-") {
+    return "-";
+  }
+
+  // Integer quantity
   if (!allowDecimal) {
+    // Decimal values are not allowed
     if (/[.]/.test(str)) {
       return null;
     }
@@ -152,30 +208,42 @@ export function sanitizeQtyInputValue(raw, item, options = {}) {
     if (allowNegative) {
       const negative = str.startsWith("-");
       const digits = str.replace(/[^\d]/g, "");
+
       if (negative) {
         return digits.length > 0 ? `-${digits}` : "-";
       }
+
       return digits;
     }
 
     return str.replace(/[^\d]/g, "");
   }
 
+  // Decimal quantity
   let negative = false;
   let body = str;
+
   if (allowNegative && body.startsWith("-")) {
     negative = true;
     body = body.slice(1);
   }
 
+  // Keep only numbers and decimal point
   body = body.replace(/[^0-9.]/g, "");
+
+  // Allow only one decimal point
   const dotIndex = body.indexOf(".");
+
   if (dotIndex !== -1) {
     body =
       body.slice(0, dotIndex + 1) +
       body.slice(dotIndex + 1).replace(/\./g, "");
   }
 
+  // Allow intermediate decimal states like:
+  // "1."
+  // ".5"
+  // ""
   if (!/^(\d+\.?\d*|\.\d*)$/.test(body)) {
     return null;
   }
@@ -183,46 +251,97 @@ export function sanitizeQtyInputValue(raw, item, options = {}) {
   return negative ? `-${body}` : body;
 }
 
+// export function shouldBlockQtyKey(event, item, options = {}) {
+//   if (item?.allowDecimalQty) {
+//     return false;
+//   }
+
+//   const { allowNegative = false } = options;
+//   const { key, ctrlKey, metaKey, altKey } = event;
+
+//   if (ctrlKey || metaKey || altKey) {
+//     return false;
+//   }
+
+//   if (key.length > 1) {
+//     return false;
+//   }
+
+//   if (/^\d$/.test(key)) {
+//     return false;
+//   }
+
+//   if (allowNegative && key === "-") {
+//     const el = event.currentTarget;
+//     const current = el.value ?? "";
+//     const start = el.selectionStart ?? 0;
+//     const end = el.selectionEnd ?? 0;
+
+//     if (start === 0 && !current.startsWith("-")) {
+//       return false;
+//     }
+
+//     if (start === 0 && end === current.length) {
+//       return false;
+//     }
+
+//     return true;
+//   }
+
+//   return true;
+// }
+
 export function shouldBlockQtyKey(event, item, options = {}) {
-  if (item?.allowDecimalQty) {
+  console.log(event.key,'jj')
+
+  if (item?.allowDecimalQty && !(options.allowNegative && event.key === "-")) {
     return false;
   }
 
   const { allowNegative = false } = options;
-  const { key, ctrlKey, metaKey, altKey } = event;
+  console.log(event.key,'jj1')
 
+  const { key, ctrlKey, metaKey, altKey } = event;
+  console.log(/^\d$/.test(key),'jjooo')
+
+
+  // Allow browser shortcuts/navigation keys
   if (ctrlKey || metaKey || altKey) {
     return false;
   }
 
+  // Allow Backspace, Delete, Arrow keys, Tab, etc.
   if (key.length > 1) {
     return false;
   }
+
+  // Allow digits
 
   if (/^\d$/.test(key)) {
     return false;
   }
 
+  // Allow "-" only at the beginning when negative values are enabled
+  console.log(allowNegative,key === "-",'jjooo')
+
   if (allowNegative && key === "-") {
     const el = event.currentTarget;
     const current = el.value ?? "";
     const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? 0;
 
+    // Allow "-" if cursor is at the beginning
+    // and there isn't already a negative sign.
     if (start === 0 && !current.startsWith("-")) {
       return false;
     }
 
-    if (start === 0 && end === current.length) {
-      return false;
-    }
-
+    // Otherwise block it
     return true;
   }
 
+  // Block everything else
   return true;
 }
-
 export function parseQtyNumber(value) {
   if (value === "" || value === null || value === undefined) {
     return 0;

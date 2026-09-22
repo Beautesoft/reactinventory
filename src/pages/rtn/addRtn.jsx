@@ -45,8 +45,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is released to clients
-// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
+import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
   buildCountQuery,
@@ -630,7 +629,7 @@ function AddRtn({ docData }) {
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     postDate: "",
-    deliveryDate: "",
+    deliveryDate: new Date().toISOString().split("T")[0],
     createUser: userDetails?.username,
   });
   const [cartData, setCartData] = useState([]);
@@ -1510,8 +1509,6 @@ function AddRtn({ docData }) {
     if (!hdrs.docNo) errors.push("Document number is required");
     if (!hdrs.docDate) errors.push("Document date is required");
     if (!hdrs.supplyNo) errors.push("Supply number is required");
-    if (!hdrs.docTerm) errors.push("Document term is required");
-    if (!hdrs.deliveryDate) errors.push("Delivery date is required");
 
     // Cart Validation
     if (cart.length === 0) errors.push("Cart shouldn't be empty");
@@ -2199,7 +2196,7 @@ function AddRtn({ docData }) {
           docRef2: stockHdrs.docRef2, // ALLOW EDITING
           docLines: stockHdrs.docLines, // Keep original
           docDate: stockHdrs.docDate, // Keep original
-          recExpect: stockHdrs.deliveryDate, // ALLOW EDITING - Delivery date can be changed
+          recExpect: stockHdrs.deliveryDate || new Date().toISOString().split("T")[0], // ALLOW EDITING - Delivery date can be changed
           postDate: stockHdrs.postDate, // Keep original post date
           docStatus: "7", // Keep as posted
           docTerm: stockHdrs.docTerm, // ALLOW EDITING
@@ -2325,7 +2322,7 @@ function AddRtn({ docData }) {
         docRef2: hdr.docRef2,
         docLines: urlDocNo ? hdr.docLines : cartData.length,
         docDate: hdr.docDate,
-        recExpect: hdr.deliveryDate,
+        recExpect: hdr.deliveryDate || new Date().toISOString().split("T")[0],
         postDate: type === "post" ? new Date().toISOString() : "",
         docStatus: hdr.docStatus, // Keep original status until final update
         docTerm: hdr.docTerm,
@@ -3177,7 +3174,9 @@ function AddRtn({ docData }) {
                     { itemCode: trimmedItemCode },
                     { siteCode: userDetails.siteCode },
                     { uom: item.docUom },
-                    { batchNo: item.docBatchNo || "" },
+                    item.docBatchNo
+                      ? { batchNo: item.docBatchNo }
+                      : { or: [{ batchNo: "" }, { batchNo: null }] },
                     ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
                   ]
                 }
@@ -3413,12 +3412,10 @@ function AddRtn({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/goods-return-note?tab=all"
               />
-              */}
               <Button
                 disabled={
                   (stockHdrs.docStatus === 7
@@ -3473,7 +3470,7 @@ function AddRtn({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc No<span className="text-red-500">*</span>
+                      Doc No
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -3483,7 +3480,7 @@ function AddRtn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      Doc Date
                     </Label>
                     <Input
                       type="date"
@@ -3535,7 +3532,7 @@ function AddRtn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Delivery Date<span className="text-red-500">*</span>
+                      Delivery Date
                     </Label>
                     <Input
                       disabled={urlStatus == 7}
@@ -3564,7 +3561,7 @@ function AddRtn({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Status<span className="text-red-500">*</span>
+                      Status
                     </Label>
                     <Select value={stockHdrs.docStatus} disabled>
                       <SelectTrigger className="w-full">
@@ -3581,10 +3578,11 @@ function AddRtn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Term<span className="text-red-500">*</span>
+                      Term
                     </Label>
                     <Input
-                      type="number"
+                      type="text"
+                      maxLength={5}
                       disabled={urlStatus == 7}
                       placeholder="Enter term"
                       value={stockHdrs.docTerm}
@@ -3598,7 +3596,7 @@ function AddRtn({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store Code<span className="text-red-500">*</span>
+                      Store Code
                     </Label>
                     <Input
                       value={userDetails.siteName}
@@ -3613,7 +3611,7 @@ function AddRtn({ docData }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                 <div className="space-y-2">
                   <Label>
-                    Created By<span className="text-red-500">*</span>
+                    Created By
                   </Label>
                   <Input
                     value={stockHdrs.createUser}

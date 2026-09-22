@@ -36,8 +36,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is released to clients
-// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
+import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
   buildCountQuery,
@@ -1078,7 +1077,9 @@ function AddAdj({ docData }) {
           item.stockName?.toLowerCase().includes(searchValue) ||
           item.uomDescription?.toLowerCase().includes(searchValue) ||
           item.brandCode?.toLowerCase().includes(searchValue) ||
-          item.rangeCode?.toLowerCase().includes(searchValue)
+          item.rangeCode?.toLowerCase().includes(searchValue)||
+          item.linkCode?.toLowerCase().includes(searchValue)
+
         );
       });
 
@@ -1673,11 +1674,16 @@ function AddAdj({ docData }) {
   };
 
   const handleCalc = (e, index, field) => {
+    console.log(e ,"e")
+
     const value = e.target.value;
+    console.log(value ,"value")
 
     // Allow typing minus sign and partial values - only validate complete numbers
     // Don't validate if the value is just "-" or empty or contains only minus sign
     if (field === "Qty" && value !== "" && value !== "-" && !isNaN(Number(value))) {
+        console.log(value ,"value")
+
       const currentItem = stockList[index];
       const availableQty = Number(currentItem.quantity) || 0;
       const numericValue = Number(value);
@@ -3850,7 +3856,9 @@ function AddAdj({ docData }) {
                     { itemCode: trimmedItemCode },
                     { siteCode: userDetails.siteCode },
                     { uom: item.docUom },
-                    { batchNo: item.docBatchNo || "" },
+                    item.docBatchNo
+                      ? { batchNo: item.docBatchNo }
+                      : { or: [{ batchNo: "" }, { batchNo: null }] },
                   ],
                 },
               };
@@ -4000,12 +4008,10 @@ function AddAdj({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/stock-adjustment?tab=all"
               />
-              */}
               <Button
                 disabled={stockHdrs.docStatus === 7 || isVoidDocStatus(stockHdrs.docStatus) || saveLoading}
                 onClick={(e) => {
@@ -4062,7 +4068,7 @@ function AddAdj({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc NO<span className="text-red-500">*</span>
+                      Doc NO
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -4072,7 +4078,7 @@ function AddAdj({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      Doc Date
                     </Label>
                     <Input
                       type="date"
@@ -4104,7 +4110,7 @@ function AddAdj({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Status<span className="text-red-500">*</span>
+                      Status
                     </Label>
                     <Select value={stockHdrs.docStatus} disabled>
                       <SelectTrigger className="w-full">
@@ -4138,7 +4144,7 @@ function AddAdj({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store Code<span className="text-red-500">*</span>
+                      Store Code
                     </Label>
                     <Input
                       value={userDetails.siteName}
@@ -4152,7 +4158,7 @@ function AddAdj({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Created By<span className="text-red-500">*</span>
+                      Created By
                     </Label>
                     <Input
                       value={stockHdrs.createUser}

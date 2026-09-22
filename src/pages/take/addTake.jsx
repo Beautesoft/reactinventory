@@ -47,8 +47,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is released to clients
-// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
+import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
   buildCountObject,
@@ -2944,7 +2943,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                       { itemCode: trimmedItemCode },
                       { siteCode: userDetails.siteCode },
                       { uom: item.docUom || item.itemUom || "" },
-                      { batchNo: "" }, // Empty batchNo for "No Batch"
+                      { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch"
                     ],
                   },
                 };
@@ -3303,7 +3302,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                     { itemCode: group.trimmedItemCode },
                     { siteCode: userDetails.siteCode },
                     { uom: group.itemUom },
-                    { batchNo: batch.batchNo || "" },
+                    batch.batchNo
+                      ? { batchNo: batch.batchNo }
+                      : { or: [{ batchNo: "" }, { batchNo: null }] },
                     // Only include expDate if it's not null AND expiry tracking is enabled
                     ...(normalizedExpDate && getConfigValue('EXPIRY_DATE') === "Yes" 
                       ? [{ expDate: normalizedExpDate }] 
@@ -3925,12 +3926,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/stock-take?tab=all"
               />
-              */}
                
               {/* Save and Post buttons - show only in Step 2 when creating new or when status is Open */}
               {showActionButtons && (
@@ -3991,7 +3990,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc No<span className="text-red-500">*</span>
+                      Doc No
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -4001,7 +4000,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      Doc Date
                     </Label>
                     <Input
                       type="date"
@@ -4012,7 +4011,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store Code<span className="text-red-500">*</span>
+                      Store Code
                     </Label>
                     <Input
                       value={userDetails.siteName}
@@ -4026,7 +4025,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Status<span className="text-red-500">*</span>
+                      Status
                     </Label>
                     <Select value={stockHdrs.docStatus} disabled>
                       <SelectTrigger className="w-full">
@@ -4043,7 +4042,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Created By<span className="text-red-500">*</span>
+                      Created By
                     </Label>
                     <Input
                       value={stockHdrs.createUser}

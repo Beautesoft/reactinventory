@@ -298,7 +298,7 @@ const doc = new Document({
           ],
         }),
         p(
-          "This guide covers day-to-day use of React Inventory: login, stock documents, purchase requisitions, reports, and settings."
+          "This guide covers day-to-day use of React Inventory: login, stock documents, purchase requisitions, reports, settings, and company configuration."
         ),
 
         // ===== 1 =====
@@ -320,7 +320,7 @@ const doc = new Document({
         bullet("Dashboard — quick overview for your site."),
         bullet("Stock Control — documents (GRN, transfers, PR, Stock Take, Item Master, and others)."),
         bullet("Reports — Stock Balance, Stock Movement, Replenishment."),
-        bullet("Settings — menu access for users (administrators only)."),
+        bullet("Settings — menu access for users (administrators only). Company batch, expiry, and auto-post options are set at login, not on this screen — see section 6.2."),
         bullet("Logout — ends your session."),
         shot("Main screen with sidebar", "02-dashboard-layout.png"),
         shot("Sidebar expanded", "03-sidebar-expanded.png"),
@@ -347,7 +347,7 @@ const doc = new Document({
 
         h2("3.1 Goods Receive Note (GRN)"),
         p(
-          "Use GRN when goods arrive from a supplier into the outlet you are logged into. Posting a GRN increases on-hand stock. If batch control is on for the item, create a new batch (or select an existing one when appropriate) on the line before posting."
+          "Use GRN when goods arrive from a supplier into the outlet you are logged into. Posting a GRN increases on-hand stock. If Batch No is on for your company (section 6.2), create a new batch (or select an existing one when appropriate) on the line before posting. If Expiry Date is also on, enter expiry before you Save or Post."
         ),
         step(1, "Stock Control → Goods Receive Note → Create New."),
         step(2, "Enter Ref, select Supply No (supplier), Delivery Date, Term, and Remarks."),
@@ -364,12 +364,12 @@ const doc = new Document({
         step(3, "Save → Post. Stock is reduced at the sending site."),
         shot("GTO form", "07-form-gto.png"),
         p(
-          "Depending on company setup, the destination may receive stock automatically, or that site must complete a Goods Transfer In (GTI)."
+          "If Auto Post is on (section 6.2), destination stock can update when you Post the GTO. If Auto Post is off, the receiving site must complete a Goods Transfer In (GTI)."
         ),
 
         h2("3.3 Goods Transfer In (GTI)"),
         p(
-          "GTI receives stock that was transferred into this outlet. Open GTI documents may appear after a GTO from another site, or after HQ approves a Purchase Requisition that requested stock from HQ (see section 4). With auto-post enabled on transfers, stock may already update at the destination when GTO is posted — still open GTI when your process requires a receive document."
+          "GTI receives stock that was transferred into this outlet. Open GTI documents may appear after a GTO from another site, or after HQ approves a Purchase Requisition that requested stock from HQ (see section 4). If Auto Post is on, stock may already update at the destination when GTO is posted — still open GTI when your process requires a receive document."
         ),
         step(1, "Log in at the receiving outlet (for Dragon Health HQ transfers, use DRAGON HEALTH HQ)."),
         step(2, "Open an Open GTI, or Create New → select From Store → add items."),
@@ -463,11 +463,93 @@ const doc = new Document({
         shot("Report filters", "14-report-stock-balance.png"),
 
         // ===== 6 =====
-        h1("6. Settings"),
+        h1("6. Settings and configuration"),
+
+        h2("6.1 User authorization"),
         p(
-          "Administrators use Settings to turn menu access on or off for each user. Select the user, set access for the menus they need, then save. Users only see menus they are allowed to open."
+          "Administrators use Settings to turn menu access on or off for each user. Select the user, set access for the menus they need, then save. Users only see menus they are allowed to open. The Settings menu itself appears only when Settings access is enabled for that login."
         ),
         shot("Settings", "15-settings.png"),
+
+        h2("6.2 Company configuration"),
+        p(
+          "Batch, expiry, auto-post, and related options are applied at login for your company. You cannot change them on the Settings screen. They control which columns and steps appear on stock documents. If a field you expect is missing, check this list with your administrator rather than assuming the screen is broken."
+        ),
+        p("Stock and batch options", { bold: true, after: 80 }),
+        table(
+          ["Setting", "When on", "When off"],
+          [
+            [
+              "Batch No",
+              "Batch columns appear on GRN, GTO, GTI, RTN, ADJ, SUM, Stock Take, and PR. Assign a batch before Save or Post.",
+              "Documents use quantity only. No batch prompt.",
+            ],
+            [
+              "Expiry Date",
+              "Expiry is required when creating or selecting a batch (used with Batch No).",
+              "Expiry is not collected on the line.",
+            ],
+            [
+              "Default expiry days",
+              "New batches pre-fill expiry as today plus this number of days (often 365).",
+              "Uses the company default if none is set.",
+            ],
+            [
+              "Manual batch selection",
+              "On GTO, GTI, RTN, ADJ, and SUM you can pick a specific batch instead of FEFO (first expired, first out).",
+              "The system assigns batches automatically (FEFO when Batch No is on).",
+            ],
+            [
+              "Auto Post",
+              "Posting a GTO can update destination stock immediately. GTI may still be used as a receive document.",
+              "The receiving outlet must Post GTI before destination stock increases.",
+            ],
+            [
+              "Batch serial (SNo)",
+              "Serial batch records are saved when posting transfers and returns (backend tracking).",
+              "No extra serial batch save on post.",
+            ],
+          ],
+          [2200, 3580, 3580]
+        ),
+        spacer(120),
+        p("User permission flags (also from login)", { bold: true, after: 80 }),
+        table(
+          ["Setting", "When on", "When off"],
+          [
+            [
+              "Settings access",
+              "Settings appears in the sidebar. Administrators can change menu access for users.",
+              "Settings is hidden.",
+            ],
+            [
+              "View price",
+              "Price and amount columns show on stock documents.",
+              "Price and amount are hidden.",
+            ],
+            [
+              "View cost",
+              "Cost columns show where the screen supports them.",
+              "Cost is hidden.",
+            ],
+            [
+              "Change posted price",
+              "Price can be edited on a posted document.",
+              "Posted prices are locked.",
+            ],
+          ],
+          [2200, 3580, 3580]
+        ),
+        spacer(80),
+        note(
+          "These flags come from the login response for your company. They override the local app defaults. Ask an administrator if Batch No, Expiry, or Auto Post do not match how your site works."
+        ),
+        p("How this looks in daily work"),
+        bullet("GRN / Stock Take with Batch No on — extra Batch (and Expiry) columns; you cannot Post a line without a batch."),
+        bullet("GTO / GTI / RTN / SUM / ADJ with Manual batch selection on — choose Specific batch or leave FEFO."),
+        bullet("GTO with Auto Post on — destination on-hand can move when the sending site Posts; still complete GTI if your process requires it."),
+        bullet("View price off — the same form opens, but price and amount columns are not shown."),
+        shot("GRN form (batch columns when Batch No is on)", "06-form-grn.png"),
 
         spacer(200),
         p("— End of User Manual —", {

@@ -46,16 +46,23 @@ export default function QtyInput({
   }, [invalid, value, toastOnInvalid, errorMessage]);
 
   const handleKeyDown = (event) => {
+    console.log(shouldBlockQtyKey(event, qtyItem, { allowNegative }))
+
     if (shouldBlockQtyKey(event, qtyItem, { allowNegative })) {
+console.log(event.key)
       event.preventDefault();
     }
     onKeyDown?.(event);
   };
 
   const handleChange = (event) => {
+    console.log(event.target.value)
+
     const sanitized = sanitizeQtyInputValue(event.target.value, qtyItem, {
       allowNegative,
     });
+    console.log(sanitized)
+
 
     if (sanitized === null) {
       if (toastOnInvalid && !allowDecimal) {

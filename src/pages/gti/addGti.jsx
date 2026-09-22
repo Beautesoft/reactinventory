@@ -45,8 +45,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is released to clients
-// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
+import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
   buildCountQuery,
@@ -2698,7 +2697,7 @@ function AddGti({ docData }) {
                         { itemCode: trimmedItemCode },
                         { uom: cartItem.docUom },
                         { siteCode: stktrn.storeNo },
-                        { batchNo: "" },
+                        { or: [{ batchNo: "" }, { batchNo: null }] },
                       ],
                     },
                   };
@@ -2903,8 +2902,8 @@ function AddGti({ docData }) {
                   }
                 }
               } else {
-                // No batch functionality - try FEFO from existing batches first, then "No Batch"
-                console.log(`🔄 BATCH_NO=No: Trying FEFO from existing batches for ${trimmedItemCode}`);
+                // No batch functionality - reduce the store's "No Batch" record directly
+                console.log(`🔄 BATCH_NO=No: Reducing "No Batch" record for ${trimmedItemCode}`);
                 
                 // Find corresponding stktrn for this item
                 const stktrn = stktrns1.find(s => 
@@ -2913,89 +2912,29 @@ function AddGti({ docData }) {
                 );
                 
                 if (stktrn) {
-                  // First, try to find existing batches for FEFO
-                  const existingBatchesFilter = {
-                    where: {
-                      and: [
-                        { itemCode: trimmedItemCode },
-                        { siteCode: stockHdrs.fstoreNo },
-                        { uom: cartItem.docUom },
-                        { qty: { gt: 0 } }
-                      ]
-                    }
+                  // BATCH_NO is off: reduce the store's "No Batch" record in a single update,
+                  // the same payload shape used by GTO / SUM / RTN / Take / GRN - deliberately
+                  // with no `batchno` key. Copying the row's batchNo (NULL on "No Batch" rows)
+                  // into the payload makes ItemBatches/updateqty reject the request with
+                  // "400 Value is not a string".
+                  const batchUpdate = {
+                    itemcode: trimmedItemCode,
+                    sitecode: stockHdrs.fstoreNo,
+                    uom: cartItem.docUom,
+                    qty: -Number(cartItem.docQty),
+                    batchcost: 0,
                   };
 
-                  try {
-                    const existingBatches = await apiService.get(
-                      `ItemBatches?filter=${encodeURIComponent(JSON.stringify(existingBatchesFilter))}`
-                    );
-
-                    if (existingBatches && existingBatches.length > 0) {
-                      const sortedBatches = existingBatches.sort((a, b) => 
-                        new Date(a.expDate || '9999-12-31') - new Date(b.expDate || '9999-12-31')
+                  await apiService
+                    .post(`ItemBatches/updateqty`, batchUpdate)
+                    .catch(async (err) => {
+                      console.error(
+                        `ItemBatches/updateqty source store ${trimmedItemCode}: ${err.message}`
                       );
-
-                      let remainingQty = Number(cartItem.docQty);
-                      
-                      for (const batch of sortedBatches) {
-                        if (remainingQty <= 0) break;
-                        
-                        const batchQty = Math.min(remainingQty, Number(batch.qty));
-                        
-                        const batchUpdate = {
-                          itemcode: trimmedItemCode,
-                          sitecode: stockHdrs.fstoreNo,
-                          uom: cartItem.docUom,
-                          qty: -batchQty,
-                          batchcost: 0,
-                          batchno: batch.batchNo,
-                        };
-
-                        await apiService.post(`ItemBatches/updateqty`, batchUpdate).catch(async (err) => {
-                          console.error(`Error reducing FEFO batch ${batch.batchNo}:`, err);
-                        });
-
-                        remainingQty -= batchQty;
-                        console.log(`✅ Reduced FEFO batch ${batch.batchNo} by ${batchQty} qty`);
-                      }
-                    } else {
-                      // No existing batches, use "No Batch" approach
-                      const batchUpdate = {
-                        itemcode: trimmedItemCode,
-                        sitecode: stockHdrs.fstoreNo,
-                        uom: cartItem.docUom,
-                        qty: -Number(cartItem.docQty),
-                        batchcost: 0,
-                      };
-
-                      await apiService
-                        .post(`ItemBatches/updateqty`, batchUpdate)
-                        .catch(async (err) => {
-                          const errorLog = {
-                            trnDocNo: docNo,
-                            itemCode: stktrn.itemcode,
-                            loginUser: userDetails.username,
-                            siteCode: stockHdrs.fstoreNo,
-                            logMsg: `ItemBatches/updateqty source store ${err.message}`,
-                            createdDate: new Date().toISOString().split("T")[0],
-                          };
-                        });
-                    }
-                  } catch (error) {
-                    console.error(`Error fetching existing batches for FEFO: ${error.message}`);
-                    // Fallback to "No Batch" approach
-                    const batchUpdate = {
-                      itemcode: trimmedItemCode,
-                      sitecode: stockHdrs.fstoreNo,
-                      uom: cartItem.docUom,
-                      qty: -Number(cartItem.docQty),
-                      batchcost: 0,
-                    };
-
-                    await apiService.post(`ItemBatches/updateqty`, batchUpdate).catch(async (err) => {
-                      console.error(`Error with fallback "No Batch" update:`, err);
+                      toast.error(
+                        `Failed to update stock for item ${trimmedItemCode}. Please check the item batch quantity.`
+                      );
                     });
-                  }
                 }
               }
             }
@@ -3449,7 +3388,7 @@ function AddGti({ docData }) {
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stockHdrs.tstoreNo },
-            { batchNo: "" },
+            { or: [{ batchNo: "" }, { batchNo: null }] },
           ],
         },
       };
@@ -3860,7 +3799,7 @@ function AddGti({ docData }) {
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stktrnItem.storeNo },
-            { batchNo: "" }, // "No Batch" record
+            { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch" record
           ],
         },
       };
@@ -4516,7 +4455,9 @@ function AddGti({ docData }) {
                     { itemCode: trimmedItemCode },
                     { siteCode: stockHdrs.tstoreNo }, // Destination store
                     { uom: item.docUom },
-                    { batchNo: item.docBatchNo || "" }
+                    item.docBatchNo
+                      ? { batchNo: item.docBatchNo }
+                      : { or: [{ batchNo: "" }, { batchNo: null }] }
                   ]
                 }
               };
@@ -4772,12 +4713,10 @@ function AddGti({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/goods-transfer-in"
               />
-              */}
               <Button
                 disabled={(stockHdrs.docStatus === 7 ) || isVoidDocStatus(stockHdrs.docStatus) || saveLoading}
                 onClick={(e) => {
@@ -4820,7 +4759,7 @@ function AddGti({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc No<span className="text-red-500">*</span>
+                      Doc No
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -4877,7 +4816,7 @@ function AddGti({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      Doc Date
                     </Label>
                     <Input
                       type="date"
@@ -4915,7 +4854,7 @@ function AddGti({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Status<span className="text-red-500">*</span>
+                      Status
                     </Label>
                     <Select value={stockHdrs.docStatus} disabled>
                       <SelectTrigger className="w-full">
@@ -4932,7 +4871,7 @@ function AddGti({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store code<span className="text-red-500">*</span>
+                      Store code
                     </Label>
                     <Input
                       value={userDetails?.siteName}
@@ -4942,7 +4881,7 @@ function AddGti({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Created By<span className="text-red-500">*</span>
+                      Created By
                     </Label>
                     <Input
                       value={stockHdrs.createUser}

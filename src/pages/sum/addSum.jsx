@@ -35,8 +35,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is released to clients
-// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
+import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
   buildCountQuery,
@@ -2543,12 +2542,10 @@ function AddSum({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/stock-usage-memo?tab=all"
               />
-              */}
               <Button
                 onClick={(e) => {
                   onSubmit(e, "save");
@@ -2582,7 +2579,7 @@ function AddSum({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc NO<span className="text-red-500">*</span>
+                      Doc NO
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -2592,7 +2589,7 @@ function AddSum({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      Doc Date
                     </Label>
                     <Input
                       type="date"
@@ -2621,7 +2618,7 @@ function AddSum({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Status<span className="text-red-500">*</span>
+                      Status
                     </Label>
                     <Select value={stockHdrs.docStatus} disabled>
                       <SelectTrigger className="w-full">
@@ -2652,7 +2649,7 @@ function AddSum({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store Code<span className="text-red-500">*</span>
+                      Store Code
                     </Label>
                     <Input
                       value={userDetails.siteName}
@@ -2666,7 +2663,7 @@ function AddSum({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Created By<span className="text-red-500">*</span>
+                      Created By
                     </Label>
                     <Input
                       value={stockHdrs.createUser}

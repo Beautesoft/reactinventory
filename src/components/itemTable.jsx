@@ -305,8 +305,9 @@ function ItemTable({
                           className={`w-20 text-right ${getInputStyle(item)}`}
                           value={item.Qty}
                           onChange={(e) => onQtyChange(e, startIndex + index)}
-                          min={allowNegativeQty ? undefined : "0"}
-                          allowNegative={allowNegativeQty}
+                          // min={allowNegativeQty ? undefined : "0"}
+                          // allowNegative={true}
+                           allowNegative={allowNegativeQty}
                           disabled={!canEdit() || (item.selectedBatches && item.selectedBatches.transferType === 'specific')}
                         />
                         {/* NEW: Batch Selection Indicator */}

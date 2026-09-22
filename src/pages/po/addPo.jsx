@@ -1340,7 +1340,7 @@ function AddPO() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>
-                  PO No<span className="text-red-500">*</span>
+                  PO No
                 </Label>
                   <Input
                     value={formData.poNo}

@@ -2935,7 +2935,7 @@ function AddPR() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>
-                  PR No<span className="text-red-500">*</span>
+                  PR No
                 </Label>
                   <Input
                     value={formData.reqNo}
@@ -3046,7 +3046,7 @@ function AddPR() {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div className="space-y-2">
               <Label>
-                Created By<span className="text-red-500">*</span>
+                Created By
               </Label>
               <Input
                 value={formData.reqUser || ""}

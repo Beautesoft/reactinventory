@@ -45,8 +45,7 @@ import { toast, Toaster } from "sonner";
 import moment from "moment";
 import TableSpinner from "@/components/tabelSpinner";
 import apiService from "@/services/apiService";
-// Hidden until void/reverse is released to clients
-// import ReverseDocumentButton from "@/components/ReverseDocumentButton";
+import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
   buildCountObject,
@@ -2852,7 +2851,7 @@ function AddGto({ docData }) {
                               { itemCode: trimmedItemCode },
                               { uom: cartItem.docUom },
                               { siteCode: stockHdrs.tstoreNo },
-                              { batchNo: "" },
+                              { or: [{ batchNo: "" }, { batchNo: null }] },
                             ],
                           },
                         };
@@ -3041,7 +3040,7 @@ function AddGto({ docData }) {
                         { itemCode: trimmedItemCode },
                         { uom: cartItem.docUom },
                         { siteCode: stockHdrs.tstoreNo },
-                        { batchNo: "" },
+                        { or: [{ batchNo: "" }, { batchNo: null }] },
                       ],
                     },
                   };
@@ -3555,7 +3554,9 @@ function AddGto({ docData }) {
                     { itemCode: trimmedItemCode },
                     { siteCode: stockHdrs.fstoreNo }, // Source store
                     { uom: item.docUom },
-                    { batchNo: item.docBatchNo || "" },
+                    item.docBatchNo
+                      ? { batchNo: item.docBatchNo }
+                      : { or: [{ batchNo: "" }, { batchNo: null }] },
                   ],
                 },
               };
@@ -4049,7 +4050,7 @@ function AddGto({ docData }) {
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stktrnItem.storeNo }, // Destination store
-            { batchNo: "" }, // "No Batch" record
+            { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch" record
           ],
         },
       };
@@ -4184,7 +4185,7 @@ function AddGto({ docData }) {
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stktrnItem.storeNo }, // Destination store
-            { batchNo: "" }, // "No Batch" record
+            { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch" record
           ],
         },
       };
@@ -5335,7 +5336,7 @@ function AddGto({ docData }) {
                 { itemCode: trimmedItemCode },
                 { uom: stktrnItem.itemUom },
                 { siteCode: stockHdrs.tstoreNo }, // Destination store
-                { batchNo: "" }, // "No Batch" record
+                { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch" record
               ],
             },
           };
@@ -5416,7 +5417,7 @@ function AddGto({ docData }) {
           { itemCode: trimmedItemCode },
           { uom: stktrnItem.itemUom },
           { siteCode: stockHdrs.tstoreNo }, // Use tstoreNo (destination store) for GTO
-          { batchNo: "" }, // "No Batch" record
+          { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch" record
         ],
       },
     };
@@ -5475,7 +5476,7 @@ function AddGto({ docData }) {
           { itemCode: trimmedItemCode },
           { uom: stktrnItem.itemUom },
           { siteCode: stockHdrs.fstoreNo }, // Source store (current store)
-          { batchNo: "" }, // "No Batch" record
+          { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch" record
         ],
       },
     };
@@ -5685,12 +5686,10 @@ function AddGto({ docData }) {
               >
                 Cancel
               </Button>
-              {/* Hidden until void/reverse is released to clients
               <ReverseDocumentButton
                 header={stockHdrs}
                 listPath="/goods-transfer-out"
               />
-              */}
               <Button
                 disabled={stockHdrs.docStatus === 7 || isVoidDocStatus(stockHdrs.docStatus) || saveLoading}
                 onClick={(e) => {
@@ -5738,7 +5737,7 @@ function AddGto({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc No<span className="text-red-500">*</span>
+                      Doc No
                     </Label>
                     <Input
                       value={stockHdrs.docNo}
@@ -5775,7 +5774,7 @@ function AddGto({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>
-                      Doc Date<span className="text-red-500">*</span>
+                      Doc Date
                     </Label>
                     <Input
                       type="date"
@@ -5832,7 +5831,7 @@ function AddGto({ docData }) {
                 <div className="space-y-4">
                   <div className="space-y-2 w-full">
                     <Label>
-                      Status<span className="text-red-500">*</span>
+                      Status
                     </Label>
                     <Select value={stockHdrs.docStatus} disabled>
                       <SelectTrigger className="w-full">
@@ -5849,7 +5848,7 @@ function AddGto({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Store code<span className="text-red-500">*</span>
+                      Store code
                     </Label>
                     <Input
                       value={userDetails?.siteName}
@@ -5859,7 +5858,7 @@ function AddGto({ docData }) {
                   </div>
                   <div className="space-y-2">
                     <Label>
-                      Created By<span className="text-red-500">*</span>
+                      Created By
                     </Label>
                     <Input
                       value={stockHdrs.createUser}

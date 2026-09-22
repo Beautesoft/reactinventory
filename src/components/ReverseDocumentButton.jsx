@@ -38,9 +38,6 @@ function ReverseDocumentButton({ header, listPath }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(null);
 
-  // Hidden until void/reverse is released to clients
-  if (true) return null;
-
   if (
     !isAdmin ||
     !header?.docNo ||
