@@ -108,7 +108,9 @@ function StockBalance() {
         item.stockCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
         item.stockName?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
         item.BrandCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
-        item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
+        item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.linkCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.LinkCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
       );
     }
 
@@ -170,7 +172,9 @@ function StockBalance() {
         item.stockCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
         item.stockName?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
         item.BrandCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
-        item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
+        item.Brand?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.linkCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase()) ||
+        item.LinkCode?.toLowerCase().includes(debouncedSearchValue.toLowerCase())
       );
     }
 

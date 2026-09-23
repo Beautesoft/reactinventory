@@ -36,6 +36,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import { claimControlNumber } from "@/utils/controlNo";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
@@ -1413,32 +1414,24 @@ function AddAdj({ docData }) {
     }
   };
 
-  const addNewControlNumber = async (controlData) => {
-    try {
-      const controlNo = controlData.RunningNo;
-      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
+  // Claims (and verifies) the next ADJ number BEFORE the document is created.
+  // Throws if the number could not be claimed, so nothing is written on failure.
+  // Returns the number actually owned - which differs from the one the form was
+  // showing only if another user claimed it first.
+  const addNewControlNumber = async (controlData, expectedDocNo) => {
+    const claim = await claimControlNumber({
+      controlDescription: "Adjustment Stock",
+      siteCode: userDetails?.siteCode,
+    });
 
-      const controlNosUpdate = {
-        controldescription: "Adjustment Stock",
-        sitecode: userDetails.siteCode,
-        controlnumber: newControlNo,
-      };
+    console.log(
+      `[controlNo] ADJ claimed ${claim.docNo} ` +
+        `(form showed ${expectedDocNo || controlData?.docNo || "-"}, ` +
+        `strategy=${claim.strategy}, attempt=${claim.attempts}, ` +
+        `counter now ${claim.nextControlNo})`
+    );
 
-      const response = await apiService.post(
-        "ControlNos/updatecontrol",
-        controlNosUpdate
-      );
-
-      if (!response) {
-        throw new Error("Failed to update control number");
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Error updating control number:", error);
-      toast.error("Failed to update control number");
-      throw error;
-    }
+    return claim.docNo;
   };
 
   // Helper function to reconstruct batch state from stored database fields
@@ -1647,8 +1640,12 @@ function AddAdj({ docData }) {
       try {
         const res = await apiService.post("StkMovdocHdrs", data);
         console.log(res, "post");
+        return res;
       } catch (err) {
-        console.error(err);
+        // Do NOT swallow: a failed header write must abort the posting,
+        // otherwise the lines and stock rows get written with no header.
+        console.error("postStockHdr create failed:", err);
+        throw err;
       }
     } else if (type === "update") {
       try {
@@ -1657,8 +1654,10 @@ function AddAdj({ docData }) {
           `StkMovdocHdrs/update?[where][docNo]=${docNo}`,
           data
         );
+        return res;
       } catch (err) {
-        console.error(err);
+        console.error("postStockHdr update failed:", err);
+        throw err;
       }
     } else if (type === "updateStatus") {
       try {
@@ -1667,8 +1666,10 @@ function AddAdj({ docData }) {
           `StkMovdocHdrs/update?[where][docNo]=${docNo}`,
           data
         );
+        return res;
       } catch (err) {
-        console.error(err);
+        console.error("postStockHdr updateStatus failed:", err);
+        throw err;
       }
     }
   };
@@ -3360,9 +3361,21 @@ function AddAdj({ docData }) {
       console.log(type, urlDocNo, hdr?.docStatus);
 
       if (type === "save" && !urlDocNo) {
+        // Claim the number BEFORE creating the document, and verify the claim.
+        const claimedDocNo = await addNewControlNumber(controlData, docNo);
+        if (claimedDocNo && claimedDocNo !== docNo) {
+          console.warn(
+            `[controlNo] ADJ number changed from ${docNo} to ${claimedDocNo}`
+          );
+          docNo = claimedDocNo;
+          hdr = { ...hdr, docNo };
+          data.docNo = docNo;
+          details = details.map((item) => ({ ...item, docNo }));
+          setCartData(details);
+          setStockHdrs(hdr);
+        }
         await postStockHdr(data, "create");
         await postStockDetails(details);
-        await addNewControlNumber(controlData);
         message = "Stock Adjustment created successfully";
       } else if (type === "save" && urlDocNo) {
         await postStockHdr(data, "update");
@@ -3371,8 +3384,20 @@ function AddAdj({ docData }) {
       } else if (type === "post") {
         // For direct post without saving, create header first if needed
         if (!urlDocNo) {
+          // Claim the number BEFORE creating the document, and verify the claim.
+          const claimedDocNo = await addNewControlNumber(controlData, docNo);
+          if (claimedDocNo && claimedDocNo !== docNo) {
+            console.warn(
+              `[controlNo] ADJ number changed from ${docNo} to ${claimedDocNo}`
+            );
+            docNo = claimedDocNo;
+            hdr = { ...hdr, docNo };
+            data.docNo = docNo;
+            details = details.map((item) => ({ ...item, docNo }));
+            setCartData(details);
+            setStockHdrs(hdr);
+          }
           await postStockHdr(data, "create");
-          await addNewControlNumber(controlData);
         } else {
           await postStockHdr(data, "updateStatus");
         }

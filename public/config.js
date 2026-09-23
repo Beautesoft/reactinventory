@@ -13,6 +13,7 @@ window.APP_CONFIG = {
 
     // API_LOGIN_URL: "http://103.253.15.75:9619/WebInventoryAPI_ForReact/",
     API_LOGIN_URL: "https://traininventory.beautecloud.com/inventoryapi/",
+    // API_LOGIN_URL: "https://syyinventory.beautecloud.com/inventoryapi/",
 
 
     // API_LOGIN_URL: "http://103.253.15.75:9597/WebInventoryAPI_ForReact/",
@@ -22,7 +23,7 @@ window.APP_CONFIG = {
     // API_LOGIN_URL: "http://103.253.15.75:9613/Webinventoryapi_train/",
     // API_LOGIN_URL: "http://103.253.15.75:9607/Webinventoryapi_ForReact/",
     // API_LOGIN_URL: "https://mirageinventory.beautecloud.com/inventoryapi",
-    // API_LOGIN_URL: "https://dragonhealthinventory.beautecloud.com/inventoryapi",
+    // API_LOGIN_URL: "https://dragonhealthinventory.beautecloud.com/inventoryapi/",
  
 
     // API_LOGIN_URL_frontend : "https://mirageinventory.beautecloud.com/login",

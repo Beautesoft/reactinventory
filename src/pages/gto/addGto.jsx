@@ -45,6 +45,7 @@ import { toast, Toaster } from "sonner";
 import moment from "moment";
 import TableSpinner from "@/components/tabelSpinner";
 import apiService from "@/services/apiService";
+import { claimControlNumber } from "@/utils/controlNo";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
@@ -1133,32 +1134,24 @@ function AddGto({ docData }) {
     }
   };
 
-  const addNewControlNumber = async (controlData) => {
-    try {
-      const controlNo = controlData.RunningNo;
-      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
+  // Claims (and verifies) the next GTO number BEFORE the document is created.
+  // Throws if the number could not be claimed, so nothing is written on failure.
+  // Returns the number actually owned - which differs from the one the form was
+  // showing only if another user claimed it first.
+  const addNewControlNumber = async (controlData, expectedDocNo) => {
+    const claim = await claimControlNumber({
+      controlDescription: "Transfer To Other Store",
+      siteCode: userDetails?.siteCode,
+    });
 
-      const controlNosUpdate = {
-        controldescription: "Transfer To Other Store",
-        sitecode: userDetails.siteCode,
-        controlnumber: newControlNo,
-      };
+    console.log(
+      `[controlNo] GTO claimed ${claim.docNo} ` +
+        `(form showed ${expectedDocNo || controlData?.docNo || "-"}, ` +
+        `strategy=${claim.strategy}, attempt=${claim.attempts}, ` +
+        `counter now ${claim.nextControlNo})`
+    );
 
-      const response = await apiService.post(
-        "ControlNos/updatecontrol",
-        controlNosUpdate
-      );
-
-      if (!response) {
-        throw new Error("Failed to update control number");
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Error updating control number:", error);
-      toast.error("Failed to update control number");
-      throw error;
-    }
+    return claim.docNo;
   };
 
   // Helper function to reconstruct batch state from stored database fields
@@ -1358,8 +1351,12 @@ function AddGto({ docData }) {
       try {
         const res = await apiService.post("StkMovdocHdrs", data);
         console.log(res, "post");
+        return res;
       } catch (err) {
-        console.error(err);
+        // Do NOT swallow: a failed header write must abort the posting,
+        // otherwise the lines and stock rows get written with no header.
+        console.error("postStockHdr create failed:", err);
+        throw err;
       }
     } else {
       try {
@@ -1368,8 +1365,10 @@ function AddGto({ docData }) {
           `StkMovdocHdrs/update?[where][docNo]=${docNo}`,
           data
         );
+        return res;
       } catch (err) {
-        console.error(err);
+        console.error("postStockHdr update failed:", err);
+        throw err;
       }
     }
   };
@@ -1422,7 +1421,8 @@ function AddGto({ docData }) {
           item.stockName?.toLowerCase().includes(searchValue) ||
           item.uomDescription?.toLowerCase().includes(searchValue) ||
           item.brandCode?.toLowerCase().includes(searchValue) ||
-          item.rangeCode?.toLowerCase().includes(searchValue)
+          item.rangeCode?.toLowerCase().includes(searchValue) ||
+          item.linkCode?.toLowerCase().includes(searchValue)
         );
       });
 
@@ -2419,9 +2419,6 @@ function AddGto({ docData }) {
         docNo = result.docNo;
         controlData = result.controlData;
 
-        // Increment control number immediately after getting docNo
-        await addNewControlNumber(controlData);
-
         // Update states with new docNo
         hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
         details = cartData.map((item, index) => ({
@@ -2434,8 +2431,23 @@ function AddGto({ docData }) {
         setControlData(controlData);
         console.log("dd1");
 
-        // Move validation here after docNo is set
+        // Validate BEFORE claiming, so an invalid form cannot burn a number.
         if (!validateForm(hdr, details)) return;
+
+        // ── Claim the running number now - still BEFORE the document is
+        // created. Returns the number actually owned, which differs from the one
+        // the form was showing only if another user claimed it first.
+        const claimedDocNo = await addNewControlNumber(controlData, docNo);
+        if (claimedDocNo && claimedDocNo !== docNo) {
+          console.warn(
+            `[controlNo] GTO number changed from ${docNo} to ${claimedDocNo}`
+          );
+          docNo = claimedDocNo;
+          hdr = { ...hdr, docNo };
+          details = details.map((item) => ({ ...item, docNo }));
+          setStockHdrs(hdr);
+          setCartData(details);
+        }
       } else {
         // Use existing docNo for updates and posts
         docNo = urlDocNo || stockHdrs.docNo;
@@ -2484,16 +2496,15 @@ function AddGto({ docData }) {
       };
 
       // Handle header operations based on type and urlDocNo
+      // (the running number was already claimed above, before any write)
       if (type === "save" && !urlDocNo) {
         await postStockHdr(data, "create");
-        // addNewControlNumber(controlData);
       } else if (type === "save" && urlDocNo) {
         await postStockHdr(data, "update");
       } else if (type === "post") {
         // For direct post without saving, create header first if needed
         if (!urlDocNo) {
           await postStockHdr(data, "create");
-          // addNewControlNumber(controlData);
         } else {
           await postStockHdr(data, "updateStatus");
         }

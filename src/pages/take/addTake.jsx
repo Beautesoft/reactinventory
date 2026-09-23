@@ -47,6 +47,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import { claimControlNumber } from "@/utils/controlNo";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import apiService1 from "@/services/apiService1";
 import {
@@ -2159,61 +2160,40 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     }
   };
 
-  const addNewControlNumber = async (controlData) => {
-    try {
-      const controlNo = controlData.RunningNo;
-      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
+  // Claims (and verifies) the next Stock Take number BEFORE the document is
+  // created. Throws if the number could not be claimed, so nothing is written.
+  const addNewControlNumber = async (controlData, expectedDocNo) => {
+    const claim = await claimControlNumber({
+      controlDescription: "Stock Take",
+      siteCode: userDetails?.siteCode,
+    });
 
-      const controlNosUpdate = {
-        controldescription: "Stock Take",
-        sitecode: userDetails.siteCode,
-        controlnumber: newControlNo,
-      };
+    console.log(
+      `[controlNo] STOCK TAKE claimed ${claim.docNo} ` +
+        `(form showed ${expectedDocNo || controlData?.docNo || "-"}, ` +
+        `strategy=${claim.strategy}, attempt=${claim.attempts}, ` +
+        `counter now ${claim.nextControlNo})`
+    );
 
-      const response = await apiService.post(
-        "ControlNos/updatecontrol",
-        controlNosUpdate
-      );
-
-      if (!response) {
-        throw new Error("Failed to update control number");
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Error updating control number:", error);
-      toast.error("Failed to update control number");
-      throw error;
-    }
+    return claim.docNo;
   };
 
-  // Function to add new control number for Stock Adjustment
-  const addNewAdjControlNumber = async (controlData) => {
-    try {
-      const controlNo = controlData.RunningNo;
-      const newControlNo = (parseInt(controlNo, 10) + 1).toString();
+  // Claims (and verifies) the next Stock Adjustment number BEFORE the document
+  // is created. Throws if the number could not be claimed, so nothing is written.
+  const addNewAdjControlNumber = async (controlData, expectedDocNo) => {
+    const claim = await claimControlNumber({
+      controlDescription: "Adjustment Stock",
+      siteCode: userDetails?.siteCode,
+    });
 
-      const controlNosUpdate = {
-        controldescription: "Adjustment Stock",
-        sitecode: userDetails.siteCode,
-        controlnumber: newControlNo,
-      };
+    console.log(
+      `[controlNo] ADJ (from Stock Take) claimed ${claim.docNo} ` +
+        `(form showed ${expectedDocNo || controlData?.docNo || "-"}, ` +
+        `strategy=${claim.strategy}, attempt=${claim.attempts}, ` +
+        `counter now ${claim.nextControlNo})`
+    );
 
-      const response = await apiService.post(
-        "ControlNos/updatecontrol",
-        controlNosUpdate
-      );
-
-      if (!response) {
-        throw new Error("Failed to update adjustment control number");
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Error updating adjustment control number:", error);
-      toast.error("Failed to update adjustment control number");
-      throw error;
-    }
+    return claim.docNo;
   };
 
   // Helper function to reconstruct batch state from stored ordMemo fields (similar to stock adjustment)
@@ -2555,8 +2535,15 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         throw new Error("Failed to generate adjustment document number");
       }
 
-      const adjustmentDocNo = adjDocResult.docNo;
       const adjControlData = adjDocResult.controlData;
+
+      // Claim the number BEFORE creating the document, and verify the claim.
+      // If another user took it, use the number we actually own.
+      const claimedAdjDocNo = await addNewAdjControlNumber(
+        adjControlData,
+        adjDocResult.docNo
+      );
+      const adjustmentDocNo = claimedAdjDocNo || adjDocResult.docNo;
 
       // Step 4: Calculate totals
       const totalQty = adjustmentItems.reduce(
@@ -2670,16 +2657,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         }
       }
 
-      // Step 9: Update control number
-      try {
-        await addNewAdjControlNumber(adjControlData);
-      } catch (controlError) {
-        console.error("Error updating adjustment control number:", controlError);
-        // Don't throw error for control number update failure as the main document is already created
-        console.warn(
-          "Control number update failed, but adjustment document was created successfully"
-        );
-      }
+      // Step 9: control number already claimed in Step 3, BEFORE the document
+      // was created - so there is nothing to do here. (Previously this ran after
+      // the document existed and swallowed any failure, which left the counter
+      // un-advanced and produced duplicate adjustment numbers.)
 
       console.log("Stock Adjustment created successfully:", adjustmentDocNo);
       return adjustmentDocNo;
@@ -3766,10 +3747,21 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         data.docStatus = 0;
         
         if (!urlDocNo) {
-          // Creating new document
+          // Creating new document - claim the number BEFORE the header insert.
+          const claimedDocNo = await addNewControlNumber(controlData, docNo);
+          if (claimedDocNo && claimedDocNo !== docNo) {
+            console.warn(
+              `[controlNo] STOCK TAKE number changed from ${docNo} to ${claimedDocNo}`
+            );
+            docNo = claimedDocNo;
+            hdr = { ...hdr, docNo };
+            data.docNo = docNo;
+            details = details.map((item) => ({ ...item, docNo }));
+            setCartData(details);
+            setStockHdrs(hdr);
+          }
           await postStockHdr(data, "create");
           await postStockDetails(details);
-          await addNewControlNumber(controlData);
           message = "Stock Take saved successfully";
         } else {
           // Updating existing document
@@ -3784,10 +3776,22 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         data.postedBy = userDetails?.username;
   
         if (!urlDocNo) {
-          // Direct post without saving first - create header and details
+          // Direct post without saving first - claim the number BEFORE the
+          // header insert.
+          const claimedDocNo = await addNewControlNumber(controlData, docNo);
+          if (claimedDocNo && claimedDocNo !== docNo) {
+            console.warn(
+              `[controlNo] STOCK TAKE number changed from ${docNo} to ${claimedDocNo}`
+            );
+            docNo = claimedDocNo;
+            hdr = { ...hdr, docNo };
+            data.docNo = docNo;
+            details = details.map((item) => ({ ...item, docNo }));
+            setCartData(details);
+            setStockHdrs(hdr);
+          }
           await postStockHdr(data, "create");
           await postStockDetails(details);
-          await addNewControlNumber(controlData);
           
           // Update stock quantities when posted
           try {

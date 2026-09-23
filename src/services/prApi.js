@@ -1,6 +1,7 @@
 import apiService from "./apiService";
 import moment from "moment-timezone";
 import { roundMoney } from "@/utils/uomDecimalQty";
+import { claimControlNumber } from "@/utils/controlNo";
 
 const BASE_URL = ""; // Will use the base URL from apiService
 
@@ -226,46 +227,40 @@ export const prApi = {
   // Create complete PR (header + line items)
   async createPR(header, items) {
     try {
-      // Get control number first (before creating anything)
+      // ── Take the PR number BEFORE creating anything ─────────────────────
+      // claimControlNumber reads and TAKES the number in one conditional step
+      // and verifies the answer (count === 1). The previous code read the number,
+      // then asked the server to bump the counter and never checked the reply -
+      // so a silently-failed bump handed the same number out again.
       const userDetails = JSON.parse(localStorage.getItem("userDetails"));
       const siteCode = userDetails?.siteCode;
       const codeDesc = "PO REQUISITE";
-      const filter = { 
-        where: { 
-          controlDescription: codeDesc,
-          siteCode: siteCode
-        } 
-      };
-      const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-      const controlResponse = await apiService.get(`ControlNos${query}`);
-      
-      let reqNo;
-      let runningNo;
-      let controlNo;
-      
-      if (controlResponse && controlResponse.length > 0) {
-        const control = controlResponse[0];
-        reqNo = `${control.controlPrefix}${control.siteCode}${control.controlNo}`;
-        runningNo = control.controlNo;
-        controlNo = control.controlNo;
-      } else {
-        // If no control number found, create a new one
-        console.log("No control number found, creating new one...");
-        reqNo = await this.createControlNumber(codeDesc, siteCode);
-        runningNo = "000001";
-        controlNo = "000001";
+
+      let claim;
+      try {
+        claim = await claimControlNumber({ controlDescription: codeDesc, siteCode });
+      } catch (err) {
+        // A genuinely missing row is handled by creating it once and then
+        // claiming it properly. Anything else (including "could not reserve")
+        // must abort, so no PR is ever created on a number we do not own.
+        if (!/No ControlNos row/.test(err?.message || "")) throw err;
+
+        console.log(
+          `[controlNo] No "${codeDesc}" row for site ${siteCode} - creating it, then claiming`
+        );
+        await this.createControlNumber(codeDesc, siteCode);
+        claim = await claimControlNumber({ controlDescription: codeDesc, siteCode });
       }
-      
-      // Set header reqNo
+
+      const reqNo = claim.docNo;
+      const runningNo = claim.controlNo;
       header.reqNo = reqNo;
-      
-      // Increment control number BEFORE creating documents
-      const newControlNo = (parseInt(controlNo) + 1).toString().padStart(6, '0');
-      await apiService.post("ControlNos/updatecontrol", {
-        controldescription: codeDesc,
-        sitecode: siteCode,
-        controlnumber: newControlNo
-      });
+
+      console.log(
+        `[controlNo] PR claimed ${reqNo} ` +
+          `(strategy=${claim.strategy}, attempt=${claim.attempts}, ` +
+          `counter now ${claim.nextControlNo})`
+      );
       
       // Create header
       const headerResponse = await this.createPRHeader(header);
@@ -968,71 +963,55 @@ export const prApi = {
   // Get next transfer number
   // siteCodeOverride: when creating GTI from PR, pass requestingSiteCode so doc number is for destination site
   async getNextTransferNumber(transferType, siteCodeOverride = null) {
+    const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+    const siteCode = siteCodeOverride ?? userDetails?.HQSiteCode ?? userDetails?.siteCode;
+
+    // Map transfer types to control descriptions
+    const controlDescriptionMap = {
+      "GTO": "Transfer To Other Store",
+      "GTI": "Transfer From Other Store",
+      "TFRT": "Transfer To Other Store",
+      "TFRF": "Transfer From Other Store",
+    };
+    const controlDescription = controlDescriptionMap[transferType] || transferType;
+
+    // ── Claim the number BEFORE it is used ────────────────────────────────
+    // The previous code read the number, then asked the server to bump the
+    // counter and never checked the reply, so a silently-failed bump handed the
+    // same transfer number out twice.
+    let claim;
     try {
-      const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-      const siteCode = siteCodeOverride ?? userDetails?.HQSiteCode ?? userDetails?.siteCode;
-      
-      // Map transfer types to control descriptions
-      const controlDescriptionMap = {
-        "GTO": "Transfer To Other Store",
-        "GTI": "Transfer From Other Store",
-        "TFRT": "Transfer To Other Store",
-        "TFRF": "Transfer From Other Store"
-      };
-      
-      const controlDescription = controlDescriptionMap[transferType] || transferType;
-      
-      const filter = { 
-        where: { 
-          controlDescription: controlDescription,
-          siteCode: siteCode
-        } 
-      };
-      const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-      const response = await apiService.get(`ControlNos${query}`);
-      
-      if (response && response.length > 0) {
-        const control = response[0];
-        const docNo = `${control.controlPrefix}${control.siteCode}${control.controlNo}`;
-        
-        // Increment control number
-        const newControlNo = (parseInt(control.controlNo, 10) + 1).toString().padStart(6, '0');
-        await apiService.post("ControlNos/updatecontrol", {
-          controldescription: controlDescription,
-          sitecode: siteCode,
-          controlnumber: newControlNo
-        });
-        
-        return docNo;
-      }
-      
-      // If no control number found, create one
-      console.log(`No control number found for ${controlDescription} at ${siteCode}, creating new one...`);
-      const prefix = transferType === "GTI" || transferType === "TFRF" ? "GTI" : "GTO";
-      const newControlData = {
-        controlDescription: controlDescription,
-        siteCode: siteCode,
-        controlPrefix: prefix,
-        controlNo: "000001",
-        controldate: moment().format("YYYY-MM-DD"),
-        macCode: null,
-      };
-      
-      const createResponse = await apiService.post("ControlNos", [newControlData]);
-      const docNo = `${newControlData.controlPrefix}${newControlData.siteCode}${newControlData.controlNo}`;
-      
-      // Increment it immediately since we're using it
-      await apiService.post("ControlNos/updatecontrol", {
-        controldescription: controlDescription,
-        sitecode: siteCode,
-        controlnumber: "000002"
-      });
-      
-      return docNo;
-    } catch (error) {
-      console.error("Error getting next transfer number:", error);
-      throw error;
+      claim = await claimControlNumber({ controlDescription, siteCode });
+    } catch (err) {
+      // Only a genuinely missing row is handled here. Anything else (including
+      // "could not reserve") must abort.
+      if (!/No ControlNos row/.test(err?.message || "")) throw err;
+
+      // No row for this site yet - create it once using the same prefix
+      // convention as every other client (WGTI / WGTO), then claim properly.
+      const isIncoming = transferType === "GTI" || transferType === "TFRF";
+      console.log(
+        `[controlNo] No "${controlDescription}" row for site ${siteCode} - creating it`
+      );
+      await apiService.post("ControlNos", [
+        {
+          controlDescription,
+          siteCode,
+          controlPrefix: isIncoming ? "WGTI" : "WGTO",
+          controlNo: "110001",
+          controldate: moment().format("YYYY-MM-DD"),
+          macCode: null,
+        },
+      ]);
+      claim = await claimControlNumber({ controlDescription, siteCode });
     }
+
+    console.log(
+      `[controlNo] ${transferType} claimed ${claim.docNo} ` +
+        `(strategy=${claim.strategy}, attempt=${claim.attempts}, ` +
+        `counter now ${claim.nextControlNo})`
+    );
+    return claim.docNo;
   }
 };
 

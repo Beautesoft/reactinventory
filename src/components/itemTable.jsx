@@ -71,7 +71,7 @@ function ItemTable({
     onPageChange(newPage);
   };
 
-  console.log(data,'dataaa')
+  // console.log(data,'dataaa')
 
   // Handle sorting
   const handleSort = (key) => {

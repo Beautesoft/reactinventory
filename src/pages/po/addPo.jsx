@@ -960,7 +960,8 @@ function AddPO() {
           item.stockName?.toLowerCase().includes(searchValue) ||
           item.docUom?.toLowerCase().includes(searchValue) ||
           item.BrandCode?.toLowerCase().includes(searchValue) ||
-          item.RangeCode?.toLowerCase().includes(searchValue)
+          item.RangeCode?.toLowerCase().includes(searchValue) ||
+          item.linkCode?.toLowerCase().includes(searchValue)
         );
       });
 
