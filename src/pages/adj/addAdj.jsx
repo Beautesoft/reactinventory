@@ -748,9 +748,11 @@ function AddAdj({ docData }) {
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
   const [searchParams] = useSearchParams();
-  const urlStatus = searchParams.get("status");
+  // Raw ?status= from the URL. Only a fallback for a NEW document, which has no
+  // database status yet — see urlStatus below.
+  const urlStatusParam = searchParams.get("status");
   console.log(urlDocNo, "urlDocNo");
-  console.log(urlStatus, "urlStatus");
+  console.log(urlStatusParam, "urlStatusParam (raw URL)");
 
   // State management
   const statusOptions = [
@@ -834,7 +836,7 @@ function AddAdj({ docData }) {
   });
   const [stockHdrs, setStockHdrs] = useState({
     docNo: "",
-    docDate: new Date().toISOString().split("T")[0],
+    docDate: moment().format("YYYY-MM-DD"),
     docStatus: 0,
     supplyNo: "",
     docRef1: "",
@@ -845,6 +847,14 @@ function AddAdj({ docData }) {
     postDate: "",
     createUser: userDetails?.username,
   });
+  // The status this screen must act on. For an existing document it is the value
+  // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
+  // is only a fallback for a NEW document, which has no database status yet. The
+  // posting route and every field lock read this, so a stale link can neither
+  // unlock a posted document nor lock an open one.
+  const isPostedDoc = stockHdrs.docStatus === 7 || stockHdrs.docStatus === "7";
+  const urlStatus = urlDocNo ? (isPostedDoc ? "7" : "0") : urlStatusParam;
+
   const [cartData, setCartData] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
   const [controlData, setControlData] = useState({
@@ -2776,7 +2786,7 @@ function AddAdj({ docData }) {
 
     return {
       id: null,
-      trnPost: today.toISOString().split("T")[0],
+      trnPost: moment().format("YYYY-MM-DD"),
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
       aperiod: null,
@@ -3142,11 +3152,11 @@ function AddAdj({ docData }) {
     });
 
     // NEW: Handle posted document editing - Check at the very beginning
-    // Use both urlStatus and stockHdrs.docStatus for better detection
+    // Decide from the DATABASE status only. urlStatus is derived from the loaded
+    // document, not from ?status=, so a stale link cannot route the write path.
     const isPostedDocument =
       stockHdrs.docStatus === "7" ||
-      stockHdrs.docStatus === 7 ||
-      urlStatus === "7";
+      stockHdrs.docStatus === 7;
 
     if (
       isPostedDocument &&
@@ -3804,7 +3814,7 @@ function AddAdj({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: today.toISOString().split("T")[0],
+                trnPost: moment().format("YYYY-MM-DD"),
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,

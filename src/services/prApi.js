@@ -53,12 +53,18 @@ const convertEmptyStringsToNull = (obj) => {
   return obj;
 };
 
-/** Strip UI-only / unsupported columns before posting reqdetails (Dragon DB has no ITEMREMARK1/2). */
+/**
+ * Strip UI-only columns before posting reqdetails.
+ * REQ_DETAIL has itemRemark1/itemRemark2 on every current client, and no
+ * ordMemo1/ordMemo2 anywhere - so these two must be kept: itemRemark1 carries the
+ * "fefo-<UOM>" transfer type + UOM, itemRemark2 the batch breakdown. Dropping them
+ * is what made an approved PR produce a GTI line with a hard-coded "PCS" UOM.
+ * Empty values are removed so a client whose table lacks one of these columns
+ * (hairdreams / tnctrain have no itemRemark2) is not sent it needlessly.
+ */
 const sanitizeReqDetailPayload = (item) => {
   if (!item || typeof item !== "object") return item;
   const {
-    itemRemark1,
-    itemRemark2,
     batchDetails,
     transferType,
     useExistingBatch,
@@ -66,15 +72,8 @@ const sanitizeReqDetailPayload = (item) => {
     ...rest
   } = item;
 
-  if (!rest.ordMemo1 && itemRemark1) {
-    // Store transfer mode only (ordMemo1 historically holds fefo/specific)
-    rest.ordMemo1 = String(itemRemark1).includes("-")
-      ? String(itemRemark1).split("-")[0]
-      : itemRemark1;
-  }
-  if (!rest.ordMemo2 && itemRemark2) {
-    rest.ordMemo2 = itemRemark2;
-  }
+  if (!rest.itemRemark1) delete rest.itemRemark1;
+  if (!rest.itemRemark2) delete rest.itemRemark2;
 
   return rest;
 };
@@ -679,14 +678,22 @@ export const prApi = {
         };
       }
 
-      // 2. Calculate totals
+      // 2. Calculate totals from the APPROVED quantities, exactly as the lines are
+      // built below. Summing the PR's stored reqdAmt made the header carry the
+      // requested amount while its own lines carried the approved amount.
       const totals = transferLineItems.reduce(
-        (acc, item) => ({
-          totalQty: acc.totalQty + getApprovedQty(item),
-          totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
-          totalDisc: acc.totalDisc + Number(item.reqdDiscamt || 0),
-          totalAmt: acc.totalAmt + Number(item.reqdAmt || 0),
-        }),
+        (acc, item) => {
+          const approvedQty = getApprovedQty(item);
+          const price = roundMoney(item.reqdItemprice || item.reqdPrice || 0);
+          const discPer = roundMoney(item.reqdDiscper || 0);
+          const discAmt = roundMoney((approvedQty * price * discPer) / 100);
+          return {
+            totalQty: acc.totalQty + approvedQty,
+            totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
+            totalDisc: acc.totalDisc + discAmt,
+            totalAmt: acc.totalAmt + roundMoney(approvedQty * price - discAmt),
+          };
+        },
         { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
       );
       
@@ -754,8 +761,16 @@ export const prApi = {
           transferType = itemRemark1Raw.toLowerCase();
         }
         
-        // Use UOM from itemRemark1 if available, otherwise use docUom
-        const docUom = extractedUOM || item.docUom || "PCS";
+        // UOM comes from the "fefo-<UOM>" carrier in itemRemark1 (now persisted), else
+        // from the loaded line. Never invent one: a guessed "PCS" silently creates
+        // stock in a UOM nobody asked for, which is exactly what used to happen here.
+        const docUom = extractedUOM || item.docUom || item.uom;
+        if (!docUom) {
+          throw new Error(
+            `Cannot determine the UOM for item ${item.reqdItemcode} on ${prData.reqNo}. ` +
+              `Re-save the PR line with its UOM before approving.`
+          );
+        }
         
         const batchBreakdownStr = item.itemRemark2 || item.ordMemo2 || "";
 

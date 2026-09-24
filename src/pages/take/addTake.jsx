@@ -703,9 +703,11 @@ function AddTake({ docData }) {
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
   const [searchParams] = useSearchParams();
-  const urlStatus = searchParams.get("status");
+  // Raw ?status= from the URL. Only a fallback for a NEW document, which has no
+  // database status yet — see urlStatus below.
+  const urlStatusParam = searchParams.get("status");
   console.log(urlDocNo, "urlDocNo");
-  console.log(urlStatus, "urlStatus");
+  console.log(urlStatusParam, "urlStatusParam (raw URL)");
 
   // State management - Stock Take workflow states
   const statusOptions = [
@@ -768,12 +770,20 @@ function AddTake({ docData }) {
   });
   const [stockHdrs, setStockHdrs] = useState({
     docNo: "",
-    docDate: new Date().toISOString().split("T")[0],
+    docDate: moment().format("YYYY-MM-DD"),
     docStatus: null,
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     createUser: userDetails?.username,
   });
+  // The status this screen must act on. For an existing document it is the value
+  // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
+  // is only a fallback for a NEW document, which has no database status yet. The
+  // posting route and every field lock read this, so a stale link can neither
+  // unlock a posted document nor lock an open one.
+  const isPostedDoc = stockHdrs.docStatus === 7 || stockHdrs.docStatus === "7";
+  const urlStatus = urlDocNo ? (isPostedDoc ? "7" : "0") : urlStatusParam;
+
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
     Attn: "",
@@ -3084,7 +3094,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           
           return {
             id: null,
-            trnPost: today.toISOString().split("T")[0],
+            trnPost: moment().format("YYYY-MM-DD"),
             trnNo: null,
             trnDate: moment().format("YYYY-MM-DD"),
             postTime: timeStr,

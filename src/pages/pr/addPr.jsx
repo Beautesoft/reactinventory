@@ -952,7 +952,8 @@ function AddPR() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-  const urlStatus = searchParams.get("status") || 0;
+  // Raw ?status= from the URL. Only a fallback for a NEW requisition — see urlStatus below.
+  const urlStatusParam = searchParams.get("status") || 0;
   const approvalParam = searchParams.get("approval") === "1";
 
   // State management
@@ -1051,6 +1052,14 @@ function AddPR() {
     reqRecttl: 0,
     reqTime: moment().format("HH:mm:ss")
   });
+
+  // The status this screen must act on. For an existing PR it is the value loaded
+  // from the database (formData.reqStatus); the raw ?status= from the URL is only a
+  // fallback for a NEW requisition. Every field lock reads this, so a stale link can
+  // neither unlock a posted PR nor lock an open one.
+  const urlStatus = id
+    ? (formData.reqStatus === "Posted" || formData.reqStatus === "Approved" ? 7 : 0)
+    : urlStatusParam;
 
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({

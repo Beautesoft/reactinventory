@@ -504,9 +504,11 @@ function AddGrn({ docData }) {
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
   const [searchParams] = useSearchParams();
-  const urlStatus = searchParams.get("status");
+  // Raw ?status= from the URL. Only a fallback for a NEW document, which has no
+  // database status yet — see urlStatus below.
+  const urlStatusParam = searchParams.get("status");
   console.log(urlDocNo, "urlDocNo");
-  console.log(urlStatus, "urlStatus");
+  console.log(urlStatusParam, "urlStatusParam (raw URL)");
 
   // State management
   const statusOptions = [
@@ -587,7 +589,7 @@ function AddGrn({ docData }) {
   });
   const [stockHdrs, setStockHdrs] = useState({
     docNo: "",
-    docDate: new Date().toISOString().split("T")[0],
+    docDate: moment().format("YYYY-MM-DD"),
     // docDate: new Date().toISOString(),
     docLines: "",
     docStatus: 0,
@@ -598,10 +600,18 @@ function AddGrn({ docData }) {
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     postDate: "",
-    deliveryDate: new Date().toISOString().split("T")[0],
+    deliveryDate: moment().format("YYYY-MM-DD"),
     createUser: userDetails?.username,
     staffNo: userDetails?.usercode,
   });
+  // The status this screen must act on. For an existing document it is the value
+  // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
+  // is only a fallback for a NEW document, which has no database status yet. The
+  // posting route and every field lock read this, so a stale link can neither
+  // unlock a posted document nor lock an open one.
+  const isPostedDoc = stockHdrs.docStatus === 7 || stockHdrs.docStatus === "7";
+  const urlStatus = urlDocNo ? (isPostedDoc ? "7" : "0") : urlStatusParam;
+
   const [cartData, setCartData] = useState([]);
   const [supplierInfo, setSupplierInfo] = useState({
     Attn: "",
@@ -2043,7 +2053,7 @@ function AddGrn({ docData }) {
 
     return {
       id: null,
-      trnPost: today.toISOString().split("T")[0],
+      trnPost: moment().format("YYYY-MM-DD"),
       trnDate: stockHdrs.docDate,
       postTime: timeStr,
       aperiod: null,
@@ -2302,7 +2312,7 @@ function AddGrn({ docData }) {
 
               const newStktrns = {
                 id: null,
-                trnPost: today.toISOString().split("T")[0],
+                trnPost: moment().format("YYYY-MM-DD"),
                 trnNo: null,
                 trnDate: stockHdrs.docDate,
                 postTime: timeStr,
@@ -2520,11 +2530,11 @@ function AddGrn({ docData }) {
     });
 
     // NEW: Handle posted document editing - Check at the very beginning
-    // Use both urlStatus and stockHdrs.docStatus for better detection
+    // Decide from the DATABASE status only. urlStatus is derived from the loaded
+    // document, not from ?status=, so a stale link cannot route the write path.
     const isPostedDocument =
       stockHdrs.docStatus === "7" ||
-      stockHdrs.docStatus === 7 ||
-      urlStatus === "7";
+      stockHdrs.docStatus === 7;
 
     if (
       isPostedDocument &&
@@ -2564,7 +2574,7 @@ function AddGrn({ docData }) {
           docRef2: stockHdrs.docRef2, // ALLOW EDITING
           docLines: stockHdrs.docLines, // Keep original
           docDate: stockHdrs.docDate, // Keep original
-          recExpect: stockHdrs.deliveryDate || new Date().toISOString().split("T")[0], // ALLOW EDITING - Delivery date can be changed
+          recExpect: stockHdrs.deliveryDate || moment().format("YYYY-MM-DD"), // ALLOW EDITING - Delivery date can be changed
           postDate: stockHdrs.postDate, // Keep original post date
           docStatus: "7", // Keep as posted
           docTerm: stockHdrs.docTerm, // ALLOW EDITING
@@ -2697,7 +2707,7 @@ function AddGrn({ docData }) {
         docRef2: hdr.docRef2,
         docLines: urlDocNo ? hdr.docLines : cartData.length,
         docDate: hdr.docDate,
-        recExpect: hdr.deliveryDate || new Date().toISOString().split("T")[0],
+        recExpect: hdr.deliveryDate || moment().format("YYYY-MM-DD"),
         postDate: type === "post" ? new Date().toISOString() : "",
         docStatus: hdr.docStatus, // Keep original status until final update
         docTerm: hdr.docTerm,
