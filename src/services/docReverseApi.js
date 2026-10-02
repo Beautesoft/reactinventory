@@ -4,6 +4,7 @@ import {
   isVoidDocStatus,
   VOID_DOC_STATUS,
 } from "@/utils/utils";
+import { displayItemCode } from "@/utils/itemMaster/itemCodeHelpers";
 
 export const VOID_TRN_REF = "VOID";
 
@@ -29,8 +30,8 @@ const filterQuery = (filter) =>
 
 const toList = (res) => (Array.isArray(res) ? res : []);
 
-export const trimItemCode = (itemcode) =>
-  String(itemcode || "").replace(/0000$/, "");
+/** Base item code without the literal "0000" suffix carried by `Stktrns`. */
+export const trimItemCode = (itemcode) => displayItemCode(itemcode);
 
 export const balanceKey = (itemcode, storeNo, uom) =>
   `${itemcode || ""}|${storeNo || ""}|${uom || ""}`;

@@ -24,7 +24,9 @@ export class ApiService1 {
     // const baseURL = import.meta.env.DEV
     //   ? ''
     //   : window.APP_CONFIG?.API_BASE_URL || '';
-    const baseURL = window.APP_CONFIG?.API_LOGIN_URL || "";
+    // const baseURL = window.APP_CONFIG?.API_LOGIN_URL || "";
+    const baseURL = window.APP_CONFIG?.API_BE_BASE_URL || "";
+
 
     this.instance = axios.create({
       baseURL,

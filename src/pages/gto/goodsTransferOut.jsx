@@ -112,6 +112,7 @@ function GoodsTransferOut() {
     };
 
     initialize();
+    fetchOwnRecords()
   }, []);
 
   useEffect(() => {

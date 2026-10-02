@@ -164,14 +164,21 @@ const StockBalanceReports = () => {
 
     setLoading(true);
     try {
+      // Site code -> site name, so the report shows itemsiteDesc (same as Replenishment Report)
+      const siteLabelByCode = Object.fromEntries(
+        filters.site.map((site) => [site.value, site.label])
+      );
+
       // Build the request payload exactly as the ASP.NET code expects
       const requestPayload = {
         toDate: moment(filters.asOnDate).format("DD/MM/YYYY"), // Convert to DD/MM/YYYY format as ASP.NET expects
         Site: Array.isArray(filters.site) && filters.site.length > 0 ? filters.site.map(site => site.value).join(',') : '',
         Dept: filters.departments.map(dept => dept.value).join(','),
         Brand: filters.brands.map(brand => brand.value).join(','),
-        fromItem: filters.items.length > 0 ? filters.items[0]?.value || '' : '',
-        toItem: filters.items.length > 1 ? filters.items[filters.items.length - 1]?.value || '' : filters.items[0]?.value || '',
+        // From Item carries every selected item (comma separated), same as Dept/Brand/Range
+        fromItem: filters.items.length > 0 ? filters.items.map(item => item.value).join(',') : '',
+        // To Item is always left free - only From Item is sent, so there is no upper bound
+        toItem: '',
         Range: filters.ranges.map(range => range.value).join(','),
         showInActive: filters.showInactive ? 'Y' : 'N',
         showZeroQty: filters.showZeroQty ? 'Y' : 'N'
@@ -186,6 +193,8 @@ const StockBalanceReports = () => {
           // Process the data to add calculated fields
           const processedData = response.result.map(item => ({
             ...item,
+            // Show the outlet name (itemsite_desc) instead of the code (itemsite_code)
+            Outlet: siteLabelByCode[item.Outlet] || item.Outlet,
             // Calculate TotalCost = Qty * Cost
             TotalCost: (Number(item.Qty || 0) * Number(item.Cost || 0)).toFixed(2),
             // Calculate TotalAmount = Qty * Price
@@ -239,8 +248,8 @@ const StockBalanceReports = () => {
 
   // Column configuration for the report - updated headers as requested
   const columns = [
-    { key: 'Outlet', header: 'Outlet', align: 'left' },
-    { key: 'Dept', header: 'Description', align: 'left' },
+    { key: 'Outlet', header: 'Site', align: 'left' },
+    { key: 'Dept', header: 'Dept', align: 'left' },
     { key: 'Brand', header: 'Brand', align: 'left' },
     { key: 'Ranges', header: 'Range', align: 'left' },
     { key: 'ItemName', header: 'Item Name', align: 'left' },

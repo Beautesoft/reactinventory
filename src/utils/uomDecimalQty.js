@@ -68,6 +68,11 @@ export function buildDecimalQtyLookup(uomPriceRows = []) {
 let cachedLookup = null;
 let lookupPromise = null;
 
+// Primary-UOM cache, declared here because getDecimalQtyLookup() also fills it
+// from the same ItemUomprices response (one network call serves both lookups).
+let cachedPrimaryUomLookup = null;
+let primaryUomPromise = null;
+
 export async function getDecimalQtyLookup(forceRefresh = false) {
   if (!forceRefresh && cachedLookup) {
     return cachedLookup;
@@ -81,6 +86,7 @@ export async function getDecimalQtyLookup(forceRefresh = false) {
     .getAllItemUomprices()
     .then((rows) => {
       cachedLookup = buildDecimalQtyLookup(rows);
+      cachedPrimaryUomLookup = buildPrimaryUomLookup(rows);
       lookupPromise = null;
       return cachedLookup;
     })
@@ -90,6 +96,78 @@ export async function getDecimalQtyLookup(forceRefresh = false) {
     });
 
   return lookupPromise;
+}
+
+/**
+ * Build an itemCode -> primary UOM map from ItemUomprices rows.
+ *
+ * Item Master pre-fills "Stk.Balance -> UOM Code" from `ItemUomprices[0].itemUom`
+ * (see itemMasterForm), NOT from `Stocks.itemUom` — which stays null for items
+ * that never got a UOM price row (e.g. division 3/4/5 SET-type items). Reports
+ * that print `Stocks.itemUom` therefore show a blank UOM column.
+ *
+ * The primary row is the lowest `itemUompriceSeq`, falling back to the first
+ * active row when no sequence is present.
+ */
+export function buildPrimaryUomLookup(uomPriceRows = []) {
+  const best = new Map();
+
+  for (const row of Array.isArray(uomPriceRows) ? uomPriceRows : []) {
+    if (!row || row.isactive === false) continue;
+
+    const itemCode = row.itemCode ?? row.item_code;
+    const itemUom = row.itemUom ?? row.item_uom;
+    if (!itemCode || !itemUom) continue;
+
+    const key = String(itemCode).trim();
+    if (!key) continue;
+
+    const rawSeq = row.itemUompriceSeq ?? row.item_uomprice_seq;
+    const seq = rawSeq == null || rawSeq === "" ? Number.MAX_SAFE_INTEGER : Number(rawSeq);
+
+    const current = best.get(key);
+    if (!current || seq < current.seq) {
+      best.set(key, { seq: Number.isFinite(seq) ? seq : Number.MAX_SAFE_INTEGER, uom: String(itemUom) });
+    }
+  }
+
+  const lookup = new Map();
+  for (const [itemCode, entry] of best) {
+    lookup.set(itemCode, entry.uom);
+  }
+  return lookup;
+}
+
+/**
+ * Memoised itemCode -> primary UOM map. Shares the single ItemUomprices fetch
+ * with getDecimalQtyLookup(), so calling both does not double the request.
+ * Resolves to an empty Map on failure so callers can safely fall back.
+ */
+export async function getPrimaryUomLookup(forceRefresh = false) {
+  if (!forceRefresh && cachedPrimaryUomLookup) {
+    return cachedPrimaryUomLookup;
+  }
+
+  if (!forceRefresh && primaryUomPromise) {
+    return primaryUomPromise;
+  }
+
+  primaryUomPromise = itemMasterApi
+    .getAllItemUomprices()
+    .then((rows) => {
+      cachedLookup = buildDecimalQtyLookup(rows);
+      cachedPrimaryUomLookup = buildPrimaryUomLookup(rows);
+      primaryUomPromise = null;
+      return cachedPrimaryUomLookup;
+    })
+    .catch((err) => {
+      console.error("Failed to load ItemUomprices for UOM lookup:", err);
+      primaryUomPromise = null;
+      cachedPrimaryUomLookup = new Map();
+      return cachedPrimaryUomLookup;
+    });
+
+  return primaryUomPromise;
 }
 
 export function resolveAllowDecimalQty(item, lookup) {

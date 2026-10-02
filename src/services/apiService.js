@@ -94,7 +94,9 @@ export class ApiService {
   async login(url, data, config = {}) {
     // Create a new instance without auth headers for login
     // const baseURL = window.APP_CONFIG?.API_LOGIN_URL || '';
-    const baseURL = window.APP_CONFIG?.API_LOGIN_URL || "";
+    // const baseURL = window.APP_CONFIG?.API_LOGIN_URL || "";
+    const baseURL = window.APP_CONFIG?.API_BE_BASE_URL || "";
+
 
     const loginInstance = axios.create({
       baseURL: baseURL,

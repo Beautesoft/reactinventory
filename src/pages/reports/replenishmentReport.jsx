@@ -11,7 +11,13 @@ import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import itemMasterApi from "@/services/itemMasterApi";
 import { toast } from "sonner";
-import { buildFilterQuery, filterActiveItemSites } from "@/utils/utils";
+import {
+  buildFilterQuery,
+  filterActiveItemSites,
+  buildCodeDescMap,
+  resolveCodeDesc,
+} from "@/utils/utils";
+import { getPrimaryUomLookup } from "@/utils/uomDecimalQty";
 import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
 
@@ -45,6 +51,13 @@ const ReplenishmentReport = () => {
   const [brands, setBrands] = useState([]);
   const [ranges, setRanges] = useState([]);
   const [titles, setTitles] = useState(null);
+  // code -> description maps so the grid can show descriptions while the
+  // optional filters (and the API payloads) keep working with codes.
+  const [deptDescByCode, setDeptDescByCode] = useState(() => new Map());
+  const [brandDescByCode, setBrandDescByCode] = useState(() => new Map());
+  const [rangeDescByCode, setRangeDescByCode] = useState(() => new Map());
+  // itemCode -> primary UOM from ItemUomprices (Stocks.itemUom is often null)
+  const [primaryUomByItem, setPrimaryUomByItem] = useState(() => new Map());
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -124,10 +137,32 @@ const ReplenishmentReport = () => {
           }))
           .filter((item) => item.value && item.label)
       );
+
+      // Description lookups for the grid (Stocks stores codes, not text).
+      // ItemDepts/ItemBrands/ItemRanges use the same itmCode the Stocks row
+      // holds in itemDept/itemBrand/itemRange, so they resolve reliably.
+      const [deptLookup, brandLookup, rangeLookup] = await Promise.all([
+        itemMasterApi.getItemDepts().catch(() => []),
+        itemMasterApi.getItemBrands().catch(() => []),
+        itemMasterApi.getItemRanges().catch(() => []),
+      ]);
+
+      setDeptDescByCode(buildCodeDescMap(deptLookup));
+      setBrandDescByCode(buildCodeDescMap(brandLookup));
+      setRangeDescByCode(buildCodeDescMap(rangeLookup));
     } catch (err) {
       if (err.name !== "AbortError" && err.code !== "ERR_CANCELED") {
         console.error("Error loading master data:", err);
         toast.error("Failed to load report filters");
+      }
+    }
+
+    // UOM lookup is independent: a failure here must not block the filters.
+    try {
+      setPrimaryUomByItem(await getPrimaryUomLookup());
+    } catch (err) {
+      if (err.name !== "AbortError" && err.code !== "ERR_CANCELED") {
+        console.error("Error loading UOM lookup:", err);
       }
     }
   };
@@ -197,15 +232,22 @@ const ReplenishmentReport = () => {
         if (onHand > reorderMin) continue;
 
         const shortfall = Math.max(0, reorderMin - onHand);
+        // Display descriptions, not codes (Stocks.itemDept/itemBrand/itemRange
+        // are codes; resolveCodeDesc falls back to the code, then "-").
         rows.push({
           Outlet: siteLabelByCode[siteCode] || siteCode,
           SiteCode: siteCode,
           ItemCode: stock.itemCode,
           ItemName: stock.itemName || stock.itemDesc || "",
-          Dept: stock.itemDept || "",
-          Brand: stock.itemBrand || "",
-          Ranges: stock.itemRange || "",
-          UOM: stock.itemUom || "",
+          Dept: resolveCodeDesc(deptDescByCode, stock.itemDept),
+          Brand: resolveCodeDesc(brandDescByCode, stock.itemBrand),
+          Ranges: resolveCodeDesc(rangeDescByCode, stock.itemRange),
+          // Primary UOM lives in ItemUomprices; Stocks.itemUom is null for many
+          // items (e.g. SET-type divisions), which is why this column was blank.
+          UOM:
+            primaryUomByItem.get(String(stock.itemCode || "").trim()) ||
+            stock.itemUom ||
+            "-",
           OnHand: onHand,
           ReorderMin: reorderMin,
           Shortfall: shortfall,

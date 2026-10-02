@@ -52,13 +52,20 @@ export function MultiSelect({ options, selected, onChange, placeholder }) {
         className="group border border-input px-3 py-2 text-sm ring-offset-background rounded-md focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 cursor-pointer"
         onClick={() => setOpen(true)}
       >
-        <div className="flex gap-1 flex-wrap">
+        <div className="flex gap-1 flex-wrap max-w-full min-w-0">
           {selected.map((option) => {
             return (
-              <Badge key={option.value} variant="secondary">
-                {option.label}
+              <Badge
+                key={option.value}
+                variant="secondary"
+                className="max-w-full min-w-0"
+                title={option.label}
+              >
+                <span className="truncate">{option.label}</span>
                 <button
-                  className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
+                  type="button"
+                  aria-label={`Remove ${option.label}`}
+                  className="ml-1 shrink-0 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -75,7 +82,7 @@ export function MultiSelect({ options, selected, onChange, placeholder }) {
             value={inputValue}
             onValueChange={setInputValue}
             onKeyDown={handleKeyDown}
-            className="ml-2 bg-transparent outline-none placeholder:text-muted-foreground flex-1"
+            className="ml-2 min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
             placeholder={selected.length === 0 ? placeholder : ""}
           />
         </div>

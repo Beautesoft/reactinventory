@@ -11,7 +11,8 @@ import moment from "moment";
 import apiService from "@/services/apiService";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
-import { buildFilterQuery, filterActiveItemSites, formatCurrentDate } from "@/utils/utils";
+import { buildFilterQuery, filterActiveItemSites, defaultMovementDateRange } from "@/utils/utils";
+import { displayItemCode } from "@/utils/itemMaster/itemCodeHelpers";
 import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -20,8 +21,10 @@ import { saveAs } from "file-saver";
 
 const StockMovementReports = () => {
   const [filters, setFilters] = useState({
-    fromDate: "2025-08-01",
-    toDate: "2025-08-29",
+    // Default to the previous full calendar month. This used to be a hard-coded
+    // 2025-08-01/2025-08-29 window copied from an ASP.NET screenshot, which left
+    // every user reporting on a period more than a year old.
+    ...defaultMovementDateRange(),
     site: "",
     departments: [],
     brands: [],
@@ -32,20 +35,6 @@ const StockMovementReports = () => {
     movementCodes: [],
     suppliers: []
   });
-
-  // Check if current date is in the future and adjust if needed
-  useEffect(() => {
-    // Use the exact working dates from ASP.NET
-    // ASP.NET shows data for August 2025, so let's use that
-    const workingFromDate = "2025-08-01"; // August 1, 2025
-    const workingToDate = "2025-08-29";   // August 29, 2025
-    
-    setFilters(prev => ({
-      ...prev,
-      fromDate: workingFromDate,
-      toDate: workingToDate
-    }));
-  }, []);
 
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState([]);
@@ -257,8 +246,7 @@ const StockMovementReports = () => {
 
   const handleReset = () => {
     setFilters({
-      fromDate: "2025-08-01",
-      toDate: "2025-08-29",
+      ...defaultMovementDateRange(),
       site: "",
       departments: [],
       brands: [],
@@ -279,7 +267,9 @@ const StockMovementReports = () => {
       key: "ItemCode",
       header: "Item Code",
       align: "left",
-      type: "text"
+      type: "text",
+      // Show the base 8-digit code, consistent with Replenishment Report.
+      render: (value) => displayItemCode(value)
     },
     {
       key: "ItemName", 
@@ -373,7 +363,7 @@ const StockMovementReports = () => {
     },
     {
       key: "Outlet",
-      header: "Outlet",
+      header: "Site",
       align: "left",
       type: "text"
     },
@@ -410,8 +400,8 @@ const StockMovementReports = () => {
           [""],
           ["Report Title:", reportTitle],
           ["Execution Time:", moment().format("DD/MM/YYYY HH:mm:ss")],
-          ["From Date:", filters.fromDate ? moment(filters.fromDate).format("DD/MM/YYYY") : "-"],
-          ["To Date:", filters.toDate ? moment(filters.toDate).format("DD/MM/YYYY") : "-"],
+          ["Start Date:", filters.fromDate ? moment(filters.fromDate).format("DD/MM/YYYY") : "-"],
+          ["End Date:", filters.toDate ? moment(filters.toDate).format("DD/MM/YYYY") : "-"],
           ["Site:", filters.site || "ALL"],
           [""]
         ];
@@ -444,7 +434,7 @@ const StockMovementReports = () => {
         Object.entries(groupedData).forEach(([itemCode, itemData]) => {
           // Add item header row
           itemsData.push([
-            `${itemData.itemInfo.ItemCode} ${itemData.itemInfo.ItemName} ${itemData.itemInfo.ItemUOM} ${itemData.itemInfo.ItemRange}`,
+            `${displayItemCode(itemData.itemInfo.ItemCode)} ${itemData.itemInfo.ItemName} ${itemData.itemInfo.ItemUOM} ${itemData.itemInfo.ItemRange}`,
             "", "", "", "", "", "", "", "", ""
           ]);
           

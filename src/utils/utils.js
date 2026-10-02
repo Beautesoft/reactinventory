@@ -422,6 +422,24 @@ export const formatCurrentDate = () => {
   return `${day}/${month}/${year}`;
 };
 
+// Default reporting window for movement-style reports: the whole previous
+// calendar month, as YYYY-MM-DD (the shape <input type="date"> expects).
+// Built from local date parts on purpose: new Date().toISOString() would shift
+// a day for UTC+8 users before 08:00 local time.
+export const defaultMovementDateRange = (today = new Date()) => {
+  const year = today.getFullYear();
+  const month = today.getMonth(); // 0-indexed; -1/0 roll over correctly
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0); // day 0 = last day of the previous month
+
+  const toIso = (date) =>
+    `${date.getFullYear()}-${(date.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
+
+  return { fromDate: toIso(start), toDate: toIso(end) };
+};
+
 // User Authorization Utilities
 export const getUserAuthorizations = () => {
   try {
@@ -535,6 +553,36 @@ export function isItemSiteActive(site) {
 
 export function filterActiveItemSites(sites = []) {
   return (Array.isArray(sites) ? sites : []).filter(isItemSiteActive);
+}
+
+/**
+ * True when the signed-in user's site is the HQ site.
+ *
+ * HQ users may create stock transfers between ANY two outlets: the GTO
+ * "From Store" and the GTI "To Store" become selectable instead of being
+ * locked to the site they logged in with. Outlet users keep the previous
+ * locked behaviour.
+ *
+ * Detection order:
+ *  1. Exact (case/whitespace-insensitive) match against the HQ site code the
+ *     login API returns as `HQSiteCode`.
+ *  2. Fallback: the site code itself looks like an HQ site (e.g. "HQ", "ZEHQ").
+ *
+ * Always returns a boolean, so callers can use it directly in `disabled={...}`.
+ */
+export function isHqUser(userDetails) {
+  if (!userDetails) return false;
+
+  const normalize = (value) =>
+    typeof value === "string" ? value.trim().toUpperCase() : "";
+
+  const siteCode = normalize(userDetails.siteCode);
+  if (!siteCode) return false;
+
+  const hqSiteCode = normalize(userDetails.HQSiteCode);
+  if (hqSiteCode && hqSiteCode === siteCode) return true;
+
+  return siteCode.includes("HQ");
 }
 
 // Currency utility functions
@@ -659,3 +707,41 @@ export const normalizeExpDateToISO = (dateStr) => {
   
   return null;
 };
+
+/**
+ * Build a code -> description map from an item-master lookup table
+ * (ItemDepts / ItemBrands / ItemRanges / ItemDivs / ItemClasses).
+ *
+ * `Stocks.itemDept`, `itemBrand` and `itemRange` hold CODES; the lookup rows
+ * hold the human description in `itmDesc`. Both shapes are accepted so the same
+ * helper also works for the `/api/department`-style payloads that use
+ * `departmentCode`/`departmentName`.
+ *
+ * @param {Array<object>} rows lookup rows from the API
+ * @returns {Map<string, string>} code -> description
+ */
+export function buildCodeDescMap(rows = []) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row) continue;
+    const code = row.itmCode ?? row.value ?? row.code ?? "";
+    const desc = row.itmDesc ?? row.label ?? row.description ?? "";
+    if (code === "" || code == null || !desc) continue;
+    const key = String(code).trim();
+    if (!key || map.has(key)) continue;
+    map.set(key, String(desc).trim());
+  }
+  return map;
+}
+
+/**
+ * Resolve a stored lookup code to its description for display.
+ * Falls back to the code itself (better than an empty cell), and returns "-"
+ * only when there is nothing to show at all.
+ */
+export function resolveCodeDesc(map, code, fallback = "-") {
+  if (code === "" || code == null) return fallback;
+  const key = String(code).trim();
+  if (!key) return fallback;
+  return map?.get(key) || key;
+}

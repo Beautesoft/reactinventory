@@ -58,6 +58,7 @@ import {
   isVoidDocStatus,
   normalizeExpDate,
   filterActiveItemSites,
+  isHqUser,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -613,6 +614,11 @@ function AddGti({ docData }) {
   const [supplyOptions, setSupplyOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+
+  // HQ staff may transfer stock between ANY two outlets, so the To Store
+  // dropdown stays editable for them. Outlet users remain locked to their own
+  // site, which is the destination of a Goods Transfer In.
+  const hqUser = isHqUser(userDetails);
 
   const [editData, setEditData] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -4807,7 +4813,14 @@ function AddGti({ docData }) {
                       value={stockHdrs.fstoreNo || ""} // Add fallback empty string
                       disabled={urlStatus == 7 || urlDocNo || cartData.length > 0} // Disable if viewing/editing existing doc or items in cart
                       onValueChange={(value) =>
-                        setStockHdrs((prev) => ({ ...prev, fstoreNo: value }))
+                        setStockHdrs((prev) => ({
+                          ...prev,
+                          fstoreNo: value,
+                          // A transfer cannot start and end at the same outlet.
+                          // Clear a destination that now equals the source so
+                          // the user must re-pick it.
+                          tstoreNo: prev.tstoreNo === value ? "" : prev.tstoreNo,
+                        }))
                       }
                     >
                       <SelectTrigger className="w-full">
@@ -4819,7 +4832,15 @@ function AddGti({ docData }) {
                       </SelectTrigger>
                       <SelectContent>
                         {storeOptions
-                          .filter((store) => store.value !== stockHdrs.storeNo) // Filter out current store instead of selected store
+                          .filter((store) =>
+                            // HQ may receive from any outlet, including its own
+                            // site. An outlet user can never be the source of
+                            // its own Goods Transfer In, so the login site stays
+                            // excluded for them.
+                            hqUser
+                              ? true
+                              : store.value !== stockHdrs.storeNo,
+                          )
                           .map((store) => (
                             <SelectItem key={store.value} value={store.value}>
                               {store.label}
@@ -4860,11 +4881,46 @@ function AddGti({ docData }) {
                     <Label>
                       To Store<span className="text-red-500">*</span>
                     </Label>
-                    <Input
-                      value={userDetails?.siteName}
-                      disabled={true} // Always disabled for GTI
-                      className="bg-gray-50"
-                    />
+                    {hqUser ? (
+                      // HQ may receive into any outlet, so the destination is
+                      // selectable. The source store is excluded because a
+                      // transfer cannot start and end at the same site.
+                      <Select
+                        value={stockHdrs.tstoreNo || ""}
+                        disabled={
+                          urlStatus == 7 || urlDocNo || cartData.length > 0
+                        }
+                        onValueChange={(value) =>
+                          setStockHdrs((prev) => ({ ...prev, tstoreNo: value }))
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select To store">
+                            {storeOptions.find(
+                              (store) => store.value === stockHdrs.tstoreNo,
+                            )?.label || userDetails?.siteName}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {storeOptions
+                            .filter(
+                              (store) => store.value !== stockHdrs.fstoreNo,
+                            )
+                            .map((store) => (
+                              <SelectItem key={store.value} value={store.value}>
+                                {store.label}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      // Outlet users always receive into their own site.
+                      <Input
+                        value={userDetails?.siteName}
+                        disabled={true} // Always disabled for GTI
+                        className="bg-gray-50"
+                      />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>GR Ref 2</Label>

@@ -12,6 +12,7 @@ import jsPDF from "jspdf";
 import { saveAs } from "file-saver";
 import { toast } from "sonner";
 import { formatCurrentDate } from "@/utils/utils";
+import { displayItemCode } from "@/utils/itemMaster/itemCodeHelpers";
 import moment from "moment";
 
 // Print-specific CSS styles
@@ -383,7 +384,7 @@ const ReportResults = ({
           [""],
           ["Report Title:", reportTitle],
           ["Execution Time:", executionTime || formatCurrentDate()],
-          ["Outlet:", outlet || "All"],
+          ["Site:", outlet || "All"],
           [""]
         ];
 
@@ -530,9 +531,18 @@ const ReportResults = ({
               {showDetailedInfo ? (
                 // Detailed report info for Stock Movement
                 <div className="grid grid-cols-2 gap-8 text-sm">
-                                  <div>
+                  <div>
                   <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
-                  <p><span className="w-32 inline-block">As On Date:</span> {reportDetails.asOnDate || "-"}</p>
+                  {/* Movement reports are range-based, so they show Start/End Date.
+                      As On Date is kept as the fallback for a date-point report. */}
+                  {reportDetails.fromDate || reportDetails.toDate ? (
+                    <>
+                      <p><span className="w-32 inline-block">Start Date:</span> {reportDetails.fromDate || "-"}</p>
+                      <p><span className="w-32 inline-block">End Date:</span> {reportDetails.toDate || "-"}</p>
+                    </>
+                  ) : (
+                    <p><span className="w-32 inline-block">As On Date:</span> {reportDetails.asOnDate || "-"}</p>
+                  )}
                   <p><span className="w-32 inline-block">Site:</span> {reportDetails.site || "-"}</p>
                   <p><span className="w-32 inline-block">Department:</span> {reportDetails.department || "-"}</p>
                   <p><span className="w-32 inline-block">Brand:</span> {reportDetails.brand || "-"}</p>
@@ -552,7 +562,7 @@ const ReportResults = ({
                   <div>
                     <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
                     {outlet && (
-                      <p><span className="w-32 inline-block">Outlet:</span> {outlet}</p>
+                      <p><span className="w-32 inline-block">Site:</span> {outlet}</p>
                     )}
                   </div>
                 </div>
@@ -740,7 +750,16 @@ const ReportResults = ({
               <div className="grid grid-cols-2 gap-8 text-sm">
                 <div>
                   <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
-                  <p><span className="w-32 inline-block">As On Date:</span> {reportDetails.asOnDate || "-"}</p>
+                  {/* Movement reports are range-based, so they show Start/End Date.
+                      As On Date is kept as the fallback for a date-point report. */}
+                  {reportDetails.fromDate || reportDetails.toDate ? (
+                    <>
+                      <p><span className="w-32 inline-block">Start Date:</span> {reportDetails.fromDate || "-"}</p>
+                      <p><span className="w-32 inline-block">End Date:</span> {reportDetails.toDate || "-"}</p>
+                    </>
+                  ) : (
+                    <p><span className="w-32 inline-block">As On Date:</span> {reportDetails.asOnDate || "-"}</p>
+                  )}
                   <p><span className="w-32 inline-block">Site:</span> {reportDetails.site || outlet || "-"}</p>
                   <p><span className="w-32 inline-block">Department:</span> {reportDetails.department || "-"}</p>
                   <p><span className="w-32 inline-block">Brand:</span> {reportDetails.brand || "-"}</p>
@@ -760,7 +779,7 @@ const ReportResults = ({
                 <div>
                   <p><span className="w-32 inline-block">Execution Time:</span> {executionTime || formatCurrentDate()}</p>
                   {outlet && (
-                    <p><span className="w-32 inline-block">Outlet:</span> {outlet}</p>
+                    <p><span className="w-32 inline-block">Site:</span> {outlet}</p>
                   )}
                 </div>
               </div>
@@ -998,7 +1017,7 @@ const ReportResults = ({
                                 ) : (
                                   <ChevronDown className="h-4 w-4" />
                                 )}
-                                <span className="font-bold">{itemInfo.ItemCode}</span>
+                                <span className="font-bold">{displayItemCode(itemInfo.ItemCode)}</span>
                                 <span className="text-gray-600">{itemInfo.ItemName}</span>
                                 <span className="text-gray-500">{itemInfo.ItemUOM}</span>
                                 <span className="text-gray-500">{itemInfo.ItemRange}</span>
