@@ -854,6 +854,7 @@ const ReportResults = ({
                               <td className="print-cell"></td>
                               <td className="print-cell"></td>
                               <td className="print-cell"></td>
+                              {columns.some(col => col.key === 'LinkCode') && <td className="print-cell"></td>}
                               <td className="print-cell"></td>
                               <td className="print-cell"></td>
                               <td className="py-3 px-4 text-right font-semibold print-cell">
@@ -916,6 +917,7 @@ const ReportResults = ({
                     <td className="print-cell"></td>
                     <td className="print-cell"></td>
                     <td className="print-cell"></td>
+                    {columns.some(col => col.key === 'LinkCode') && <td className="print-cell"></td>}
                     <td className="print-cell"></td>
                     <td className="print-cell"></td>
                     <td className="py-3 px-4 text-right font-bold print-cell">

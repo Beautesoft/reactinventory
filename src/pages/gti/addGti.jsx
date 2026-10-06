@@ -46,6 +46,11 @@ import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
 import { claimControlNumber } from "@/utils/controlNo";
+import {
+  getPrLinkedGtiDispatchInfo,
+  executeDeliveryOrderOut,
+  closeDeliveryOrder,
+} from "@/services/prTransferPost";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
@@ -59,6 +64,7 @@ import {
   normalizeExpDate,
   filterActiveItemSites,
   isHqUser,
+  resolveSiteName,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -80,6 +86,7 @@ import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import Pagination from "@/components/pagination";
 import ItemTable from "@/components/itemTable";
+import SelectItemsSiteHint from "@/components/SelectItemsSiteHint";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -607,6 +614,13 @@ function AddGti({ docData }) {
   const [pageLoading, setPageLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
   const [postLoading, setPostLoading] = useState(false);
+  const [doOutLoading, setDoOutLoading] = useState(false);
+  const [prDoGtiInfo, setPrDoGtiInfo] = useState({
+    isPrDoGti: false,
+    hqDispatchDone: false,
+    skipHqOnPost: false,
+    legacyDoDocNo: null,
+  });
   const [itemTotal, setItemTotal] = useState(0);
   const [cartItems, setCartItems] = useState([]);
   const [searchValue, setSearchValue] = useState("");
@@ -902,6 +916,40 @@ function AddGti({ docData }) {
 
     initializeData();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPrDoGtiInfo = async () => {
+      if (!urlDocNo || !stockHdrs.docNo) {
+        setPrDoGtiInfo({
+          isPrDoGti: false,
+          hqDispatchDone: false,
+          skipHqOnPost: false,
+          legacyDoDocNo: null,
+        });
+        return;
+      }
+
+      try {
+        const info = await getPrLinkedGtiDispatchInfo(stockHdrs);
+        if (!cancelled) setPrDoGtiInfo(info);
+      } catch (err) {
+        console.error("Error loading PR delivery-order GTI info:", err);
+      }
+    };
+
+    loadPrDoGtiInfo();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    urlDocNo,
+    stockHdrs.docNo,
+    stockHdrs.docRemk1,
+    stockHdrs.fstoreNo,
+    stockHdrs.docStatus,
+  ]);
 
   useEffect(() => {
     if (stockHdrs.fstoreNo) {
@@ -2266,6 +2314,44 @@ function AddGti({ docData }) {
   //   }
   // };
 
+  const handleDeliveryOrderOut = async () => {
+    if (!urlDocNo || !stockHdrs.docNo) {
+      toast.error("Save the document before dispatching");
+      return;
+    }
+    if (!cartData.length) {
+      toast.error("No items to dispatch");
+      return;
+    }
+    if (prDoGtiInfo.hqDispatchDone) {
+      toast.info("Already dispatched from HQ");
+      return;
+    }
+
+    setDoOutLoading(true);
+    try {
+      const result = await executeDeliveryOrderOut({
+        docNo: stockHdrs.docNo,
+        header: stockHdrs,
+        details: cartData,
+      });
+
+      if (result.alreadyDone) {
+        toast.info("Already dispatched from HQ");
+      } else {
+        toast.success("Dispatch confirmed — HQ inventory updated");
+      }
+
+      const info = await getPrLinkedGtiDispatchInfo(stockHdrs);
+      setPrDoGtiInfo(info);
+    } catch (err) {
+      console.error("Delivery Order Out error:", err);
+      toast.error(err.message || "Dispatch failed. Please try again.");
+    } finally {
+      setDoOutLoading(false);
+    }
+  };
+
   const onSubmit = async (e, type) => {
     e?.preventDefault();
     console.log(stockHdrs);
@@ -2518,6 +2604,17 @@ function AddGti({ docData }) {
           createdDate: new Date().toISOString().split("T")[0],
         };
         // await apiService.post("Inventorylogs", inventoryLog);
+
+        const prDispatchInfo = await getPrLinkedGtiDispatchInfo(hdr);
+        const skipHqPost =
+          prDispatchInfo.isPrDoGti && prDispatchInfo.skipHqOnPost;
+        if (prDispatchInfo.isPrDoGti) {
+          console.log(
+            skipHqPost
+              ? "[GTI] PR-linked — HQ already dispatched; destination post only"
+              : "[GTI] PR-linked — HQ dispatch not done; full post (HQ + destination)"
+          );
+        }
 
         let batchId;
         
@@ -2800,6 +2897,7 @@ function AddGti({ docData }) {
             // await apiService.post("Inventorylogs", existsLog);
           }
 
+          if (!skipHqPost) {
           for (let i = 0; i < stktrns1.length; i++) {
             const d = stktrns1[i];
             const filter = {
@@ -2986,12 +3084,17 @@ function AddGti({ docData }) {
             };
             // await apiService.post("Inventorylogs", existsLog);
           }
+          }
         }
         
         // 11) Final header status update to 7 - Only after all operations are complete
         await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
           docStatus: "7",
         });
+
+        if (skipHqPost && prDispatchInfo.legacyDoDocNo) {
+          await closeDeliveryOrder(prDispatchInfo.legacyDoDocNo);
+        }
 
         // 1. Auto-Post handling
         // if (getConfigValue('AUTO_POST') === "Yes") {
@@ -4723,6 +4826,17 @@ function AddGti({ docData }) {
     );
   });
 
+  const isOpenPrDoGti =
+    prDoGtiInfo.isPrDoGti &&
+    !isPostedDoc &&
+    !isVoidDocStatus(stockHdrs.docStatus);
+  const isHqDispatchView =
+    isOpenPrDoGti && hqUser && !prDoGtiInfo.hqDispatchDone;
+  const showDoOutButton = isHqDispatchView;
+  const showPostButton = !isOpenPrDoGti || !hqUser;
+  const isPrReceiptView =
+    isOpenPrDoGti && !hqUser && prDoGtiInfo.hqDispatchDone;
+
   return (
     <>
       <Toaster richColors />
@@ -4735,18 +4849,22 @@ function AddGti({ docData }) {
         <div className="container mx-auto p-6 space-y-6">
           <div className="flex flex-row-reverse justify-between items-center gap-4 mb-6">
             <h1 className="text-2xl font-semibold text-gray-800">
-              {urlStatus == 7
-                ? "View Goods Transfer In"
-                : urlStatus == 0
-                ? "Update Goods Transfer In"
-                : "Add Goods Transfer In"}
+              {isHqDispatchView
+                ? `Dispatch to ${stockHdrs.tstoreNo || "outlet"}`
+                : isPrReceiptView
+                  ? "Confirm Goods Receipt"
+                  : urlStatus == 7
+                    ? "View Goods Transfer In"
+                    : urlStatus == 0
+                      ? "Update Goods Transfer In"
+                      : "Add Goods Transfer In"}
             </h1>
             <div className="flex gap-4">
               <Button
                 variant="outline"
                 className="cursor-pointer hover:bg-gray-50 transition-colors duration-150 px-6"
                 onClick={() => navigateTo("/goods-transfer-in")}
-                disabled={saveLoading || postLoading}
+                disabled={saveLoading || postLoading || doOutLoading}
               >
                 Cancel
               </Button>
@@ -4754,41 +4872,85 @@ function AddGti({ docData }) {
                 header={stockHdrs}
                 listPath="/goods-transfer-in"
               />
-              <Button
-                disabled={(stockHdrs.docStatus === 7 ) || isVoidDocStatus(stockHdrs.docStatus) || saveLoading}
-                onClick={(e) => {
-                  onSubmit(e, "save");
-                }}
-                className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
-              >
-                {saveLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  "Save"
-                )}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={(e) => {
-                  onSubmit(e, "post");
-                }}
-                className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
-                disabled={isVoidDocStatus(stockHdrs.docStatus) || (stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || postLoading}
-              >
-                {postLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Posting...
-                  </>
-                ) : (
-                  "Post"
-                )}
-              </Button>
+              {showDoOutButton && (
+                <Button
+                  variant="default"
+                  onClick={handleDeliveryOrderOut}
+                  disabled={doOutLoading || postLoading || saveLoading}
+                  className="cursor-pointer bg-orange-600 hover:bg-orange-700 transition-colors duration-150"
+                >
+                  {doOutLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Dispatching...
+                    </>
+                  ) : (
+                    "Dispatch"
+                  )}
+                </Button>
+              )}
+              {!isHqDispatchView && (
+                <Button
+                  disabled={(stockHdrs.docStatus === 7 ) || isVoidDocStatus(stockHdrs.docStatus) || saveLoading || doOutLoading}
+                  onClick={(e) => {
+                    onSubmit(e, "save");
+                  }}
+                  className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
+                >
+                  {saveLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              )}
+              {showPostButton && (
+                <Button
+                  variant="secondary"
+                  onClick={(e) => {
+                    onSubmit(e, "post");
+                  }}
+                  className="cursor-pointer hover:bg-gray-200 transition-colors duration-150"
+                  disabled={isVoidDocStatus(stockHdrs.docStatus) || (stockHdrs.docStatus === 7 && userDetails?.isSettingPostedChangePrice !== "True") || postLoading || doOutLoading}
+                >
+                  {postLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isOpenPrDoGti && !hqUser ? "Confirming..." : "Posting..."}
+                    </>
+                  ) : isOpenPrDoGti && !hqUser ? (
+                    "Confirm receipt"
+                  ) : (
+                    "Post"
+                  )}
+                </Button>
+              )}
             </div>
           </div>
+
+          {isOpenPrDoGti && (
+            <div
+              className={`rounded-md border p-4 text-sm ${
+                prDoGtiInfo.hqDispatchDone
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                  : "border-blue-200 bg-blue-50 text-blue-900"
+              }`}
+            >
+              <p className="font-medium">Stock transfer from Purchase Requisition</p>
+              <p className="mt-1 text-xs">
+                {prDoGtiInfo.hqDispatchDone
+                  ? hqUser
+                    ? `Dispatch completed. Waiting for ${stockHdrs.tstoreNo || "the store"} to confirm receipt.`
+                    : "HQ has shipped these items. Confirm receipt here after the delivery arrives."
+                  : hqUser
+                  ? "Review items below and click Dispatch when ready to ship. You can also dispatch from the Pending Dispatch tab."
+                  : "Waiting for HQ to ship. Confirm receipt only after the goods arrive. If HQ has not shipped yet, confirming here will adjust stock at both sites."}
+              </p>
+            </div>
+          )}
 
           <Card>
             <CardContent className="p-6">
@@ -5009,11 +5171,19 @@ function AddGti({ docData }) {
                   </CardContent>
                 </Card>
               )}
-              {urlStatus != 7 && stockHdrs.fstoreNo && (
+              {urlStatus != 7 && stockHdrs.fstoreNo && !isHqDispatchView && (
                 <Card className={"p-0 gap-0"}>
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
                   </CardTitle>
+                  <SelectItemsSiteHint
+                    prefix="Showing items from:"
+                    siteName={resolveSiteName(
+                      stockHdrs.fstoreNo,
+                      storeOptions,
+                      userDetails?.siteName
+                    )}
+                  />
                   <CardContent className="p-4 ">
                     <div className="flex items-center   gap-4 mb-6">
                       <div className="flex-1 max-w-[430px]">
@@ -5154,7 +5324,7 @@ function AddGti({ docData }) {
             </TabsContent>
           </Tabs>
           {/* Move the Add Item Details button to the top right above the table */}
-          {cartData.length > 0 && (
+          {cartData.length > 0 && !isHqDispatchView && (
             <div className="flex justify-end my-5 space-x-2">
               {selectedRows.length > 0 && (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) && (
                 <>
@@ -5173,12 +5343,13 @@ function AddGti({ docData }) {
           {cartData.length > 0 && (
             <div className="rounded-md border border-slate-200 bg-slate-50/50 shadow-sm hover:shadow-md transition-shadow duration-200 mb-15">
               <CardTitle className="text-xl px-2 py-3">
-                Selected Items
+                {isHqDispatchView ? "Items to Dispatch" : "Selected Items"}
               </CardTitle>
               <Table>
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b border-slate-200">
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                    {!isHqDispatchView &&
+                    (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) ? (
                       <TableHead>
                         <input
                           type="checkbox"
@@ -5220,7 +5391,8 @@ function AddGti({ docData }) {
                     {/* NEW: Transfer Type column instead of batch columns */}
                     <TableHead>Transfer Type</TableHead>
                     <TableHead>Remarks</TableHead>
-                    {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                    {!isHqDispatchView &&
+                    (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) ? (
                       <TableHead>Action</TableHead>
                     ) : null}
                   </TableRow>
@@ -5244,7 +5416,8 @@ function AddGti({ docData }) {
                           key={index}
                           className="hover:bg-slate-100/50 transition-colors duration-150 border-b border-slate-200"
                         >
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                          {!isHqDispatchView &&
+                          (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) ? (
                             <TableCell>
                               <input
                                 type="checkbox"
@@ -5305,7 +5478,8 @@ function AddGti({ docData }) {
                             )}
                           </TableCell>
                           <TableCell>{item.itemRemark ?? "-"}</TableCell>
-                          {urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True") ? (
+                          {!isHqDispatchView &&
+                          (urlStatus != 7 || (urlStatus == 7 && userDetails?.isSettingPostedChangePrice === "True")) ? (
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button

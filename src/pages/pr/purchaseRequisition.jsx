@@ -16,7 +16,10 @@ import {
   buildCountQuery,
   buildFilterObject,
   buildFilterQuery,
+  getConfigValue,
 } from "@/utils/utils";
+import { prApi } from "@/services/prApi";
+import PendingDispatchPanel from "@/components/pr/PendingDispatchPanel";
 import Pagination from "@/components/pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -34,11 +37,14 @@ import {
 
 function PurchaseRequisition() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
   const { goodsData, isLoading, setLoading, setGoodsData, setError } = useGrn();
   
   // Check if user is HQ
   const isHQUser = userDetails?.siteCode?.includes('HQ');
+  const showPendingDispatchTab =
+    isHQUser && getConfigValue("PR_USE_DELIVERY_ORDER");
 
   // Local pagination state
   const [searchValue, setSearchValue] = useState("");
@@ -59,10 +65,21 @@ function PurchaseRequisition() {
   const [activeTab, setActiveTab] = useState("all");
   const [mainTab, setMainTab] = useState("pr"); // "pr" or "approval"
   const [approvalTab, setApprovalTab] = useState("posted"); // "posted", "approved", "rejected" for approval section
+  const [prDispatchMap, setPrDispatchMap] = useState({});
+  const [pendingDispatchCount, setPendingDispatchCount] = useState(0);
 
   const debouncedSearchValue = useDebounce(searchValue, 1000);
+  const showPrDispatchColumn =
+    isHQUser &&
+    mainTab === "approval" &&
+    approvalTab === "approved" &&
+    getConfigValue("PR_USE_DELIVERY_ORDER");
 
   const getPRTable = async () => {
+    if (mainTab === "approval" && approvalTab === "pending-dispatch") {
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -136,6 +153,27 @@ function PurchaseRequisition() {
   }, []); // Run only once on mount
 
   useEffect(() => {
+    const main = searchParams.get("mainTab");
+    const approval = searchParams.get("approvalTab");
+    if (main === "approval") {
+      setMainTab("approval");
+    }
+    if (approval === "pending-dispatch" && showPendingDispatchTab) {
+      setApprovalTab("pending-dispatch");
+    } else if (approval) {
+      setApprovalTab(approval);
+    }
+  }, [searchParams, showPendingDispatchTab]);
+
+  useEffect(() => {
+    if (!showPendingDispatchTab) return;
+    prApi
+      .getPendingDispatchGtis()
+      .then((rows) => setPendingDispatchCount(rows.length))
+      .catch(() => setPendingDispatchCount(0));
+  }, [showPendingDispatchTab, mainTab, approvalTab]);
+
+  useEffect(() => {
     if (!initialLoading) {
       getPRTable();
     }
@@ -150,6 +188,31 @@ function PurchaseRequisition() {
     mainTab,
     approvalTab
   ]);
+
+  useEffect(() => {
+    if (!showPrDispatchColumn || !Array.isArray(goodsData) || goodsData.length === 0) {
+      setPrDispatchMap({});
+      return;
+    }
+
+    const hqReqNos = goodsData
+      .filter((row) => row.suppCode === "HQ")
+      .map((row) => row.reqNo)
+      .filter(Boolean);
+
+    if (!hqReqNos.length) {
+      setPrDispatchMap({});
+      return;
+    }
+
+    prApi
+      .getPrGtiDispatchInfoByReqNos(hqReqNos)
+      .then(setPrDispatchMap)
+      .catch((err) => {
+        console.error("Error loading PR dispatch status:", err);
+        setPrDispatchMap({});
+      });
+  }, [goodsData, showPrDispatchColumn]);
 
   const handleSearch = (e) => {
     const value = e.target.value;
@@ -224,8 +287,19 @@ function PurchaseRequisition() {
 
   const handleApprovalTabChange = (value) => {
     setApprovalTab(value);
-    
-    const status = value === "posted" ? "Posted" : value === "approved" ? "Approved" : value === "rejected" ? "Rejected" : "Posted";
+
+    if (value === "pending-dispatch") {
+      return;
+    }
+
+    const status =
+      value === "posted"
+        ? "Posted"
+        : value === "approved"
+          ? "Approved"
+          : value === "rejected"
+            ? "Rejected"
+            : "Posted";
     setPagination((prev) => ({
       ...prev,
       where: {
@@ -405,7 +479,11 @@ function PurchaseRequisition() {
                     <div className="flex flex-wrap gap-4 items-center min-w-0">
                       <div className="w-[280px] relative">
                         <Input
-                          placeholder="Search by PR no, Ref no, Total amount"
+                          placeholder={
+                            approvalTab === "pending-dispatch"
+                              ? "Search by PR no, transfer no, outlet"
+                              : "Search by PR no, Ref no, Total amount"
+                          }
                           value={searchValue}
                           onChange={(e) => handleSearch(e)}
                           className="pl-10"
@@ -413,35 +491,47 @@ function PurchaseRequisition() {
                         <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
                       </div>
 
-                      <Select
-                        onValueChange={(value) => {
-                          setPagination((prev) => ({
-                            ...prev,
-                            where: {
-                              ...prev.where,
-                              suppCode: value === "all" ? null : value,
-                            },
-                            skip: 0,
-                          }));
-                        }}
-                      >
-                        <SelectTrigger className="w-[200px]">
-                          <SelectValue placeholder="Filter by supplier" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Suppliers</SelectItem>
-                          {supplierOptions.map((supplier) => (
-                            <SelectItem key={supplier.value} value={supplier.value}>
-                              {supplier.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {approvalTab !== "pending-dispatch" && (
+                        <Select
+                          onValueChange={(value) => {
+                            setPagination((prev) => ({
+                              ...prev,
+                              where: {
+                                ...prev.where,
+                                suppCode: value === "all" ? null : value,
+                              },
+                              skip: 0,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Filter by supplier" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Suppliers</SelectItem>
+                            {supplierOptions.map((supplier) => (
+                              <SelectItem key={supplier.value} value={supplier.value}>
+                                {supplier.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
 
-                    <TabsList className="shrink-0 bg-gray-200 h-[38px] w-[420px]">
+                    <TabsList
+                      className={`shrink-0 bg-gray-200 h-[38px] ${
+                        showPendingDispatchTab ? "w-[560px]" : "w-[420px]"
+                      }`}
+                    >
                       <TabsTrigger className="cursor-pointer px-4" value="posted">Posted</TabsTrigger>
                       <TabsTrigger className="cursor-pointer px-4" value="approved">Approved by HQ</TabsTrigger>
+                      {showPendingDispatchTab && (
+                        <TabsTrigger className="cursor-pointer px-3" value="pending-dispatch">
+                          Pending Dispatch
+                          {pendingDispatchCount > 0 ? ` (${pendingDispatchCount})` : ""}
+                        </TabsTrigger>
+                      )}
                       <TabsTrigger className="cursor-pointer px-4" value="rejected">Rejected by HQ</TabsTrigger>
                     </TabsList>
                   </div>
@@ -460,9 +550,21 @@ function PurchaseRequisition() {
                     />
                   </TabsContent>
 
+                  {showPendingDispatchTab && (
+                    <TabsContent value="pending-dispatch">
+                      <PendingDispatchPanel
+                        searchTerm={debouncedSearchValue}
+                        onCountChange={setPendingDispatchCount}
+                      />
+                    </TabsContent>
+                  )}
+
                   <TabsContent value="approved">
                     <div className="text-sm text-gray-600 mb-4">
                       Showing Approved PRs by HQ from all sites
+                      {showPrDispatchColumn
+                        ? " — use Dispatch or the Pending Dispatch tab when ready to ship from HQ."
+                        : ""}
                     </div>
                     <GoodsReceiveTable 
                       data={goodsData} 
@@ -471,6 +573,8 @@ function PurchaseRequisition() {
                       type="pr"
                       supplierOptions={supplierOptions}
                       approvalContext={true}
+                      showPrDispatchColumn={showPrDispatchColumn}
+                      prDispatchMap={prDispatchMap}
                     />
                   </TabsContent>
 
@@ -588,11 +692,17 @@ function PurchaseRequisition() {
             </Tabs>
           )}
 
-          <Pagination
-            currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
-            totalPages={Math.ceil(totalCount / pagination.limit)}
-            onPageChange={handlePageChange}
-          />
+          {!(
+            isHQUser &&
+            mainTab === "approval" &&
+            approvalTab === "pending-dispatch"
+          ) && (
+            <Pagination
+              currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
+              totalPages={Math.ceil(totalCount / pagination.limit)}
+              onPageChange={handlePageChange}
+            />
+          )}
         </div>
       )}
     </>

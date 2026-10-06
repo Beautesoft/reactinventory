@@ -59,6 +59,7 @@ import {
   getConfigValue,
   normalizeExpDate,
   isVoidDocStatus,
+  resolveSiteName,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -93,6 +94,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import ItemTable from "@/components/itemTable";
+import SelectItemsSiteHint from "@/components/SelectItemsSiteHint";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -3349,6 +3351,13 @@ function AddGrn({ docData }) {
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
                   </CardTitle>
+                  <SelectItemsSiteHint
+                    siteName={resolveSiteName(
+                      userDetails?.siteCode,
+                      [],
+                      userDetails?.siteName
+                    )}
+                  />
                   <CardContent className="p-4 ">
                     {/* Search and Filter Section */}
                     <div className="flex items-center gap-4 mb-6">

@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from "react";
-// import { useAuth } from "@/contexts/AuthContext";
+import React, { useEffect, useRef, useState } from "react";
 import useAuth from "@/hooks/useAuth";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -18,57 +17,143 @@ import bslogo from "@/assets/companylogo.png";
 
 import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
-import { getConfigValue } from "@/utils/utils";
 import apiService1 from "@/services/apiService1";
-import axios from "axios";
 import VersionStamp from "@/components/VersionStamp";
 
+function normalizeLoginSite(site) {
+  return {
+    id: site.id,
+    itemsiteCode:
+      site.itemsite_code ??
+      site.itemsiteCode ??
+      site.siteCode ??
+      String(site.id ?? ""),
+    itemsiteDesc:
+      site.itemsite_desc ?? site.itemsiteDesc ?? site.siteDesc ?? "",
+    itemsiteAddress:
+      site.itemsite_address ??
+      site.itemsiteAddress ??
+      site.location_addr ??
+      "",
+    itemsiteCity: site.itemsite_city ?? site.itemsiteCity ?? "",
+    itemsiteCountry:
+      site.itemsite_country ?? site.itemsiteCountry ?? "",
+    itemsiteState: site.itemsite_state ?? site.itemsiteState ?? "",
+    itemsitePostcode:
+      site.itemsite_postcode ?? site.itemsitePostcode ?? "",
+    itemsitePhone1: site.itemsite_phone1 ?? site.itemsitePhone1 ?? "",
+    locationName: site.location_name ?? site.locationName ?? "",
+  };
+}
+
+function parseLoginResponse(response) {
+  const root = response ?? {};
+  const data = root.data ?? root;
+  const sites = data.sites ?? root.sites ?? [];
+
+  return {
+    data,
+    sites: Array.isArray(sites) ? sites : [],
+    success: root.success ?? data.success,
+    status: root.status,
+    statusText: root.statusText ?? data.statusText,
+    message: root.message,
+    error: root.error,
+  };
+}
+
+function isLoginSuccessful(response, parsed) {
+  const { data, success, status, message, error } = parsed;
+
+  if (success === "1") return true;
+  if (success === "2" || success === "3" || success === "0") return false;
+
+  if (status === 200 && error === false && data?.token) return true;
+  if (message === "Login Successful" && data?.token) return true;
+
+  return false;
+}
+
+function extractLoginPayload(response, parsed) {
+  const data = parsed.data ?? {};
+  const inventory = data.inventory ?? {};
+
+  return {
+    username: data.username ?? response.username ?? "",
+    userCode: inventory.userCode ?? data.userCode ?? response.userCode ?? "",
+    token: data.token ?? response.token ?? "",
+    branch: data.branch ?? response.branch ?? "",
+    role: data.role ?? response.role ?? "",
+    salon: data.salon ?? response.salon ?? "",
+    currency: data.currency ?? response.currency ?? "",
+    sessionId: data.session_id ?? data.sessionId ?? "",
+    isSettingEnabled:
+      inventory.isSettingEnabled ?? response.isSettingEnabled,
+    isSettingViewCost:
+      inventory.isSettingViewCost ?? response.isSettingViewCost,
+    isSettingViewPrice:
+      inventory.isSettingViewPrice ?? response.isSettingViewPrice,
+    isSettingPostedChangePrice:
+      inventory.isSettingPostedChangePrice ??
+      response.isSettingPostedChangePrice,
+    batchNo: inventory.batchNo ?? response.batchNo,
+    expiryDate: inventory.expiryDate ?? response.expiryDate,
+    manualBatchSelection:
+      inventory.manualBatchSelection ?? response.manualBatchSelection,
+    batchSNo: inventory.batchSNo ?? response.batchSNo,
+    defaultExpiryDays:
+      inventory.defaultExpiryDays ?? response.defaultExpiryDays,
+    autoPost: inventory.autoPost ?? response.autoPost,
+    prUseDeliveryOrder:
+      inventory.prUseDeliveryOrder ?? response.prUseDeliveryOrder,
+    HQSiteCode: inventory.HQSiteCode ?? response.HQSiteCode,
+  };
+}
 
 const Login = () => {
-  let navigate = useNavigate();
+  const navigate = useNavigate();
   const { loginSuccess } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [salonOptions, setSalonOptions] = useState([]);
-  const [selectedSalon, setSelectedSalon] = useState({});
-  const [salon, setSalon] = useState("");
-  const [salonDetail, setSalonDetail] = useState(null);
-  const [isSiteListLoading, setIsSiteListLoading] = useState(true);
+  const [selectedSalon, setSelectedSalon] = useState(null);
+  const [salon, setSalon] = useState(null);
+  const [salonDetail, setSalonDetail] = useState([]);
+  const [loginPhase, setLoginPhase] = useState("credentials");
+  const isSubmittingRef = useRef(false);
 
-  // Function to fetch user authorizations
   const fetchUserAuthorizations = async (userCode) => {
     try {
-      const response = await apiService1.get(`api/getInventoryAuth?userCode=${userCode}`);
+      const response = await apiService1.get(
+        `api/getInventoryAuth?userCode=${userCode}`
+      );
       if (response && response.result) {
-        const authData = Array.isArray(response.result) ? response.result : [];
-        return authData;
-      } else {
-        return [];
+        return Array.isArray(response.result) ? response.result : [];
       }
+      return [];
     } catch (error) {
       console.error("Error fetching user authorizations:", error);
       return [];
     }
   };
 
-  // Function to fetch active currency
   const fetchActiveCurrency = async () => {
     try {
       const filter = {
         where: {
-          currencyIsActive: true
-        }
+          currencyIsActive: true,
+        },
       };
       const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
       const response = await apiService.get(`CurrencyTables${query}`);
-      
+
       if (response && response.length > 0) {
         return {
           currencyCode: response[0].currencyCode,
           currencyName: response[0].currencyName,
-          currencyRate: response[0].currencyRate
+          currencyRate: response[0].currencyRate,
         };
       }
       return null;
@@ -78,142 +163,193 @@ const Login = () => {
     }
   };
 
-  useEffect(() => {
-    console.log("salon", salon);
-    // if (salon !== null) {
-    //   handleSubmit();
-    // }
+  const resetOutletSelection = () => {
+    setLoginPhase("credentials");
+    setSalon(null);
+    setSalonOptions([]);
+    setSalonDetail([]);
+    setSelectedSalon(null);
+  };
 
-    getSiteList();
-  }, []);
+  const applySitesFromResponse = (sites) => {
+    const normalized = sites.map(normalizeLoginSite);
+    setSalonDetail(normalized);
+    setSalonOptions(
+      normalized.map((site) => ({
+        label: site.itemsiteDesc,
+        value: site.id,
+      }))
+    );
+    setLoginPhase("selectOutlet");
 
-  const getSiteList = async () => {
-    setIsSiteListLoading(true);
-    try {
-      const response = await axios.get(
-        `${window.APP_CONFIG?.API_BASE_URL}/ItemSitelists`
-      );
-
-      const activeSites = response.data.filter(
-        (item) => item.itemsiteIsactive === true
-      );
-      setSalonDetail(activeSites);
-      const sites = activeSites.map((item) => ({
-        label: item.itemsiteDesc,
-        value: item.itemsiteCode,
-      }));
-      setSalonOptions(sites);
-    } catch (err) {
-      toast.error(err.message || "sitesList failed");
-    } finally {
-      setIsSiteListLoading(false);
+    if (normalized.length === 1) {
+      setSelectedSalon(normalized[0]);
+      setSalon(normalized[0].id);
     }
+  };
+
+  const completeLogin = async (response, parsed, outlet) => {
+    const payload = extractLoginPayload(response, parsed);
+
+    const [userAuthorizations, currencyData] = await Promise.all([
+      fetchUserAuthorizations(username || payload.userCode),
+      fetchActiveCurrency(),
+    ]);
+
+    const successData = {
+      username: payload.username || username,
+      usercode: payload.userCode,
+      token: payload.token,
+      role: payload.role,
+      branch: payload.branch,
+      sessionId: payload.sessionId,
+      isSettingEnabled: payload.isSettingEnabled,
+      isSettingViewCost: payload.isSettingViewCost,
+      isSettingViewPrice: payload.isSettingViewPrice,
+      isSettingPostedChangePrice: payload.isSettingPostedChangePrice,
+      batchNo: payload.batchNo,
+      expiryDate: payload.expiryDate,
+      manualBatchSelection: payload.manualBatchSelection,
+      batchSNo: payload.batchSNo,
+      defaultExpiryDays: payload.defaultExpiryDays,
+      autoPost: payload.autoPost,
+      prUseDeliveryOrder: payload.prUseDeliveryOrder,
+      HQSiteCode: payload.HQSiteCode,
+      siteCode: outlet?.itemsiteCode ?? payload.branch ?? "",
+      siteName: outlet?.itemsiteDesc ?? payload.salon ?? "",
+      siteAddress: outlet?.itemsiteAddress ?? "",
+      siteCity: outlet?.itemsiteCity ?? "",
+      siteCountry: outlet?.itemsiteCountry ?? "",
+      siteState: outlet?.itemsiteState ?? "",
+      sitePostCode: outlet?.itemsitePostcode ?? "",
+      sitePhone: outlet?.itemsitePhone1 ?? "",
+      currencyCode: currencyData?.currencyCode || payload.currency || "$",
+      currencyName: currencyData?.currencyName || payload.currency || "USD",
+      currencyRate: currencyData?.currencyRate || 1,
+    };
+
+    localStorage.setItem(
+      "userAuthorizations",
+      JSON.stringify(userAuthorizations)
+    );
+
+    const success = await loginSuccess(successData);
+
+    toast.success("Login successful!", {
+      duration: 2000,
+      onDismiss: () => {
+        success && navigate("/dashboard", { replace: true });
+      },
+    });
+  };
+
+  const handleLoginError = (response, parsed) => {
+    if (parsed.success === "2") {
+      toast.error("User Name and Password does not match");
+      return true;
+    }
+    if (parsed.success === "3") {
+      toast.error("Outlet Access Denied");
+      return true;
+    }
+    if (parsed.success === "0") {
+      toast.error(parsed.error || response.error || "Login failed");
+      return true;
+    }
+    if (parsed.error === true || (parsed.status && parsed.status !== 200)) {
+      toast.error(parsed.message || "Login failed");
+      return true;
+    }
+    return false;
   };
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
-    setIsLoading(true);
 
-    if (!username || !password || !salon) {
-      setIsLoading(false);
-      toast.error("Please fill the fields");
+    if (isSubmittingRef.current) return;
+
+    if (!username || !password) {
+      toast.error("Please enter username and password");
       return;
     }
 
+    const isOutletStep = loginPhase === "selectOutlet" && salon != null && salon !== 0;
+
+    if (loginPhase === "selectOutlet" && !isOutletStep) {
+      toast.error("Please select an outlet");
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setIsLoading(true);
+
     const data = {
-      userName: username,
-      password: password,
-      site: salon,
+      username,
+      password,
+      salon: isOutletStep ? salon : 0,
+      account_locked: 0,
+      mobileAppointment: false,
     };
-    // const data = {
-    //   salon: "1",
-    //   username: "nick",
-    //   password: "123123"
-    // };
 
     try {
-      const response = await apiService.login("api/webBI_Login", data);
-      // const response = await apiService.login("login", data);
+      const response = await apiService.login("api/login", data);
+      const parsed = parseLoginResponse(response);
 
-      // const sites = response.data.sites.map((item) => ({
-      //   label: item.itemsite_desc,
-      //   value: item.id,
-      // }));
+      if (!isOutletStep) {
+        const hasSites = parsed.sites.length > 0;
+        const isOkStatus =
+          parsed.statusText === "ok" ||
+          parsed.statusText === "OK" ||
+          parsed.status === 200 ||
+          parsed.message === "Login Successful";
 
-      console.log(response);
-      console.log(selectedSalon, "sadet");
+        if (hasSites && isOkStatus) {
+          applySitesFromResponse(parsed.sites);
+          return;
+        }
 
-      if (response.success === "1") {
-        // Fetch user authorizations and active currency
-        const [userAuthorizations, currencyData] = await Promise.all([
-          fetchUserAuthorizations(username||response.userCode),
-          fetchActiveCurrency()
-        ]);
-        
-        const successData = {
-          // emp_code: data.emp_code ?? "",
-          username: username,
-          usercode: response.userCode,
-          isSettingEnabled: response.isSettingEnabled,
-          isSettingViewCost: response.isSettingViewCost,
-          isSettingViewPrice: response.isSettingViewPrice,
-          isSettingPostedChangePrice: response.isSettingPostedChangePrice,
-          // New configuration keys from login response
-          batchNo: response.batchNo,
-          expiryDate: response.expiryDate,
-          manualBatchSelection: response.manualBatchSelection,
-          batchSNo: response.batchSNo,
-          defaultExpiryDays: response.defaultExpiryDays,
-          autoPost: response.autoPost,
-          // reportAuthInfo: response.reportAuthInfo,
-          // token: data.token,
-          HQSiteCode: response.HQSiteCode,
-          siteCode: selectedSalon.itemsiteCode,
-          siteName: selectedSalon.itemsiteDesc,
-          siteAddress: selectedSalon.itemsiteAddress,
-          siteCity: selectedSalon.itemsiteCity,
-          siteCountry: selectedSalon.itemsiteCountry,
-          siteState: selectedSalon.itemsiteState,
-          sitePostCode: selectedSalon.itemsitePostcode,
-          sitePhone: selectedSalon.itemsitePhone1,
-          // Currency data
-          currencyCode: currencyData?.currencyCode || "$",
-          currencyName: currencyData?.currencyName || "USD",
-          currencyRate: currencyData?.currencyRate || 1,
-          // role: data.role,
-        };
+        if (handleLoginError(response, parsed)) {
+          resetOutletSelection();
+          return;
+        }
 
-        // Store user authorizations in localStorage
-        localStorage.setItem("userAuthorizations", JSON.stringify(userAuthorizations));
+        if (parsed.statusText && !isOkStatus) {
+          toast.error("Login failed");
+          resetOutletSelection();
+          return;
+        }
 
-        // First update auth state
-        const success = await loginSuccess(successData);
-        // Then show toast
-        // navigate("/dashboard");
-        console.log("success", success);
-
-        toast.success("Login successful!", {
-          duration: 2000,
-          onDismiss: () => {
-            // Navigate after toast is shown
-            success && navigate("/dashboard", { replace: true });
-          },
-        });
-      } else if (response.success === "2") {
-        toast.error("User Name and Password does not match");
+        toast.error("No outlets available for this user");
+        resetOutletSelection();
         return;
-      } else if (response.success === "3") {
-        toast.error("Outlet Aecess Denied");
-        return;
-      } else if (response.success === "0") {
-        toast.error(response.error);
       }
+
+      if (isLoginSuccessful(response, parsed)) {
+        await completeLogin(response, parsed, selectedSalon);
+        return;
+      }
+
+      if (handleLoginError(response, parsed)) {
+        return;
+      }
+
+      toast.error(parsed.message || parsed.error || "Login failed");
     } catch (error) {
-      toast.error(error.message || "Login failed");
+      const message =
+        error?.response?.data?.message ?? error.message ?? "Login failed";
+      toast.error(message);
     } finally {
+      isSubmittingRef.current = false;
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (loginPhase === "selectOutlet" && salon != null && salon !== 0) {
+      handleSubmit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salon, loginPhase]);
 
   const handleKeypress = (e) => {
     if (e.key === "Enter") {
@@ -232,18 +368,14 @@ const Login = () => {
       </div>
 
       <div className="flex min-h-screen items-center justify-center px-8 pt-12 pb-16 bg-white/30 lg:border-l lg:border-slate-200/60">
-        {isSiteListLoading ? (
-          <div className="flex flex-col items-center justify-center gap-4 rounded-2xl bg-white/80 px-12 py-10 shadow-sm border border-slate-200/50">
-            <Loader2 className="h-12 w-12 animate-spin text-slate-500" />
-            <p className="text-sm text-slate-600 font-medium">Loading outlets...</p>
-          </div>
-        ) : (
         <div className="w-full max-w-lg space-y-8 rounded-2xl bg-white/90 px-8 py-10 shadow-lg shadow-slate-200/50 border border-slate-200/60 backdrop-blur-sm">
           <div className="text-center">
             <div className="flex justify-center">
               <img src={bslogo} alt="logo" className="w-72 drop-shadow-md" />
             </div>
-            <p className="mt-4 text-slate-500 text-sm font-medium">Sign in to your account</p>
+            <p className="mt-4 text-slate-500 text-sm font-medium">
+              Sign in to your account
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -254,7 +386,11 @@ const Login = () => {
                 className="h-12"
                 placeholder="Enter your username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  resetOutletSelection();
+                }}
+                disabled={isLoading}
               />
             </div>
 
@@ -267,8 +403,12 @@ const Login = () => {
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    resetOutletSelection();
+                  }}
                   onKeyDown={(e) => handleKeypress(e)}
+                  disabled={isLoading}
                 />
                 <Button
                   type="button"
@@ -276,6 +416,7 @@ const Login = () => {
                   size="sm"
                   className="absolute right-2 top-1/2 -translate-y-1/2"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -286,33 +427,40 @@ const Login = () => {
               </div>
             </div>
 
-            {salonOptions && salonOptions.length > 0 && (
+            {loginPhase === "selectOutlet" && salonOptions.length > 0 && (
               <div className="space-y-2 w-full">
                 <Label>Select Outlet</Label>
                 <Select
-                  placeholder="Select outlet"
-                  value={salon}
+                  value={salon != null ? String(salon) : ""}
                   onValueChange={(value) => {
-                    setSalon(value);
+                    const id = Number(value);
+                    setSalon(id);
                     const selectedOption = salonDetail.find(
-                      (opt) => opt.itemsiteCode === value
+                      (opt) => opt.id === id
                     );
                     if (selectedOption) {
                       setSelectedSalon(selectedOption);
                     }
                   }}
+                  disabled={isLoading}
                 >
                   <SelectTrigger
                     style={{ height: "48px", minHeight: "48px" }}
                     className="w-full"
                   >
                     <SelectValue placeholder="Select an outlet">
-                      {salonOptions.find((opt) => opt.value === salon)?.label}
+                      {
+                        salonOptions.find((opt) => opt.value === salon)
+                          ?.label
+                      }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {salonOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
+                      <SelectItem
+                        key={option.value}
+                        value={String(option.value)}
+                      >
                         {option.label}
                       </SelectItem>
                     ))}
@@ -321,15 +469,28 @@ const Login = () => {
               </div>
             )}
 
-            <Button type="submit" className="w-full h-12 text-lg cursor-pointer transition-all hover:shadow-md" disabled={isLoading}>
-              {isLoading ? "Logging in..." : "Login"}
+            <Button
+              type="submit"
+              className="w-full h-12 text-lg cursor-pointer transition-all hover:shadow-md"
+              disabled={isLoading || loginPhase === "selectOutlet"}
+            >
+              {isLoading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {loginPhase === "selectOutlet"
+                    ? "Signing in..."
+                    : "Logging in..."}
+                </span>
+              ) : loginPhase === "selectOutlet" ? (
+                "Select an outlet to continue"
+              ) : (
+                "Login"
+              )}
             </Button>
           </form>
-          
-          {/* Version Stamp */}
+
           <VersionStamp />
         </div>
-        )}
       </div>
     </div>
   );

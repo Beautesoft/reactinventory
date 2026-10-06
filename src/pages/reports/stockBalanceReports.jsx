@@ -195,6 +195,7 @@ const StockBalanceReports = () => {
             ...item,
             // Show the outlet name (itemsite_desc) instead of the code (itemsite_code)
             Outlet: siteLabelByCode[item.Outlet] || item.Outlet,
+            LinkCode: item.linkCode || item.LinkCode || '-',
             // Calculate TotalCost = Qty * Cost
             TotalCost: (Number(item.Qty || 0) * Number(item.Cost || 0)).toFixed(2),
             // Calculate TotalAmount = Qty * Price
@@ -252,6 +253,7 @@ const StockBalanceReports = () => {
     { key: 'Dept', header: 'Dept', align: 'left' },
     { key: 'Brand', header: 'Brand', align: 'left' },
     { key: 'Ranges', header: 'Range', align: 'left' },
+    { key: 'LinkCode', header: 'LinkCode', align: 'left' },
     { key: 'ItemName', header: 'Item Name', align: 'left' },
     { key: 'UOM', header: 'UOM', align: 'left' },
     { key: 'Qty', header: 'Qty', align: 'right', type: 'number', render: (value) => Number(value).toLocaleString() },
@@ -313,7 +315,7 @@ const StockBalanceReports = () => {
           const outletData = groupedData[outlet];
           
           // Add outlet header row
-          itemsData.push([outlet, "", "", "", "", "", "", "", "", "", ""]);
+          itemsData.push([outlet, "", "", "", "", "", "", "", "", "", "", ""]);
           
           // Add outlet items
           outletData.forEach(item => {
@@ -322,6 +324,7 @@ const StockBalanceReports = () => {
               item.Dept || "",
               item.Brand || "",
               item.Ranges || "",
+              item.LinkCode || "-",
               item.ItemName || "",
               item.UOM || "",
               Number(item.Qty || 0),
@@ -349,6 +352,7 @@ const StockBalanceReports = () => {
             "",
             "",
             "",
+            "",
             outletTotals.qty,
             outletTotals.cost,
             outletTotals.totalCost,
@@ -357,7 +361,7 @@ const StockBalanceReports = () => {
           ]);
           
           // Add empty row for spacing
-          itemsData.push(["", "", "", "", "", "", "", "", "", "", ""]);
+          itemsData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
         });
 
         // Calculate grand totals
@@ -370,7 +374,7 @@ const StockBalanceReports = () => {
         }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0 });
         
         // Add grand totals row
-        const totalsRow = ["Total", "", "", "", "", "", grandTotals.qty, grandTotals.cost, grandTotals.totalCost, "-", grandTotals.totalAmount];
+        const totalsRow = ["Total", "", "", "", "", "", "", grandTotals.qty, grandTotals.cost, grandTotals.totalCost, "-", grandTotals.totalAmount];
 
         // Combine all data
         const excelData = [

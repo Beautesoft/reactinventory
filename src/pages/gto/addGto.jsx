@@ -61,6 +61,7 @@ import {
   normalizeExpDateToISO,
   filterActiveItemSites,
   isHqUser,
+  resolveSiteName,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -95,6 +96,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import ItemTable from "@/components/itemTable";
+import SelectItemsSiteHint from "@/components/SelectItemsSiteHint";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -6450,6 +6452,14 @@ function AddGto({ docData }) {
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
                   </CardTitle>
+                  <SelectItemsSiteHint
+                    prefix="Showing items from:"
+                    siteName={resolveSiteName(
+                      stockHdrs.fstoreNo,
+                      storeOptions,
+                      userDetails?.siteName
+                    )}
+                  />
                   <CardContent className="p-4 ">
                     <div className="flex items-center   gap-4 mb-6">
                       <div className="flex-1 max-w-[430px]">

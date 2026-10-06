@@ -598,9 +598,14 @@ function ItemMasterForm() {
 
       if (stock.itemNo) {
         itemMasterApi.getStockImage(stock.itemNo).then((img) => {
-          const path = img?.picPath || img?.image || img;
+          const path =
+            img?.data?.Stock_PIC ||
+            img?.Stock_PIC ||
+            img?.picPath ||
+            img?.image ||
+            (typeof img === "string" ? img : null);
           if (path && typeof path === "string") {
-            setImagePreview(path.startsWith("http") ? path : path);
+            setImagePreview(path);
           }
         }).catch(() => {});
       }

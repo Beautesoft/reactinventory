@@ -507,6 +507,7 @@ export const getAppConfig = () => {
     DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays) || baseConfig.DEFAULT_EXPIRY_DAYS || 365,
     ManualBatchSelection: userDetails.manualBatchSelection === "True",
     BATCH_SNO: userDetails.batchSNo === "True" ? "Yes" : "No",
+    PR_USE_DELIVERY_ORDER: userDetails.prUseDeliveryOrder === "True",
   };
   
   return dynamicConfig;
@@ -570,6 +571,33 @@ export function filterActiveItemSites(sites = []) {
  *
  * Always returns a boolean, so callers can use it directly in `disabled={...}`.
  */
+/** Resolve a site code to display name using ItemSitelists options or login siteName. */
+export function resolveSiteName(siteCode, siteOptions = [], fallback = "") {
+  if (!siteCode) return fallback || "-";
+
+  if (Array.isArray(siteOptions) && siteOptions.length > 0) {
+    const match = siteOptions.find(
+      (site) => site.value === siteCode || site.itemsiteCode === siteCode
+    );
+    if (match?.label || match?.itemsiteDesc) {
+      return match.label || match.itemsiteDesc;
+    }
+  }
+
+  if (fallback) return fallback;
+
+  try {
+    const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+    if (userDetails.siteCode === siteCode && userDetails.siteName) {
+      return userDetails.siteName;
+    }
+  } catch {
+    // ignore parse errors
+  }
+
+  return siteCode;
+}
+
 export function isHqUser(userDetails) {
   if (!userDetails) return false;
 

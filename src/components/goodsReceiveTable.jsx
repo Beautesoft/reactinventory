@@ -16,7 +16,16 @@ import apiService from "@/services/apiService";
 import { toast } from "sonner";
 import { docStatusLabel, isVoidDocStatus } from "@/utils/utils";
 
-function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOptions = [], approvalContext = false }) {
+function GoodsReceiveTable({
+  data,
+  isLoading,
+  type = "grn",
+  onSort,
+  supplierOptions = [],
+  approvalContext = false,
+  showPrDispatchColumn = false,
+  prDispatchMap = {},
+}) {
   const navigate = useNavigate();
   const { setDefaultdata: setGrnDefault } = useGrn();
   const { setDefaultdata: setGtoDefault } = useGto();
@@ -347,6 +356,7 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
       { key: "reqTtqty", label: "Total Quantity" },
       ...(showTotalAmount ? [{ key: "reqTtamt", label: "Total Amount" }] : []),
       { key: "reqStatus", label: "Status" },
+      ...(showPrDispatchColumn ? [{ key: "dispatch", label: "Dispatch" }] : []),
       { key: "print", label: "Print" },
     ],
     sum: [
@@ -498,6 +508,50 @@ function GoodsReceiveTable({ data, isLoading, type = "grn", onSort, supplierOpti
                       >
                         {item.reqStatus}
                       </TableCell>
+                      {showPrDispatchColumn && (
+                        <TableCell className="text-sm">
+                          {item.suppCode !== "HQ" ? (
+                            <span className="text-gray-400">—</span>
+                          ) : (() => {
+                            const info = prDispatchMap[item.reqNo];
+                            if (!info || info.status === "none") {
+                              return <span className="text-gray-400">—</span>;
+                            }
+                            if (info.status === "complete") {
+                              return (
+                                <span className="text-green-600 font-medium">
+                                  Receipt confirmed
+                                </span>
+                              );
+                            }
+                            if (info.status === "dispatched") {
+                              return (
+                                <span className="text-amber-600 font-medium">
+                                  Dispatched
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                className="text-orange-700 underline hover:text-orange-900 font-medium"
+                                onClick={() =>
+                                  navigate(
+                                    "/purchase-requisition?mainTab=approval&approvalTab=pending-dispatch",
+                                    {
+                                      state: {
+                                        confirmDispatchGti: info.gtiDocNo,
+                                      },
+                                    }
+                                  )
+                                }
+                              >
+                                Dispatch
+                              </button>
+                            );
+                          })()}
+                        </TableCell>
+                      )}
                       <TableCell className="text-left flex pr-4">
                         <PrinterIcon
                           onClick={() => printNote(item)}

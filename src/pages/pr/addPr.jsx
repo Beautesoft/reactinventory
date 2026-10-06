@@ -43,11 +43,19 @@ import {
   Edit,
   Info,
 } from "lucide-react";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import moment from "moment-timezone";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import { prApi, getApprovedQty, resolveReqAppqtyForLoad } from "@/services/prApi";
+
+/** When requesting from HQ, show HQ inventory; otherwise show the logged-in site's items. */
+const getPRStockSiteCode = (suppCode, userDetails) => {
+  if (suppCode === "HQ") {
+    return userDetails?.HQSiteCode || userDetails?.siteCode || "";
+  }
+  return userDetails?.siteCode || "";
+};
 
 import {
   buildCountObject,
@@ -57,6 +65,8 @@ import {
   format_Date,
   queryParamsGenerate,
   getConfigValue,
+  filterActiveItemSites,
+  resolveSiteName,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -88,6 +98,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import ItemTable from "@/components/itemTable";
+import SelectItemsSiteHint from "@/components/SelectItemsSiteHint";
 
 const calculateTotals = (cartData) => {
   const result = cartData.reduce(
@@ -968,6 +979,7 @@ function AddPR() {
   const [searchValue, setSearchValue] = useState("");
   const debouncedSearchValue = useDebounce(searchValue, 1000);
   const [supplyOptions, setSupplyOptions] = useState([]);
+  const [siteOptions, setSiteOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
   const [batchOptions, setBatchOptions] = useState([]);
@@ -1126,7 +1138,8 @@ function AddPR() {
   const [rejectionReason, setRejectionReason] = useState("");
   const [stockValidationErrors, setStockValidationErrors] = useState([]);
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
-  const [autoCreateTransfer, setAutoCreateTransfer] = useState(false);
+  const [dispatchImmediately, setDispatchImmediately] = useState(false);
+  const [approvalSuccessDialog, setApprovalSuccessDialog] = useState(null);
   
   // Ref to track if we're loading PR data to prevent double supplier reload
   const isLoadingPRDataRef = useRef(false);
@@ -1181,6 +1194,21 @@ function AddPR() {
     }
   }, [showApprovalDialog]);
 
+  const loadSiteOptions = async () => {
+    try {
+      const res = await apiService.get("/ItemSitelists");
+      const options = filterActiveItemSites(res)
+        .filter((store) => store.itemsiteCode)
+        .map((store) => ({
+          label: store.itemsiteDesc,
+          value: store.itemsiteCode,
+        }));
+      setSiteOptions(options);
+    } catch (err) {
+      console.error("Error loading site list:", err);
+    }
+  };
+
   // Load suppliers and HQ options
   const loadSuppliers = async (overrideApprovalMode = null) => {
     try {
@@ -1230,6 +1258,7 @@ function AddPR() {
     try {
       await Promise.all([
         loadSuppliers(),
+        loadSiteOptions(),
         getOptions(),
       ]);
     } catch (err) {
@@ -1261,6 +1290,7 @@ function AddPR() {
       // This ensures suppliers are ready when formData is set
       await Promise.all([
         loadSuppliers(currentApprovalMode), // Pass approval mode directly
+        loadSiteOptions(),
         getOptions(),
       ]);
       
@@ -1321,6 +1351,7 @@ function AddPR() {
           await enrichStockItemsWithDecimalFlag(itemsWithApprovedQty)
         ).map(roundStockLineMoney);
         setCartData(enrichedItems);
+        setCartItems(enrichedItems);
       }
 
       isLoadingPRDataRef.current = false; // Reset flag after everything is loaded
@@ -1358,14 +1389,22 @@ function AddPR() {
     }
   };
 
-  // Load items for selection
-  const loadItems = async () => {
+  // Load items for selection (supplier site: HQ stock when suppCode is HQ)
+  const loadItems = async (suppCodeOverride) => {
+    const suppCode = suppCodeOverride ?? formData.suppCode;
+    const stockSite = getPRStockSiteCode(suppCode, userDetails);
+
+    if (!stockSite) {
+      setStockList([]);
+      setOriginalStockList([]);
+      setItemTotal(0);
+      setFilteredItemTotal(0);
+      return;
+    }
+
     setLoading(true);
     try {
-      const siteCode = userDetails?.siteCode;
-      // const hqSiteCode = userDetails?.HQSiteCode;
-      
-      const query = `?Site=${siteCode}`;
+      const query = `?Site=${stockSite}`;
       const response = await apiService1.get(`api/GetInvitems${query}`);
       const stockDetails = Array.isArray(response?.result) ? response.result : [];
       const count = stockDetails.length;
@@ -1570,10 +1609,13 @@ function AddPR() {
     setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  // Load items when component mounts
+  // Reload item catalog when supplier changes or when an editable PR loads
   useEffect(() => {
-    loadItems();
-  }, []);
+    const isViewOnly =
+      formData.reqStatus === "Posted" || formData.reqStatus === "Approved";
+    if (isViewOnly) return;
+    loadItems(formData.suppCode);
+  }, [formData.suppCode, formData.reqStatus]);
 
   // Handle quantity change
   const handleQtyChange = (e, index) => {
@@ -2324,8 +2366,8 @@ function AddPR() {
         // Update existing PR
         await prApi.updatePR(id, formData);
         
-        // Update line items using the new method
-        await prApi.updatePRLineItems(cartData);
+        await prApi.updatePRLineItems(cartData, cartItems);
+        setCartItems(cartData);
         toast.success("Purchase Requisition updated successfully");
       } else {
         // Create new PR (this will handle control number generation internally)
@@ -2373,7 +2415,9 @@ function AddPR() {
         
         setFormData(prev => ({ ...prev, reqStatus: "Posted", reqNo: result.reqNo }));
       } else {
-        // For existing PRs, just update the status
+        await prApi.updatePR(id, formData);
+        await prApi.updatePRLineItems(cartData, cartItems);
+        setCartItems(cartData);
         await prApi.postPR(reqNo);
         setFormData(prev => ({ ...prev, reqStatus: "Posted" }));
       }
@@ -2385,6 +2429,14 @@ function AddPR() {
       toast.error("Error posting Purchase Requisition");
     } finally {
       setPostLoading(false);
+    }
+  };
+
+  const showApprovalValidationErrors = (messages) => {
+    const list = (Array.isArray(messages) ? messages : [messages]).filter(Boolean);
+    setStockValidationErrors(list);
+    if (list.length > 0) {
+      toast.error(list.join(" "));
     }
   };
 
@@ -2405,12 +2457,13 @@ function AddPR() {
       cartData.forEach((item, index) => {
         const approvedQty = getApprovedQty(item);
         const requestedQty = parseFloat(item.reqdQty);
+        const uomLabel = item.docUom ? ` [${item.docUom}]` : "";
         
         if (approvedQty > requestedQty) {
-          validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity (${approvedQty}) cannot exceed requested quantity (${requestedQty})`);
+          validationErrors.push(`Item ${item.reqdItemcode}${uomLabel}: Approved quantity (${approvedQty}) cannot exceed requested quantity (${requestedQty})`);
         }
         if (approvedQty < 0) {
-          validationErrors.push(`Item ${item.reqdItemcode}: Approved quantity cannot be negative`);
+          validationErrors.push(`Item ${item.reqdItemcode}${uomLabel}: Approved quantity cannot be negative`);
         }
 
         // Validate batch selection matches approved quantity for specific batch mode
@@ -2444,7 +2497,7 @@ function AddPR() {
             // Compare total batch quantity with approved quantity
             if (Math.abs(totalBatchQty - approvedQty) > 0.01) { // Allow small floating point differences
               validationErrors.push(
-                `Item ${item.reqdItemcode} (${item.reqdItemdesc}): Batch selection total (${totalBatchQty}) does not match approved quantity (${approvedQty}). Please update batch selection or approved quantity.`
+                `Item ${item.reqdItemcode}${uomLabel} (${item.reqdItemdesc}): Batch selection total (${totalBatchQty}) does not match approved quantity (${approvedQty}). Please update batch selection or approved quantity.`
               );
             }
           }
@@ -2452,7 +2505,7 @@ function AddPR() {
       });
 
       if (validationErrors.length > 0) {
-        setStockValidationErrors(validationErrors);
+        showApprovalValidationErrors(validationErrors);
         setApprovalLoading(false);
         return;
       }
@@ -2461,14 +2514,14 @@ function AddPR() {
       if (formData.suppCode === "HQ") {
         const stockErrors = await prApi.validateHQStockForApproval(cartData);
         if (stockErrors.length > 0) {
-          const errorMessages = stockErrors.map(error => {
-            if (error.errorType === 'BATCH_SHORTFALL' || error.errorType === 'NO_BATCH_SHORTFALL') {
-              return `${error.itemCode} (${error.itemDesc}): Batch ${error.batchNo} - Insufficient stock. Available: ${error.availableQty}, Required: ${error.approvedQty}, Shortfall: ${error.shortfall}`;
-            } else {
-              return `${error.itemCode} (${error.itemDesc}): Insufficient stock. Available: ${error.availableQty}, Required: ${error.approvedQty}, Shortfall: ${error.shortfall}`;
+          const errorMessages = stockErrors.map((error) => {
+            const uomLabel = error.uom ? ` [${error.uom}]` : "";
+            if (error.errorType === "BATCH_SHORTFALL" || error.errorType === "NO_BATCH_SHORTFALL") {
+              return `${error.itemCode}${uomLabel} (${error.itemDesc}): Batch ${error.batchNo} - Insufficient stock. Available: ${error.availableQty}, Required: ${error.approvedQty}, Shortfall: ${error.shortfall}`;
             }
+            return `${error.itemCode}${uomLabel} (${error.itemDesc}): Insufficient stock. Available: ${error.availableQty}, Required: ${error.approvedQty}, Shortfall: ${error.shortfall}`;
           });
-          setStockValidationErrors(errorMessages);
+          showApprovalValidationErrors(errorMessages);
           setApprovalLoading(false);
           return;
         }
@@ -2477,6 +2530,7 @@ function AddPR() {
       // 3. Reset loading and show confirmation dialog
       // Ensure loading is false before opening dialog so button is enabled
       setApprovalLoading(false);
+      setDispatchImmediately(false);
       setShowApprovalDialog(true);
     } catch (err) {
       console.error("Error validating approval:", err);
@@ -2497,7 +2551,8 @@ function AddPR() {
       if (id) {
         // Update existing PR with all changes (batch selections, amounts, etc.)
         await prApi.updatePR(id, formData);
-        await prApi.updatePRLineItems(cartData);
+        await prApi.updatePRLineItems(cartData, cartItems);
+        setCartItems(cartData);
       } else {
         // If new PR, create it first with all changes
         // Generate PR number if not exists
@@ -2514,15 +2569,40 @@ function AddPR() {
       
       // Now approve with the saved data (including batch selections, ordMemo4, etc.)
       const shouldCreateTransfer = formData.suppCode === "HQ";
-      const result = await prApi.approvePRWithQuantities(reqNo, cartData, shouldCreateTransfer);
-      
-      // Show appropriate success message based on whether GTI was created
-      if (shouldCreateTransfer && result?.docNo) {
-        toast.success(`Purchase Requisition approved and GTI document ${result.docNo} created successfully (Open status) at destination`);
+      const useTwoWay = getConfigValue("PR_USE_DELIVERY_ORDER");
+      const result = await prApi.approvePRWithQuantities(
+        reqNo,
+        cartData,
+        shouldCreateTransfer,
+        {
+          dispatchImmediately:
+            shouldCreateTransfer && useTwoWay && dispatchImmediately,
+        }
+      );
+
+      if (shouldCreateTransfer && result?.docNo && result?.mode === "two-way") {
+        setDispatchImmediately(false);
+        setApprovalSuccessDialog({
+          reqNo,
+          gtiDocNo: result.docNo,
+          hqDispatched: Boolean(result.hqDispatched),
+          outletSite: formData.itemsiteCode,
+        });
+        return;
+      }
+
+      if (shouldCreateTransfer && result?.docNo && result?.mode === "one-way") {
+        toast.success(
+          `PR approved — transfer ${result.docNo} completed and stock updated`
+        );
+      } else if (shouldCreateTransfer && result?.docNo) {
+        toast.success(
+          `PR approved — transfer ${result.docNo} created for ${formData.itemsiteCode || "the store"}`
+        );
       } else {
         toast.success("Purchase Requisition approved successfully");
       }
-      
+
       navigate("/purchase-requisition");
     } catch (err) { 
       console.error("Error approving PR:", err);
@@ -3087,6 +3167,15 @@ function AddPR() {
           {urlStatus != 7 && !isViewOnlyStatus && (
             <Card className={"p-0 gap-0"}>
               <CardTitle className={"ml-4 pt-4 text-xl"}>Select Items</CardTitle>
+              <SelectItemsSiteHint
+                siteName={resolveSiteName(
+                  getPRStockSiteCode(formData.suppCode, userDetails),
+                  siteOptions,
+                  formData.suppCode === "HQ"
+                    ? formData.supplierName || "HQ"
+                    : userDetails?.siteName
+                )}
+              />
               <CardContent className="p-4">
                 {/* Search and Filter Section */}
                 <div className="flex items-center gap-4 mb-6">
@@ -3594,7 +3683,7 @@ function AddPR() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Confirm PR Approval</DialogTitle>
           </DialogHeader>
@@ -3604,25 +3693,95 @@ function AddPR() {
               <>
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                   <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> This will automatically create a GTI (Goods Transfer In) at the requesting site for goods from HQ.
+                    <strong>Note:</strong>{" "}
+                    {getConfigValue("PR_USE_DELIVERY_ORDER")
+                      ? "A transfer document will be created for the requesting store. Dispatch from HQ when ready to ship; the store confirms receipt when goods arrive. If HQ has not shipped yet, the store's receipt confirmation will update stock at both sites."
+                      : "Stock will move from HQ to the requesting store immediately on approval."}
                   </p>
                 </div>
+                {getConfigValue("PR_USE_DELIVERY_ORDER") && (
+                  <div className="flex items-start space-x-2 rounded-md border border-orange-200 bg-orange-50 p-3">
+                    <Checkbox
+                      id="dispatch-immediately"
+                      className="mt-0.5"
+                      checked={dispatchImmediately}
+                      onCheckedChange={(checked) =>
+                        setDispatchImmediately(Boolean(checked))
+                      }
+                    />
+                    <label
+                      htmlFor="dispatch-immediately"
+                      className="text-sm text-orange-900 cursor-pointer leading-snug"
+                    >
+                      <span className="font-medium">Dispatch immediately</span>
+                      <span className="block text-xs text-orange-800 mt-0.5">
+                        Ship from HQ now when goods are ready. Leave unchecked to
+                        dispatch later from the Pending Dispatch tab.
+                      </span>
+                    </label>
+                  </div>
+                )}
                 <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                  <p className="text-sm text-yellow-800">
+                  <p className="text-sm text-yellow-800 mb-1">
                     <strong>Items to Transfer:</strong>
                   </p>
-                  <ul className="text-xs text-yellow-700 list-disc list-inside mt-1 space-y-1">
-                    {cartData.filter((item) => getApprovedQty(item) > 0).length === 0 ? (
-                      <li>No items with approved quantity greater than 0</li>
-                    ) : (
-                      cartData.filter((item) => getApprovedQty(item) > 0).map((item, idx) => (
-                        <li key={idx}>
-                          {item.reqdItemcode}: {getApprovedQty(item)} {item.docUom}
-                          {(item.itemRemark1 || item.ordMemo1)?.startsWith("specific") && " (Specific Batches)"}
-                        </li>
-                      ))
-                    )}
-                  </ul>
+                  <p className="text-xs text-yellow-700 mb-2">
+                    From{" "}
+                    <strong>
+                      {resolveSiteName(
+                        userDetails?.HQSiteCode,
+                        siteOptions,
+                        formData.supplierName || "HQ"
+                      )}
+                    </strong>{" "}
+                    to{" "}
+                    <strong>
+                      {resolveSiteName(
+                        formData.itemsiteCode,
+                        siteOptions,
+                        userDetails?.siteName
+                      )}
+                    </strong>
+                  </p>
+                  {cartData.filter((item) => getApprovedQty(item) > 0).length === 0 ? (
+                    <p className="text-xs text-yellow-700">
+                      No items with approved quantity greater than 0
+                    </p>
+                  ) : (
+                    <div className="rounded-md border border-yellow-200 bg-white overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-yellow-100/80 hover:bg-yellow-100/80">
+                            <TableHead className="text-yellow-900 w-16">Qty</TableHead>
+                            <TableHead className="text-yellow-900 w-20">UOM</TableHead>
+                            <TableHead className="text-yellow-900">Description</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {cartData
+                            .filter((item) => getApprovedQty(item) > 0)
+                            .map((item, idx) => (
+                              <TableRow key={`${item.reqdItemcode}-${item.docUom}-${idx}`}>
+                                <TableCell className="text-xs font-medium text-gray-800">
+                                  {getApprovedQty(item)}
+                                </TableCell>
+                                <TableCell className="text-xs font-medium text-gray-800">
+                                  {item.docUom || "-"}
+                                </TableCell>
+                                <TableCell className="text-xs text-gray-800">
+                                  <div>{item.reqdItemdesc || "-"}</div>
+                                  <div className="text-[11px] text-gray-500 mt-0.5">
+                                    {item.reqdItemcode}
+                                    {(item.itemRemark1 || item.ordMemo1)?.startsWith("specific") &&
+                                      " · Specific Batches"}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -3656,6 +3815,84 @@ function AddPR() {
                 "Confirm Approval"
               )}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post-approval success — Two-Way GTI created */}
+      <Dialog
+        open={Boolean(approvalSuccessDialog)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setApprovalSuccessDialog(null);
+            navigate("/purchase-requisition");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>PR Approved</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-gray-700">
+            <p>
+              <strong>{approvalSuccessDialog?.reqNo}</strong> was approved
+              successfully.
+            </p>
+            <p>
+              Transfer{" "}
+              <strong>{approvalSuccessDialog?.gtiDocNo}</strong> created for{" "}
+              <strong>{approvalSuccessDialog?.outletSite || "—"}</strong>.
+            </p>
+            {approvalSuccessDialog?.hqDispatched ? (
+              <div className="rounded-md border border-green-200 bg-green-50 p-3 text-green-900 text-xs">
+                Goods dispatched from HQ.{" "}
+                {approvalSuccessDialog?.outletSite || "The store"} will confirm
+                receipt when they arrive.
+              </div>
+            ) : (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-blue-900 text-xs">
+                Dispatch from the Pending Dispatch tab when ready to ship, or
+                click Dispatch now below.
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setApprovalSuccessDialog(null);
+                if (approvalSuccessDialog?.hqDispatched) {
+                  navigate("/purchase-requisition");
+                } else {
+                  navigate(
+                    "/purchase-requisition?mainTab=approval&approvalTab=pending-dispatch"
+                  );
+                }
+              }}
+            >
+              {approvalSuccessDialog?.hqDispatched ? "Close" : "Dispatch later"}
+            </Button>
+            {!approvalSuccessDialog?.hqDispatched && (
+              <Button
+                className="bg-orange-600 hover:bg-orange-700"
+                onClick={() => {
+                  const gtiDocNo = approvalSuccessDialog?.gtiDocNo;
+                  setApprovalSuccessDialog(null);
+                  if (gtiDocNo) {
+                    navigate(
+                      "/purchase-requisition?mainTab=approval&approvalTab=pending-dispatch",
+                      { state: { confirmDispatchGti: gtiDocNo } }
+                    );
+                  } else {
+                    navigate(
+                      "/purchase-requisition?mainTab=approval&approvalTab=pending-dispatch"
+                    );
+                  }
+                }}
+              >
+                Dispatch now
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3730,7 +3967,6 @@ function AddPR() {
         formData={formData}
       />
 
-      <Toaster />
     </div>
   );
 }

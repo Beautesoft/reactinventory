@@ -1,28 +1,17 @@
 import React, { useEffect, useState } from "react";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import GoodsReceiveTable from "@/components/goodsReceiveTable";
 import apiService from "@/services/apiService";
 import {
   buildCountObject,
-  buildCountQuery,
   buildFilterObject,
-  buildFilterQuery,
 } from "@/utils/utils";
 import Pagination from "@/components/pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
 import useDebounce from "@/hooks/useDebounce";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useGto } from "@/context/gtoContext";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
@@ -53,9 +42,8 @@ function GoodsTransferIn() {
   });
   const [ownPagination, setOwnPagination] = useState({
     page: 1,
-    limit: 10
+    limit: 10,
   });
-  const [ownTotalCount, setOwnTotalCount] = useState(0);
 
   const debouncedSearchValue = useDebounce(searchValue, 1000);
 
@@ -86,11 +74,12 @@ function GoodsTransferIn() {
   const fetchOwnRecords = async () => {
     setOwnLoading(true);
     try {
-      const response = await apiService1.get(`/api/GetStkInOwn?Site=${userDetails?.siteCode}`);
+      const response = await apiService1.get(
+        `/api/GetStkInOwn?Site=${userDetails?.siteCode}`
+      );
       if (response && response.result) {
         setOwnGoodsData(response.result);
         setFilteredOwnData(response.result);
-        setOwnTotalCount(response.result.length);
       }
     } catch (err) {
       setError(err.message);
@@ -122,7 +111,7 @@ function GoodsTransferIn() {
     pagination.skip,
     pagination.where.docStatus,
     debouncedSearchValue,
-    pagination.order
+    pagination.order,
   ]);
 
   const handleSearch = (e) => {
@@ -130,42 +119,42 @@ function GoodsTransferIn() {
     setSearchValue(value);
 
     if (showOwnRecords) {
-      // Filter own records
       if (value) {
-        const filtered = ownGoodsData.filter(item => 
-          item.docNo?.toLowerCase().includes(value.toLowerCase()) ||
-          item.docDate?.toLowerCase().includes(value.toLowerCase()) ||
-          item.docRef1?.toLowerCase().includes(value.toLowerCase()) ||
-          item.docRef2?.toLowerCase().includes(value.toLowerCase()) ||
-          item.docRemark?.toLowerCase().includes(value.toLowerCase()) ||
-          item.docQty?.toString().includes(value) ||
-          item.docAmt?.toString().includes(value)
+        const filtered = ownGoodsData.filter(
+          (item) =>
+            item.docNo?.toLowerCase().includes(value.toLowerCase()) ||
+            item.docDate?.toLowerCase().includes(value.toLowerCase()) ||
+            item.docRef1?.toLowerCase().includes(value.toLowerCase()) ||
+            item.docRef2?.toLowerCase().includes(value.toLowerCase()) ||
+            item.docRemark?.toLowerCase().includes(value.toLowerCase()) ||
+            item.docQty?.toString().includes(value) ||
+            item.docAmt?.toString().includes(value)
         );
         setFilteredOwnData(filtered);
       } else {
         setFilteredOwnData(ownGoodsData);
       }
+      return;
+    }
+
+    if (value) {
+      setPagination((prev) => ({
+        ...prev,
+        like: {
+          docNo: value,
+          docDate: value,
+          docRef1: value,
+          docAmt: value,
+          docStatus: value,
+        },
+        skip: 0,
+      }));
     } else {
-      // Original GTI search logic
-      if (value) {
-        setPagination((prev) => ({
-          ...prev,
-          like: {
-            docNo: value,
-            docDate: value,
-            docRef1: value,
-            docAmt: value,
-            docStatus: value,
-          },
-          skip: 0,
-        }));
-      } else {
-        setPagination((prev) => ({
-          ...prev,
-          like: null,
-          skip: 0,
-        }));
-      }
+      setPagination((prev) => ({
+        ...prev,
+        like: null,
+        skip: 0,
+      }));
     }
   };
 
@@ -190,14 +179,13 @@ function GoodsTransferIn() {
   };
 
   const handleOwnPageChange = (newPage) => {
-    setOwnPagination(prev => ({
+    setOwnPagination((prev) => ({
       ...prev,
-      page: newPage
+      page: newPage,
     }));
   };
 
   const handleRoute = () => {
-    console.log("Create New clicked");
     navigate("/goods-transfer-in/add/");
   };
 
@@ -207,11 +195,12 @@ function GoodsTransferIn() {
       fetchOwnRecords();
     }
   };
+
   const handleSort = (key, direction) => {
     setPagination((prev) => ({
       ...prev,
-      order: `${key} ${direction === 'ascending' ? 'ASC' : 'DESC'}, docNo DESC`,
-      skip: 0, // Reset to first page when sorting
+      order: `${key} ${direction === "ascending" ? "ASC" : "DESC"}, docNo DESC`,
+      skip: 0,
     }));
   };
 
@@ -249,16 +238,14 @@ function GoodsTransferIn() {
           <Tabs
             value={activeTab}
             className="w-full"
-            onValueChange={(value) => {
-              handleTabChange(value);
-            }}
+            onValueChange={handleTabChange}
           >
             <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
               <div className="w-[300px] relative">
                 <Input
                   placeholder="Search by Doc no, Ref no, Total qty"
                   value={searchValue}
-                  onChange={(e) => handleSearch(e)}
+                  onChange={handleSearch}
                   className="pl-10"
                 />
                 <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
@@ -281,37 +268,52 @@ function GoodsTransferIn() {
 
             {showOwnRecords ? (
               <>
-                <GoodsReceiveTable 
+                <GoodsReceiveTable
                   data={filteredOwnData.slice(
                     (ownPagination.page - 1) * ownPagination.limit,
                     ownPagination.page * ownPagination.limit
-                  )} 
-                  isLoading={ownLoading} 
-                  type="gtiOwn" 
+                  )}
+                  isLoading={ownLoading}
+                  type="gtiOwn"
                 />
                 <Pagination
                   currentPage={ownPagination.page}
-                  totalPages={Math.ceil(filteredOwnData.length / ownPagination.limit)}
+                  totalPages={Math.ceil(
+                    filteredOwnData.length / ownPagination.limit
+                  )}
                   onPageChange={handleOwnPageChange}
                 />
               </>
             ) : (
               <>
                 <TabsContent value="all">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} 
-                  onSort={handleSort}
-                  type="gti" />
+                  <GoodsReceiveTable
+                    data={goodsData}
+                    isLoading={isLoading}
+                    onSort={handleSort}
+                    type="gti"
+                  />
                 </TabsContent>
                 <TabsContent value="open">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} onSort={handleSort}
-                   type="gti" />
+                  <GoodsReceiveTable
+                    data={goodsData}
+                    isLoading={isLoading}
+                    onSort={handleSort}
+                    type="gti"
+                  />
                 </TabsContent>
                 <TabsContent value="posted">
-                  <GoodsReceiveTable data={goodsData} isLoading={isLoading} onSort={handleSort}
-                   type="gti" />
+                  <GoodsReceiveTable
+                    data={goodsData}
+                    isLoading={isLoading}
+                    onSort={handleSort}
+                    type="gti"
+                  />
                 </TabsContent>
                 <Pagination
-                  currentPage={Math.ceil(pagination.skip / pagination.limit) + 1}
+                  currentPage={
+                    Math.ceil(pagination.skip / pagination.limit) + 1
+                  }
                   totalPages={Math.ceil(totalCount / pagination.limit)}
                   onPageChange={handlePageChange}
                 />

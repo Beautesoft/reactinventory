@@ -57,6 +57,7 @@ import {
   getConfigValue,
   isVoidDocStatus,
   normalizeExpDate,
+  resolveSiteName,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -92,6 +93,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import ItemTable from "@/components/itemTable";
+import SelectItemsSiteHint from "@/components/SelectItemsSiteHint";
 import apiService1 from "@/services/apiService1";
 
 // NEW: Batch Selection Dialog for RTN
@@ -3683,6 +3685,13 @@ function AddRtn({ docData }) {
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
                   </CardTitle>
+                  <SelectItemsSiteHint
+                    siteName={resolveSiteName(
+                      userDetails?.siteCode,
+                      [],
+                      userDetails?.siteName
+                    )}
+                  />
                   <CardContent className="p-4 ">
                     {/* Search and Filter Section */}
                     <div className="flex items-center   gap-4 mb-6">

@@ -422,14 +422,14 @@ export const itemMasterApi = {
     const beBase =
       (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
     const url = beBase
-      ? `${beBase.replace(/\/$/, "")}/loadvoucher`
+      ? `${beBase.replace(/\/$/, "")}/api/loadvoucher`
       : "loadvoucher";
     return apiService.get(url);
   },
   async checkVoucherNumbers(voucherNumbers) {
     const beBase =
       (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
-    const path = `vouchercheck/?voucher_number=${encodeURIComponent(voucherNumbers)}&status=sale`;
+    const path = `api/vouchercheck/?voucher_number=${encodeURIComponent(voucherNumbers)}&status=sale`;
     const url = beBase ? `${beBase.replace(/\/$/, "")}/${path}` : path;
     return apiService.get(url);
   },
@@ -437,7 +437,7 @@ export const itemMasterApi = {
     const beBase =
       (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
     const url = beBase
-      ? `${beBase.replace(/\/$/, "")}/loadvoucher/`
+      ? `${beBase.replace(/\/$/, "")}/api/loadvoucher/`
       : "loadvoucher/";
     return apiService.post(url, payload);
   },
@@ -461,13 +461,18 @@ export const itemMasterApi = {
 
   // Stock image
   async getStockImage(itemNo) {
-    return apiService.get(`stockimage/${itemNo}`);
+    const beBase =
+      (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
+    const url = beBase
+      ? `${beBase.replace(/\/$/, "")}/api/stockimage/${itemNo}`
+      : `stockimage/${itemNo}`;
+    return apiService.get(url);
   },
   async uploadStockImage(formData) {
     const beBase =
       (typeof window !== "undefined" && window.APP_CONFIG?.API_BE_BASE_URL) || "";
     const url = beBase
-      ? `${beBase.replace(/\/$/, "")}/stockimageupload/`
+      ? `${beBase.replace(/\/$/, "")}/api/stockimageupload/`
       : "stockimageupload/";
     return apiService.post(url, formData, {
       headers: { "Content-Type": false },

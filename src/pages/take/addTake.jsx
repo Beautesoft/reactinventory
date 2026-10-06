@@ -59,6 +59,7 @@ import {
   queryParamsGenerate,
   getConfigValue,
   isVoidDocStatus,
+  resolveSiteName,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -80,6 +81,7 @@ import { useSearchParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import Pagination from "@/components/pagination";
 import ItemTable from "@/components/itemTable";
+import SelectItemsSiteHint from "@/components/SelectItemsSiteHint";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -4099,6 +4101,13 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                   <CardTitle className={"ml-4 pt-4 text-xl"}>
                     Select Items{" "}
                   </CardTitle>
+                  <SelectItemsSiteHint
+                    siteName={resolveSiteName(
+                      userDetails?.siteCode,
+                      [],
+                      userDetails?.siteName
+                    )}
+                  />
                   <CardContent className="p-4 ">
                     {/* Search and Filter Section */}
                     <div className="flex items-center   gap-4 mb-6">

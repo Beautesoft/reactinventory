@@ -2,6 +2,22 @@ import apiService from "./apiService";
 import moment from "moment-timezone";
 import { roundMoney } from "@/utils/uomDecimalQty";
 import { claimControlNumber } from "@/utils/controlNo";
+import { getConfigValue } from "@/utils/utils";
+import {
+  buildTransferHeader,
+  buildTransferLineDetails,
+  calculateTransferTotals,
+} from "@/utils/prTransferBuild";
+import {
+  executePrTransferPost,
+  executeDeliveryOrderOut,
+  isHqDispatchDone,
+} from "./prTransferPost";
+
+const isPrLinkedGtiHeader = (header) => {
+  const remk1 = String(header?.docRemk1 || "");
+  return remk1.includes("Created from PR:") && !remk1.includes("via DO:");
+};
 
 const BASE_URL = ""; // Will use the base URL from apiService
 
@@ -300,19 +316,34 @@ export const prApi = {
     }
   },
 
-  // Update multiple line items (for editing existing PR)
-  async updatePRLineItems(items) {
+  // Update multiple line items (for editing existing PR).
+  // Pass originalItems (snapshot from load) so removed lines are deleted from reqdetails.
+  async updatePRLineItems(items, originalItems = []) {
     try {
-      for (const item of items) {
+      const itemsToDelete = (Array.isArray(originalItems) ? originalItems : []).filter(
+        (orig) =>
+          orig.reqId != null &&
+          orig.reqId !== "" &&
+          !items.some((item) => item.reqId === orig.reqId)
+      );
+
+      if (itemsToDelete.length > 0) {
+        await Promise.all(
+          itemsToDelete.map((item) => this.deletePRLineItem(item.reqId))
+        );
+      }
+
+      const itemsToUpdate = items.filter((item) => item.reqId != null && item.reqId !== "");
+      const itemsToCreate = items.filter((item) => !item.reqId || item.reqId === "");
+
+      for (const item of itemsToUpdate) {
         const convertedItem = prepareReqDetailsForApi(item)[0];
-        
-        if (item.reqId && item.reqId !== "") {
-          // Update existing item
-          await apiService.post(`reqdetails/update?[where][reqId]=${item.reqId}`, convertedItem);
-        } else {
-          // Create new item
-          await apiService.post("reqdetails", convertedItem);
-        }
+        await apiService.post(`reqdetails/update?[where][reqId]=${item.reqId}`, convertedItem);
+      }
+
+      if (itemsToCreate.length > 0) {
+        const convertedItems = prepareReqDetailsForApi(itemsToCreate);
+        await apiService.post("reqdetails", convertedItems);
       }
     } catch (error) {
       console.error("Error updating PR line items:", error);
@@ -481,7 +512,9 @@ export const prApi = {
   },
 
   // Approve PR with modified quantities
-  async approvePRWithQuantities(reqNo, lineItems, createTransfer = false) {
+  async approvePRWithQuantities(reqNo, lineItems, createTransfer = false, options = {}) {
+    const { dispatchImmediately = false } = options;
+
     try {
       // 1. Update PR header status to "Approved"
       await apiService.post(`reqs/update?[where][reqNo]=${reqNo}`, {
@@ -498,22 +531,174 @@ export const prApi = {
         }
       }
 
-      // 3. If createTransfer is true, call createGoodsTransferFromPR
+      // 3. If createTransfer is true, create GTI based on site config (Two-Way or One-Way)
       let transferResult = null;
+      let hqDispatched = false;
+
       if (createTransfer) {
         const prData = await this.getPR(reqNo);
-        transferResult = await this.createGoodsTransferFromPR(prData, lineItems);
+        transferResult = await this.processPrApprovalTransfer(prData, lineItems);
+
+        if (
+          dispatchImmediately &&
+          transferResult?.mode === "two-way" &&
+          transferResult?.docNo &&
+          transferResult?.header &&
+          transferResult?.details?.length
+        ) {
+          const dispatchResult = await executeDeliveryOrderOut({
+            docNo: transferResult.docNo,
+            header: transferResult.header,
+            details: transferResult.details,
+          });
+          hqDispatched = !dispatchResult.alreadyDone;
+        }
       }
 
-      return { 
+      return {
         success: true,
         docNo: transferResult?.docNo || null,
-        message: transferResult?.message || "Purchase Requisition approved successfully"
+        mode: transferResult?.mode || null,
+        hqDispatched,
+        message: transferResult?.message || "Purchase Requisition approved successfully",
       };
     } catch (error) {
       console.error("Error approving PR with quantities:", error);
       throw error;
     }
+  },
+
+  /** Open PR-linked GTIs from HQ awaiting Delivery Order Out (Two-Way flow). */
+  async getPendingDispatchGtis(hqSiteCode = null, search = "") {
+    const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+    const effectiveHQ =
+      hqSiteCode || userDetails?.HQSiteCode || userDetails?.siteCode || "HQ";
+
+    if (!getConfigValue("PR_USE_DELIVERY_ORDER")) {
+      return [];
+    }
+
+    const hdrFilter = {
+      where: {
+        and: [
+          { movCode: "TFRF" },
+          { fstoreNo: effectiveHQ },
+          { docStatus: 0 },
+        ],
+      },
+      order: "docNo DESC",
+    };
+
+    const headers = await apiService.get(
+      `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(hdrFilter))}`
+    );
+
+    const openPrGtis = (Array.isArray(headers) ? headers : []).filter(isPrLinkedGtiHeader);
+    const pending = [];
+
+    for (const hdr of openPrGtis) {
+      const dispatched = await isHqDispatchDone(hdr.docNo, effectiveHQ);
+      if (dispatched) continue;
+      pending.push({
+        ...hdr,
+        prNo: hdr.docRef1 || "",
+      });
+    }
+
+    const term = String(search || "").trim().toLowerCase();
+    if (!term) return pending;
+
+    return pending.filter(
+      (row) =>
+        String(row.docNo || "").toLowerCase().includes(term) ||
+        String(row.docRef1 || "").toLowerCase().includes(term) ||
+        String(row.tstoreNo || "").toLowerCase().includes(term)
+    );
+  },
+
+  /** Map PR numbers to linked GTI dispatch status for HQ approved list. */
+  async getPrGtiDispatchInfoByReqNos(reqNos = [], hqSiteCode = null) {
+    const map = {};
+    const list = Array.isArray(reqNos) ? reqNos.filter(Boolean) : [];
+
+    if (!list.length || !getConfigValue("PR_USE_DELIVERY_ORDER")) {
+      return map;
+    }
+
+    const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+    const effectiveHQ =
+      hqSiteCode || userDetails?.HQSiteCode || userDetails?.siteCode || "HQ";
+
+    const filter = {
+      where: {
+        and: [{ movCode: "TFRF" }, { docRef1: { inq: list } }],
+      },
+    };
+
+    const gtis = await apiService.get(
+      `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(filter))}`
+    );
+    const gtiRows = (Array.isArray(gtis) ? gtis : []).filter(isPrLinkedGtiHeader);
+
+    for (const reqNo of list) {
+      const gti = gtiRows.find((row) => row.docRef1 === reqNo);
+      if (!gti) {
+        map[reqNo] = { status: "none", gtiDocNo: null };
+        continue;
+      }
+
+      if (gti.docStatus === 7 || gti.docStatus === "7") {
+        map[reqNo] = { status: "complete", gtiDocNo: gti.docNo };
+        continue;
+      }
+
+      const dispatched = await isHqDispatchDone(gti.docNo, gti.fstoreNo || effectiveHQ);
+      map[reqNo] = {
+        status: dispatched ? "dispatched" : "pending",
+        gtiDocNo: gti.docNo,
+      };
+    }
+
+    return map;
+  },
+
+  /** Load GTI header and line items by document number. */
+  async getGtiWithDetails(docNo) {
+    if (!docNo) {
+      throw new Error("Transfer document number is required");
+    }
+
+    const hdrFilter = { where: { docNo } };
+    const headers = await apiService.get(
+      `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(hdrFilter))}`
+    );
+    const header = Array.isArray(headers) ? headers[0] : null;
+    if (!header) {
+      throw new Error(`Transfer ${docNo} not found`);
+    }
+
+    const dtlFilter = { where: { docNo } };
+    const details = await apiService.get(
+      `StkMovdocDtls?filter=${encodeURIComponent(JSON.stringify(dtlFilter))}`
+    );
+
+    return {
+      header,
+      details: Array.isArray(details) ? details : [],
+    };
+  },
+
+  /** HQ Delivery Order Out by GTI doc number (no need to open full GTI form). */
+  async executeDeliveryOrderOutByDocNo(docNo) {
+    const { header, details } = await this.getGtiWithDetails(docNo);
+    if (!details.length) {
+      throw new Error("No items to dispatch");
+    }
+    if (!isPrLinkedGtiHeader(header)) {
+      throw new Error("This transfer is not linked to a Purchase Requisition");
+    }
+
+    return executeDeliveryOrderOut({ docNo, header, details });
   },
 
   // Reject PR with reason
@@ -532,12 +717,59 @@ export const prApi = {
     }
   },
 
+  // Sum qty on open PR-linked GTIs where HQ has not yet clicked Delivery Order Out
+  async getOpenGtiCommittedQuantities(hqSiteCode = null) {
+    const userDetails = JSON.parse(localStorage.getItem("userDetails"));
+    const effectiveHQ = hqSiteCode || userDetails?.HQSiteCode || "HQ";
+    const committed = new Map();
+
+    if (!getConfigValue("PR_USE_DELIVERY_ORDER")) {
+      return committed;
+    }
+
+    const hdrFilter = {
+      where: {
+        and: [
+          { movCode: "TFRF" },
+          { fstoreNo: effectiveHQ },
+          { docStatus: 0 },
+        ],
+      },
+    };
+    const headers = await apiService.get(
+      `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(hdrFilter))}`
+    );
+
+    const openPrGtis = (Array.isArray(headers) ? headers : []).filter((h) => {
+      const remk1 = String(h.docRemk1 || "");
+      return remk1.includes("Created from PR:") && !remk1.includes("via DO:");
+    });
+
+    for (const hdr of openPrGtis) {
+      const dispatched = await isHqDispatchDone(hdr.docNo, effectiveHQ);
+      if (dispatched) continue;
+
+      const dtlFilter = { where: { docNo: hdr.docNo } };
+      const lines = await apiService.get(
+        `StkMovdocDtls?filter=${encodeURIComponent(JSON.stringify(dtlFilter))}`
+      );
+      for (const line of Array.isArray(lines) ? lines : []) {
+        const key = `${line.itemcode}|${line.docUom}`;
+        committed.set(key, (committed.get(key) || 0) + Number(line.docQty || 0));
+      }
+    }
+
+    return committed;
+  },
+
   // Validate HQ stock availability for approved quantities
   async validateHQStockForApproval(lineItems, hqSiteCode = null) {
     try {
       const userDetails = JSON.parse(localStorage.getItem("userDetails"));
       const effectiveHQ = hqSiteCode || userDetails?.HQSiteCode || "HQ";
       const validationErrors = [];
+      const committedByItem = await this.getOpenGtiCommittedQuantities(effectiveHQ);
+
       for (const item of lineItems) {
         const approvedQty = getApprovedQty(item);
         if (approvedQty <= 0) continue;
@@ -552,6 +784,10 @@ export const prApi = {
           availByBatch.set(key, (availByBatch.get(key) || 0) + Number(b.qty || 0));
           totalAvailable += Number(b.qty || 0);
         }
+
+        const committedKey = `${item.reqdItemcode}|${uom}`;
+        const committedQty = committedByItem.get(committedKey) || 0;
+        totalAvailable = Math.max(0, totalAvailable - committedQty);
 
         // Use itemRemark1/itemRemark2 for PR, fallback to ordMemo for backward compatibility
         // Parse itemRemark1 format: "fefo-UOM" or "specific-UOM"
@@ -588,6 +824,7 @@ export const prApi = {
               validationErrors.push({
                 itemCode: item.reqdItemcode,
                 itemDesc: item.reqdItemdesc,
+                uom,
                 errorType: 'BATCH_SHORTFALL',
                 batchNo: req.batchNo || '(No Batch)',
                 approvedQty: req.qty,
@@ -603,6 +840,7 @@ export const prApi = {
               validationErrors.push({
                 itemCode: item.reqdItemcode,
                 itemDesc: item.reqdItemdesc,
+                uom,
                 errorType: 'NO_BATCH_SHORTFALL',
                 batchNo: '(No Batch)',
                 approvedQty: noBatchQty,
@@ -636,6 +874,7 @@ export const prApi = {
             validationErrors.push({
               itemCode: item.reqdItemcode,
               itemDesc: item.reqdItemdesc,
+              uom,
               errorType: 'INSUFFICIENT_STOCK_FEFO',
               approvedQty,
               availableQty: totalAvailable,
@@ -652,327 +891,116 @@ export const prApi = {
     }
   },
 
-  // Create goods transfer from approved PR (creates OPEN GTI document at destination)
-  async createGoodsTransferFromPR(prData, lineItems) {
+  async saveTransferDocument(header, details) {
+    const hdr = { ...header, docLines: details.length };
+    await apiService.post("StkMovdocHdrs", hdr);
+    if (details.length > 0) {
+      await apiService.post("StkMovdocDtls", details);
+    }
+    return { header: hdr, details };
+  },
+
+  // GTI at destination — Open for Two-Way, posted for One-Way
+  async createGoodsTransferFromPR(prData, lineItems, options = {}) {
     try {
-      const userDetails = JSON.parse(localStorage.getItem("userDetails"));
-      const hqSiteCode = userDetails?.HQSiteCode || userDetails?.siteCode || "HQ";
       const requestingSiteCode = prData.itemsiteCode;
-      
+      const { openOnly = true } = options;
+
       if (!requestingSiteCode) {
         throw new Error("Requesting site code is required to create GTI");
       }
-      
-      // 1. Get GTI document number (for destination site)
-      const docNo = await this.getNextTransferNumber("GTI", requestingSiteCode);
-      if (!docNo) {
-        throw new Error("Failed to generate GTI document number");
-      }
 
-      const transferLineItems = lineItems.filter((item) => getApprovedQty(item) > 0);
+      const { transferLineItems, totals } = calculateTransferTotals(lineItems);
       if (transferLineItems.length === 0) {
         return {
           success: true,
           docNo: null,
+          header: null,
+          details: [],
           message: "Purchase Requisition approved with no items to transfer",
         };
       }
 
-      // 2. Calculate totals from the APPROVED quantities, exactly as the lines are
-      // built below. Summing the PR's stored reqdAmt made the header carry the
-      // requested amount while its own lines carried the approved amount.
-      const totals = transferLineItems.reduce(
-        (acc, item) => {
-          const approvedQty = getApprovedQty(item);
-          const price = roundMoney(item.reqdItemprice || item.reqdPrice || 0);
-          const discPer = roundMoney(item.reqdDiscper || 0);
-          const discAmt = roundMoney((approvedQty * price * discPer) / 100);
-          return {
-            totalQty: acc.totalQty + approvedQty,
-            totalFoc: acc.totalFoc + Number(item.reqdFocqty || 0),
-            totalDisc: acc.totalDisc + discAmt,
-            totalAmt: acc.totalAmt + roundMoney(approvedQty * price - discAmt),
-          };
-        },
-        { totalQty: 0, totalFoc: 0, totalDisc: 0, totalAmt: 0 }
-      );
-      
-      // Format totals to 2 decimal places
-      totals.totalDisc = roundMoney(totals.totalDisc);
-      totals.totalAmt = roundMoney(totals.totalAmt);
-
-      // 3. Create GTI header (StkMovdocHdrs) - Status 0 (Open), at destination store
-      const gtiHeader = {
-        docNo: docNo,
+      const docNo = await this.getNextTransferNumber("GTI", requestingSiteCode);
+      const details = buildTransferLineDetails(prData, lineItems, docNo, "TFRF", "TFR");
+      const header = buildTransferHeader(prData, {
+        docNo,
         movCode: "TFRF",
         movType: "TFR",
-        storeNo: requestingSiteCode, // Document owner: destination (receiving store)
-        fstoreNo: hqSiteCode, // From store (HQ)
-        tstoreNo: requestingSiteCode, // To store (requesting site)
-        docRef1: prData.reqNo, // Link to PR
+        storeNo: requestingSiteCode,
+        docRef1: prData.reqNo,
         docRef2: prData.reqRef || "",
-        docLines: transferLineItems.length,
-        docDate: moment().format("YYYY-MM-DD"),
-        postDate: "", // Empty for Open documents
-        docStatus: "0", // Open status (not posted)
-        docQty: totals.totalQty,
-        docAmt: totals.totalAmt, // Already formatted to 2 decimal places
-        docAttn: prData.reqAttn || "",
         docRemk1: `Created from PR: ${prData.reqNo}`,
-        staffNo: userDetails?.usercode || userDetails?.username || "SYSTEM",
-        bname: prData.reqBname || "",
-        baddr1: prData.reqBaddr1 || "",
-        baddr2: prData.reqBaddr2 || "",
-        baddr3: prData.reqBaddr3 || "",
-        bpostcode: prData.reqBpostcode || "",
-        daddr1: prData.reqDaddr1 || "",
-        daddr2: prData.reqDaddr2 || "",
-        daddr3: prData.reqDaddr3 || "",
-        dpostcode: prData.reqDpostcode || "",
-        createUser: userDetails?.username || "SYSTEM",
-        createDate: new Date().toISOString(),
-      };
-
-      // 4. Create GTI line items (StkMovdocDtls)
-      const gtiDetails = transferLineItems.map((item, index) => {
-        const approvedQty = getApprovedQty(item);
-        const focQty = parseFloat(item.reqdFocqty || 0);
-        const totalQty = approvedQty + focQty;
-        const price = roundMoney(item.reqdItemprice || item.reqdPrice || 0);
-        const discPer = roundMoney(item.reqdDiscper || 0);
-        
-        // Recalculate discount amount and amount from base values to ensure precision
-        const discAmt = roundMoney((approvedQty * price * discPer) / 100);
-        const amount = roundMoney(approvedQty * price - discAmt);
-        
-        // Parse batch information from PR fields
-        // itemRemark1 format: "fefo-UOM" or "specific-UOM" (e.g., "fefo-PCS", "specific-BOTTLE")
-        const itemRemark1Raw = item.itemRemark1 || item.ordMemo1 || "fefo";
-        let transferType = "fefo";
-        let extractedUOM = null;
-        
-        // Parse the new format: "transferType-UOM" or fallback to old format
-        if (itemRemark1Raw.includes("-")) {
-          const parts = itemRemark1Raw.split("-");
-          transferType = parts[0].toLowerCase(); // Extract "fefo" or "specific"
-          extractedUOM = parts.slice(1).join("-"); // Extract UOM (handles multi-part UOM like "PCS-EXTRA")
-        } else {
-          // Backward compatibility: old format without UOM
-          transferType = itemRemark1Raw.toLowerCase();
-        }
-        
-        // UOM comes from the "fefo-<UOM>" carrier in itemRemark1 (now persisted), else
-        // from the loaded line. Never invent one: a guessed "PCS" silently creates
-        // stock in a UOM nobody asked for, which is exactly what used to happen here.
-        const docUom = extractedUOM || item.docUom || item.uom;
-        if (!docUom) {
-          throw new Error(
-            `Cannot determine the UOM for item ${item.reqdItemcode} on ${prData.reqNo}. ` +
-              `Re-save the PR line with its UOM before approving.`
-          );
-        }
-        
-        const batchBreakdownStr = item.itemRemark2 || item.ordMemo2 || "";
-
-        // Extract "No Batch" quantity from itemRemark2 using NOBATCH pattern (ONLY source)
-        const noBatchMatch = batchBreakdownStr.match(/NOBATCH:(\d+)/i);
-        const noBatchQty = noBatchMatch ? String(noBatchMatch[1]) : "0";
-
-        // Clean batchBreakdownStr - remove NOBATCH entries for ordMemo2 storage
-        // This matches addGto.jsx pattern where ordMemo2 only contains batch breakdown
-        // without NOBATCH entries (which are stored separately in ordMemo3)
-        const cleanBatchBreakdownStr = batchBreakdownStr
-          .split(',')
-          .filter(pair => {
-            const trimmed = pair.trim();
-            return trimmed && !trimmed.toUpperCase().startsWith("NOBATCH:");
-          })
-          .join(',');
-
-        // Prefer ordMemo4 (ISO format) over docExpdate (YYYY-MM-DD format)
-        // ordMemo4 is the source of truth for expiry dates in ISO format (matching GTO)
-        const ordMemo4Source = item.ordMemo4 || "";
-        const docExpdateSource = item.docExpdate || "";
-        
-        // Parse batch breakdown for recQty fields and build ordMemo4
-        let recQtyFields = { recQty1: 0, recQty2: 0, recQty3: 0, recQty4: 0, recQty5: 0 };
-        let ordMemo4Str = ""; // Initialize ordMemo4 string (will store ISO format)
-        
-        // Helper function to convert date to ISO format (handles both ISO and YYYY-MM-DD)
-        const convertDateToISO = (dateStr) => {
-          if (!dateStr || dateStr.trim() === "") return "";
-          
-          try {
-            // If already in ISO format, return as-is
-            if (dateStr.includes("T") || dateStr.includes("Z")) {
-              return dateStr;
-            }
-            
-            // Try to parse with moment and convert to ISO
-            const parsedDate = moment(dateStr);
-            if (parsedDate.isValid()) {
-              return parsedDate.toISOString();
-            }
-            
-            // If moment fails, try to extract date part and convert
-            const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
-            if (dateMatch) {
-              const dateOnly = dateMatch[1];
-              const parsed = moment(dateOnly);
-              if (parsed.isValid()) {
-                return parsed.toISOString();
-              }
-            }
-            
-            // Fallback to original string
-            return dateStr;
-          } catch (e) {
-            // Fallback to original string if conversion fails
-            return dateStr;
-          }
-        };
-
-        if (cleanBatchBreakdownStr && transferType === "specific") {
-          const batchPairs = cleanBatchBreakdownStr.split(",").filter(Boolean);
-          
-          // Use ordMemo4 if available (ISO format), otherwise use docExpdate (YYYY-MM-DD)
-          const expDateSource = ordMemo4Source || docExpdateSource;
-          const expDatePairs = expDateSource ? expDateSource.split(",").filter(Boolean) : [];
-          
-          // Build ordMemo4 in format: expDate:qty,expDate:qty,... (ISO format matching addGto.jsx pattern)
-          const ordMemo4Parts = batchPairs.map((pair, idx) => {
-            const [batchNo, qty] = pair.split(":");
-            const qtyNum = parseFloat(qty) || 0;
-            
-            // Match expiry date by position (assuming same order as batch pairs)
-            let expDate = "";
-            if (expDatePairs[idx]) {
-              // Parse expDate:qty format, extract just the date part
-              const expDatePair = expDatePairs[idx];
-              const lastColonIndex = expDatePair.lastIndexOf(":");
-              if (lastColonIndex > 0) {
-                const rawDate = expDatePair.substring(0, lastColonIndex).trim();
-                // Convert to ISO format (handles both ISO and YYYY-MM-DD input)
-                expDate = convertDateToISO(rawDate);
-              } else {
-                // If no colon, treat entire string as date and convert to ISO
-                expDate = convertDateToISO(expDatePair.trim());
-              }
-            }
-            
-            // Store recQty fields for first 4 batches
-            if (idx < 4) {
-              recQtyFields[`recQty${idx + 1}`] = qtyNum;
-            }
-            
-            // Build ordMemo4 part: expDate:qty (with ISO format date)
-            return `${expDate}:${qtyNum}`;
-          });
-          
-          ordMemo4Str = ordMemo4Parts.join(",");
-          
-          // Store "No Batch" quantity in recQty5
-          recQtyFields.recQty5 = parseFloat(noBatchQty) || 0;
-        } else {
-          // For FEFO or no batch info, use ordMemo4 directly if it exists (ISO format)
-          // Otherwise convert docExpdate to ISO format
-          if (ordMemo4Source) {
-            // Already in ISO format, use directly
-            ordMemo4Str = ordMemo4Source;
-          } else if (docExpdateSource) {
-            // Convert YYYY-MM-DD format to ISO format
-            try {
-              const formattedParts = docExpdateSource.split(",").map(part => {
-                const lastColonIndex = part.lastIndexOf(":");
-                if (lastColonIndex > 0) {
-                  const datePart = part.substring(0, lastColonIndex).trim();
-                  const qtyPart = part.substring(lastColonIndex + 1);
-                  const isoDate = convertDateToISO(datePart);
-                  return `${isoDate}:${qtyPart}`;
-                }
-                // If no colon, try to convert the whole part as a date
-                return convertDateToISO(part.trim());
-              });
-              ordMemo4Str = formattedParts.join(",");
-            } catch (e) {
-              ordMemo4Str = docExpdateSource; // Fallback to original
-            }
-          } else {
-            ordMemo4Str = "";
-          }
-        }
-
-        // docExpdate should be empty string - dates are stored in ordMemo4
-        // This matches the pattern used in GTO, GTI, RTN, and ADJ modules
-        // For specific batches: dates in ordMemo4 format "date:qty,date:qty"
-        // For FEFO: dates will be fetched from ItemBatches API when needed
-        // SQL Server expects docExpdate to be either empty or a single date, not "date:qty,date:qty" format
-
-        // Format all amount fields to exactly 2 decimal places before posting
-        // Use parseFloat(value.toFixed(2)) to ensure exactly 2 decimal places
-        // This prevents floating point precision errors when posting to database
-        const formattedPrice = roundMoney(price);
-        const formattedDiscPer = roundMoney(discPer);
-        const formattedDiscAmt = roundMoney(discAmt);
-        const formattedAmount = roundMoney(amount);
-
-        return {
-          docNo: docNo,
-          movCode: "TFRF",
-          movType: "TFR",
-          docLineno: index + 1,
-          docDate: moment().format("YYYY-MM-DD"),
-          createDate: moment().format("YYYY-MM-DD"),
-          itemcode: item.reqdItemcode,
-          itemdesc: item.reqdItemdesc,
-          docQty: approvedQty,
-          docFocqty: focQty,
-          docTtlqty: totalQty,
-          docPrice: formattedPrice,
-          docPdisc: formattedDiscPer,
-          docDisc: formattedDiscAmt,
-          docAmt: formattedAmount,
-          ...recQtyFields,
-          recTtl: totalQty,
-          postedQty: 0,
-          cancelQty: 0,
-          createUser: userDetails?.username || "SYSTEM",
-          docUom: docUom, // Use UOM from itemRemark1 or fallback to docUom
-          docExpdate: "", // Always empty - matches pattern in GTO, GTI, RTN, ADJ
-          docBatchNo: item.docBatchNo || "",
-          itmBrand: item.brandcode || "",
-          itmRange: "",
-          itmBrandDesc: item.brandname || "",
-          itmRangeDesc: "",
-          DOCUOMDesc: item.DOCUOMDesc || "",
-          itemRemark: item.itemRemark || "",
-          docMdisc: 0,
-          itemprice: formattedPrice,
-          // Store batch transfer information in ordMemo fields
-          ordMemo1: transferType,
-          ordMemo2: cleanBatchBreakdownStr, // Clean batch breakdown WITHOUT NOBATCH entries
-          ordMemo3: noBatchQty, // "No Batch" quantity as string (extracted from itemRemark2)
-          ordMemo4: ordMemo4Str, // Expiry dates in format: expDate:qty,expDate:qty,... (same as addGto.jsx)
-        };
+        docStatus: openOnly ? "0" : "7",
+        postDate: openOnly ? "" : moment().format("YYYY-MM-DD"),
+        totals,
       });
 
-      // 5. Save GTI header and details
-      await apiService.post("StkMovdocHdrs", gtiHeader);
-      if (gtiDetails.length > 0) {
-        await apiService.post("StkMovdocDtls", gtiDetails);
-      }
-
-      console.log(`✅ Created Open GTI document: ${docNo} with ${gtiDetails.length} items at destination ${requestingSiteCode}`);
+      await this.saveTransferDocument(header, details);
+      console.log(`Created GTI ${docNo} from PR ${prData.reqNo}`);
 
       return {
         success: true,
-        docNo: docNo,
-        message: `GTI document ${docNo} created successfully (Open status) at destination`
+        docNo,
+        header,
+        details,
+        message: openOnly
+          ? `Transfer ${docNo} created — awaiting receipt at destination`
+          : `Transfer ${docNo} completed and stock updated`,
       };
     } catch (error) {
       console.error("Error creating goods transfer from PR:", error);
       throw error;
     }
+  },
+
+  async processPrApprovalTransfer(prData, lineItems) {
+    const useDeliveryOrder = getConfigValue("PR_USE_DELIVERY_ORDER");
+
+    if (useDeliveryOrder) {
+      const gtiResult = await this.createGoodsTransferFromPR(prData, lineItems, {
+        openOnly: true,
+      });
+      if (!gtiResult.docNo) {
+        return { ...gtiResult, mode: "two-way" };
+      }
+
+      return {
+        ...gtiResult,
+        mode: "two-way",
+        message:
+          `PR approved: transfer ${gtiResult.docNo} created. ` +
+          `Dispatch from HQ when ready; the store confirms receipt when goods arrive.`,
+      };
+    }
+
+    const gtiResult = await this.createGoodsTransferFromPR(prData, lineItems, {
+      openOnly: true,
+    });
+    if (!gtiResult.docNo) {
+      return { ...gtiResult, mode: "one-way" };
+    }
+
+    await executePrTransferPost({
+      docNo: gtiResult.docNo,
+      header: gtiResult.header,
+      details: gtiResult.details,
+      mode: "full",
+    });
+
+    const postDate = moment().format("YYYY-MM-DD");
+    await apiService.post(
+      `StkMovdocHdrs/update?[where][docNo]=${encodeURIComponent(gtiResult.docNo)}`,
+      { docStatus: "7", postDate }
+    );
+    gtiResult.header.docStatus = "7";
+    gtiResult.header.postDate = postDate;
+
+    return {
+      ...gtiResult,
+      mode: "one-way",
+      message: `PR approved: transfer ${gtiResult.docNo} completed and stock updated`,
+    };
   },
 
   // Get next transfer number
@@ -983,28 +1011,28 @@ export const prApi = {
 
     // Map transfer types to control descriptions
     const controlDescriptionMap = {
-      "GTO": "Transfer To Other Store",
-      "GTI": "Transfer From Other Store",
-      "TFRT": "Transfer To Other Store",
-      "TFRF": "Transfer From Other Store",
+      GTO: "Transfer To Other Store",
+      GTI: "Transfer From Other Store",
+      TFRT: "Transfer To Other Store",
+      TFRF: "Transfer From Other Store",
+      DO: "Delivery Order",
     };
     const controlDescription = controlDescriptionMap[transferType] || transferType;
 
     // ── Claim the number BEFORE it is used ────────────────────────────────
-    // The previous code read the number, then asked the server to bump the
-    // counter and never checked the reply, so a silently-failed bump handed the
-    // same transfer number out twice.
     let claim;
     try {
       claim = await claimControlNumber({ controlDescription, siteCode });
     } catch (err) {
-      // Only a genuinely missing row is handled here. Anything else (including
-      // "could not reserve") must abort.
       if (!/No ControlNos row/.test(err?.message || "")) throw err;
 
-      // No row for this site yet - create it once using the same prefix
-      // convention as every other client (WGTI / WGTO), then claim properly.
-      const isIncoming = transferType === "GTI" || transferType === "TFRF";
+      const prefixMap = {
+        GTI: "WGTI",
+        TFRF: "WGTI",
+        GTO: "WGTO",
+        TFRT: "WGTO",
+        DO: "WDO",
+      };
       console.log(
         `[controlNo] No "${controlDescription}" row for site ${siteCode} - creating it`
       );
@@ -1012,7 +1040,7 @@ export const prApi = {
         {
           controlDescription,
           siteCode,
-          controlPrefix: isIncoming ? "WGTI" : "WGTO",
+          controlPrefix: prefixMap[transferType] || "WDO",
           controlNo: "110001",
           controldate: moment().format("YYYY-MM-DD"),
           macCode: null,

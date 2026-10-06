@@ -142,31 +142,25 @@ export const AuthProvider = ({ children }) => {
 
   const loginSuccess = async (data) => {
     try {
-      // Generate a simple token from user data
-      const generatedToken = btoa(
-        `${data.username}:${data.siteCode}:${Date.now()}`
-      );
+      const token =
+        data.token ||
+        btoa(`${data.username}:${data.siteCode}:${Date.now()}`);
 
       setState((prev) => ({
         ...prev,
         isAuthenticated: true,
         loginDetails: data,
-        token: generatedToken,
+        token,
       }));
 
       const userDetails = {
-        // username: data.username,
-        token: generatedToken,
+        token,
         ...data,
-        // siteCode: data.siteCode,
-        // siteName: data.siteName,
       };
 
-      // Store in localStorage
       localStorage.setItem("userDetails", JSON.stringify(userDetails));
-
-      // Set cookie
-      setCookie("token", generatedToken);
+      setCookie("token", token);
+      apiService.setToken(token);
 
       return true;
     } catch (error) {
