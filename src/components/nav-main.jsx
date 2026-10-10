@@ -67,13 +67,30 @@ export function NavMain({ items }) {
                 </CollapsibleContent>
               </SidebarMenuItem>
             </Collapsible>
+          ) : item.onClick ? (
+            <SidebarMenuItem className="w-full" key={item.title}>
+              <SidebarMenuButton
+                type="button"
+                className="w-full mb-2 hover:bg-gray-300/60 dark:hover:bg-gray-700/60 font-medium"
+                tooltip={item.title}
+                onClick={item.onClick}
+              >
+                {item.icon && (
+                  <div className="min-w-[24px]">
+                    <item.icon className="text-blue-600 h-5 w-5" />
+                  </div>
+                )}{" "}
+                <span className="text-gray-700 dark:text-gray-200">
+                  {item.title}
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           ) : (
             <SidebarMenuItem className="w-full" key={item.title}>
               <SidebarMenuButton
                 className="w-full mb-2 hover:bg-gray-300/60 dark:hover:bg-gray-700/60 font-medium"
                 asChild
                 tooltip={item.title}
-                onClick={item.onClick}
               >
                 <Link to={item.url}>
                   {item.icon && (
@@ -81,7 +98,7 @@ export function NavMain({ items }) {
                       <item.icon className="text-blue-600 h-5 w-5" />
                     </div>
                   )}{" "}
-                  <span className="text-g</span>ray-700 dark:text-gray-200">
+                  <span className="text-gray-700 dark:text-gray-200">
                     {item.title}
                   </span>
                 </Link>

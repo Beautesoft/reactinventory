@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useState } from "react";
 import { deleteCookie, getCookie, setCookie } from "@/utils/utils";
 import { toast } from "sonner";
 import apiService from "@/services/apiService";
-import { Toaster } from "@/components/ui/sonner";
+import apiService1 from "@/services/apiService1";
 // Create the context
 export const AuthContext = createContext(null);
 
@@ -15,70 +15,51 @@ export const AuthContext = createContext(null);
 //   return context;
 // };
 
-export const AuthProvider = ({ children }) => {
-  const [state, setState] = useState({
-    user: null,
-    token: null,
-    isAuthenticated: false,
-    isLoading: true,
-    salon: [],
-    loginDetails: null,
-  });
-  // const navigate = useNavigate();
+function readAuthStateFromStorage() {
+  try {
+    const token = getCookie("token");
+    const userDetails = localStorage.getItem("userDetails");
 
-  // Check authentication status on mount
-  useEffect(() => {
-    const initializeAuth = () => {
-      try {
-        const token = getCookie("token");
-        const userDetails = localStorage.getItem("userDetails");
+    if (token && userDetails) {
+      return {
+        user: null,
+        token,
+        isAuthenticated: true,
+        isLoading: false,
+        salon: [],
+        loginDetails: null,
+      };
+    }
 
-        console.log("🔐 Auth Init - Token:", !!token, "UserDetails:", !!userDetails);
+    if (token && !userDetails) {
+      deleteCookie("token");
+      apiService.setToken(null);
+      apiService1.setToken(null);
+    }
 
-        if (token && userDetails) {
-          // Both token and user details exist - user is authenticated
-          console.log("✅ User authenticated");
-          setState((prev) => ({
-            ...prev,
-            isAuthenticated: true,
-            token,
-            isLoading: false,
-          }));
-        } else if (token && !userDetails) {
-          // Token exists but no user details - clear token and redirect to login
-          console.log("⚠️ Token exists but no user details - clearing token");
-          deleteCookie("token");
-          setState((prev) => ({
-            ...prev,
-            isAuthenticated: false,
-            token: null,
-            isLoading: false,
-          }));
-        } else {
-          // No token - user is not authenticated
-          console.log("❌ No authentication found");
-          setState((prev) => ({
-            ...prev,
-            isAuthenticated: false,
-            token: null,
-            isLoading: false,
-          }));
-        }
-      } catch (error) {
-        console.error("🚨 Auth initialization error:", error);
-        setState((prev) => ({
-          ...prev,
-          isAuthenticated: false,
-          token: null,
-          isLoading: false,
-        }));
-      }
+    return {
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      salon: [],
+      loginDetails: null,
     };
+  } catch (error) {
+    console.error("Auth initialization error:", error);
+    return {
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      salon: [],
+      loginDetails: null,
+    };
+  }
+}
 
-    // Small delay to ensure localStorage is available
-    const timer = setTimeout(initializeAuth, 100);
-    return () => clearTimeout(timer);
-  }, []);
+export const AuthProvider = ({ children }) => {
+  const [state, setState] = useState(readAuthStateFromStorage);
 
   // const login = async (credentials) => {
   //   try {
@@ -171,19 +152,12 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     try {
       deleteCookie("token");
-      // localStorage.removeItem("userId");
       localStorage.removeItem("userDetails");
-      localStorage.removeItem("userAuthorizations"); // Clear user authorizations
-      window.location.href = "/login"; // Redirect to login page
-
-      setState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        salon: null,
-      });
-
-      toast.success("Logged out successfully");
+      localStorage.removeItem("userAuthorizations");
+      apiService.setToken(null);
+      apiService1.setToken(null);
+      // Full navigation only — avoid setState/navigate here (causes login flash + double load)
+      window.location.replace("/login");
     } catch (error) {
       toast.error("Error during logout");
       console.error("Logout error:", error);
