@@ -705,6 +705,47 @@ export const normalizeExpDate = (dateStr) => {
   return null;
 };
 
+/** GRN-style ordMemo4 segment: `YYYY-MM-DD:qty`. Returns null when date cannot be normalized. */
+export function formatOrdMemo4Pair(expDate, qty) {
+  const normalized = normalizeExpDate(expDate);
+  if (!normalized) return null;
+  const q = Number(qty) || 0;
+  return `${normalized}:${q}`;
+}
+
+/** Comma-joined ordMemo4 for batch lines (expDate + quantity fields). */
+export function formatOrdMemo4FromBatches(batches) {
+  if (!Array.isArray(batches) || !batches.length) return "";
+  return batches
+    .map((b) =>
+      formatOrdMemo4Pair(
+        b.expDate ?? b.expdate,
+        b.quantity ?? b.qty ?? b.countedQty
+      )
+    )
+    .filter(Boolean)
+    .join(",");
+}
+
+/** Re-format existing ordMemo4 strings to YYYY-MM-DD:qty (e.g. legacy ISO segments). */
+export function normalizeOrdMemo4Storage(memo4) {
+  const raw = String(memo4 ?? "").trim();
+  if (!raw) return "";
+  return raw
+    .split(",")
+    .map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed) return "";
+      const lastColon = trimmed.lastIndexOf(":");
+      if (lastColon <= 0) return trimmed;
+      const datePart = trimmed.slice(0, lastColon).trim();
+      const qtyPart = trimmed.slice(lastColon + 1);
+      return formatOrdMemo4Pair(datePart, qtyPart) || trimmed;
+    })
+    .filter(Boolean)
+    .join(",");
+}
+
 // Convert normalized expiry date (YYYY-MM-DD) to ISO format for API payloads
 // Returns ISO date string (e.g., "2028-12-17T00:00:00.000Z") or null
 export const normalizeExpDateToISO = (dateStr) => {

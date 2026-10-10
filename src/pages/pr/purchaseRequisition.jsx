@@ -58,7 +58,7 @@ function PurchaseRequisition() {
     like: null,
     skip: 0,
     limit: 10,
-    order: "reqNo DESC",
+    order: "reqDate DESC, reqTime DESC",
   });
   const [supplierOptions, setSupplierOptions] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -324,9 +324,14 @@ function PurchaseRequisition() {
   };
 
   const handleSort = (key, direction) => {
+    const dir = direction === "ascending" ? "ASC" : "DESC";
+    const order =
+      key === "reqDate"
+        ? `reqDate ${dir}, reqTime ${dir}`
+        : `${key} ${dir}, reqDate DESC, reqTime DESC`;
     setPagination((prev) => ({
       ...prev,
-      order: `${key} ${direction === 'ascending' ? 'ASC' : 'DESC'}, reqNo DESC`,
+      order,
       skip: 0, // Reset to first page when sorting
     }));
   };

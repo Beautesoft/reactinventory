@@ -16,6 +16,7 @@ dist-ssr
 e2e/.env
 /test-results/
 /playwright-report/
+/e2e/reports/
 /blob-report/
 /playwright/.cache/
 

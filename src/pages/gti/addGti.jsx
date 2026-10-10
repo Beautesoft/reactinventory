@@ -51,6 +51,10 @@ import {
   executeDeliveryOrderOut,
   closeDeliveryOrder,
 } from "@/services/prTransferPost";
+import {
+  enrichTransferBatchCostsFromSource,
+  persistFefoMemosOnDocumentLines,
+} from "@/services/gtiBatchTransferEngine";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
   buildCountObject,
@@ -62,10 +66,19 @@ import {
   getConfigValue,
   isVoidDocStatus,
   normalizeExpDate,
+  formatOrdMemo4FromBatches,
   filterActiveItemSites,
   isHqUser,
   resolveSiteName,
 } from "@/utils/utils";
+import {
+  applyItemBatchCostFromItemOnQty,
+  applyRunningBalanceFromItemOnQty,
+  buildStktrnItemBatchLabel,
+  resolveDestinationBatchUnitCost,
+  roundBatchUnitCost,
+  weightedInventoryUnitCostFromTransferItem,
+} from "@/utils/itemOnQtyBalance";
 import {
   enrichStockItemsWithDecimalFlag,
   validateQtyForItemOrToast,
@@ -1742,7 +1755,7 @@ function AddGti({ docData }) {
       ordMemoFields.ordMemo1 = "specific";
       ordMemoFields.ordMemo2 = batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(',');
       ordMemoFields.ordMemo3 = noBatchTransferQty?.toString() || "0";
-      ordMemoFields.ordMemo4 = batchDetails.map(b => `${b.expDate}:${b.quantity}`).join(',');
+      ordMemoFields.ordMemo4 = formatOrdMemo4FromBatches(batchDetails);
     }
 
     const newCartItem = {
@@ -1982,7 +1995,8 @@ function AddGti({ docData }) {
           transferType: transferType, // Preserve normalized transferType
           docQty: Number(item.docQty) || 0,
           docAmt: roundMoney(item.docAmt),
-          batchDetails: item.batchDetails || { individualBatches: [] },
+          batchDetails: item.batchDetails || { individualBatches: [], noBatchTransferQty: 0 },
+          sourceNoBatchUnitCost: item.sourceNoBatchUnitCost,
           fefoBatches: item.fefoBatches || [],
           docLinenos: [item.docLineno], // Track all line numbers for audit
         });
@@ -1996,8 +2010,17 @@ function AddGti({ docData }) {
         
         // Merge batch details if present
         if (item.batchDetails?.individualBatches?.length) {
-          if (!existing.batchDetails) existing.batchDetails = { individualBatches: [] };
+          if (!existing.batchDetails) existing.batchDetails = { individualBatches: [], noBatchTransferQty: 0 };
           existing.batchDetails.individualBatches.push(...item.batchDetails.individualBatches);
+        }
+        if (Number(item.batchDetails?.noBatchTransferQty) > 0) {
+          if (!existing.batchDetails) existing.batchDetails = { individualBatches: [], noBatchTransferQty: 0 };
+          existing.batchDetails.noBatchTransferQty =
+            (Number(existing.batchDetails.noBatchTransferQty) || 0) +
+            Number(item.batchDetails.noBatchTransferQty);
+        }
+        if (item.sourceNoBatchUnitCost != null && existing.sourceNoBatchUnitCost == null) {
+          existing.sourceNoBatchUnitCost = item.sourceNoBatchUnitCost;
         }
         
         // Merge FEFO batches if present
@@ -2019,18 +2042,18 @@ function AddGti({ docData }) {
               batchNo: batch.batchNo,
               quantity: Number(batch.quantity) || 0,
               expDate: batch.expDate,
-              batchCost: batch.batchCost || item.itemprice,
+              batchCost: roundBatchUnitCost(batch.batchCost ?? 0),
             });
           });
         }
         // Handle simple docBatchNo (only if no structured batch info exists)
         else if (item.docBatchNo && !item.batchDetails?.individualBatches?.length) {
-          if (!g.batchDetails) g.batchDetails = { individualBatches: [] };
+          if (!g.batchDetails) g.batchDetails = { individualBatches: [], noBatchTransferQty: 0 };
           g.batchDetails.individualBatches.push({
             batchNo: item.docBatchNo,
             quantity: Number(item.docQty) || 0,
             expDate: item.docExpdate,
-            batchCost: item.itemprice,
+            batchCost: roundBatchUnitCost(item.batchCost ?? 0),
           });
         }
       }
@@ -2129,24 +2152,12 @@ function AddGti({ docData }) {
       lineNo: item.docLineno,
       itemUom: item.docUom,
       // Only set itemBatch if batch functionality is enabled
-      itemBatch: getConfigValue('BATCH_NO') === "Yes" ? 
-        (() => {
-          // First check for grouped batch details (from groupCartItemsByItem)
-          // This contains both specific batches and FEFO batches after grouping
-          if (item?.batchDetails?.individualBatches?.length > 0) {
-            return item.batchDetails.individualBatches.map(batch => batch.batchNo || "No Batch").join(',');
-          }
-          // Fallback: Check based on transfer type
-          if (item?.transferType === "specific" && item?.batchDetails?.individualBatches?.length > 0) {
-            return item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',');
-          }
-          if (item?.transferType === "fefo" && item?.fefoBatches?.length > 0) {
-            return item.fefoBatches.map(batch => batch.batchNo || "No Batch").join(',');
-          }
-          return item?.docBatchNo || null;
-        })() : null,
+      itemBatch:
+        getConfigValue("BATCH_NO") === "Yes"
+          ? buildStktrnItemBatchLabel(item)
+          : null,
       movType: "TFR",
-      itemBatchCost: item.itemprice,
+      itemBatchCost: weightedInventoryUnitCostFromTransferItem(item),
       stockIn: null,
       transPackageLineNo: null,
       // Only set docExpdate if batch functionality is enabled and we have a valid date
@@ -2620,11 +2631,22 @@ function AddGti({ docData }) {
         
         // Pre-calculate FEFO batches for all items
         const processedDetails = await Promise.all(
-          details.map(async (item) => await calculateFefoBatches(item))
+          details.map(async (item) => {
+            const withFefo = await calculateFefoBatches(item);
+            return enrichTransferBatchCostsFromSource(
+              withFefo,
+              stockHdrs.fstoreNo
+            );
+          })
         );
         
         // Group cart items by itemcode+uom to combine multiple batches (AFTER FEFO calculation)
-        const groupedDetails = groupCartItemsByItem(processedDetails);
+        let groupedDetails = groupCartItemsByItem(processedDetails);
+        groupedDetails = await Promise.all(
+          groupedDetails.map((g) =>
+            enrichTransferBatchCostsFromSource(g, stockHdrs.fstoreNo)
+          )
+        );
         console.log("Grouped details:", groupedDetails);
 
         // Create STKTRN records for destination store - one per unique item (not per batch)
@@ -2691,9 +2713,8 @@ function AddGti({ docData }) {
             );
             if (resp.length) {
               const on = resp[0];
-              d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
-              d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
-              d.itemBatchCost = on.batchCost.toString();
+              applyRunningBalanceFromItemOnQty(d, on);
+              applyItemBatchCostFromItemOnQty(d, on);
             } else {
               // Log error if GET fails
               const errorLog = {
@@ -2771,6 +2792,7 @@ function AddGti({ docData }) {
                         trnQty: batchDetail.quantity,
                         trnCost: (Number(stktrn.trnCost) / Number(stktrn.trnQty)) * batchDetail.quantity,
                         itemBatchCost: stktrn.itemBatchCost,
+                        transferBatchUnitCost: roundBatchUnitCost(batchDetail.batchCost ?? 0),
                         docExpdate: batchDetail.expDate
                       };
                       
@@ -2792,6 +2814,9 @@ function AddGti({ docData }) {
                         trnQty: cartItem.batchDetails.noBatchTransferQty,
                         trnCost: (Number(stktrn.trnCost) / Number(stktrn.trnQty)) * cartItem.batchDetails.noBatchTransferQty,
                         itemBatchCost: stktrn.itemBatchCost,
+                        transferBatchUnitCost: roundBatchUnitCost(
+                          cartItem.sourceNoBatchUnitCost ?? 0
+                        ),
                         docExpdate: null
                       };
                       
@@ -2914,9 +2939,8 @@ function AddGti({ docData }) {
           );
           if (resp.length) {
             const on = resp[0];
-            d.trnBalqty = (Number(d.trnBalqty) + on.trnBalqty).toString();
-            d.trnBalcst = (Number(d.trnBalcst) + on.trnBalcst).toString();
-            d.itemBatchCost = on.batchCost.toString();
+            applyRunningBalanceFromItemOnQty(d, on);
+            applyItemBatchCostFromItemOnQty(d, on);
           } else {
             // Log error if GET fails
             const errorLog = {
@@ -2995,6 +3019,7 @@ function AddGti({ docData }) {
                         trnQty: batchDetail.quantity,
                         trnCost: (Number(stktrn.trnCost) / Number(stktrn.trnQty)) * batchDetail.quantity,
                         itemBatchCost: stktrn.itemBatchCost,
+                        transferBatchUnitCost: roundBatchUnitCost(batchDetail.batchCost ?? 0),
                         docExpdate: batchDetail.expDate
                       };
                       
@@ -3016,6 +3041,9 @@ function AddGti({ docData }) {
                         trnQty: cartItem.batchDetails.noBatchTransferQty,
                         trnCost: (Number(stktrn.trnCost) / Number(stktrn.trnQty)) * cartItem.batchDetails.noBatchTransferQty,
                         itemBatchCost: stktrn.itemBatchCost,
+                        transferBatchUnitCost: roundBatchUnitCost(
+                          cartItem.sourceNoBatchUnitCost ?? 0
+                        ),
                         docExpdate: null
                       };
                       
@@ -3091,6 +3119,16 @@ function AddGti({ docData }) {
         await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
           docStatus: "7",
         });
+
+        if (getConfigValue("BATCH_NO") === "Yes" && processedDetails?.length) {
+          await persistFefoMemosOnDocumentLines({
+            docNo,
+            details,
+            processedLines: processedDetails,
+            mode: skipHqPost ? "destination-only" : "full",
+            stockMovementApplied: true,
+          });
+        }
 
         if (skipHqPost && prDispatchInfo.legacyDoDocNo) {
           await closeDeliveryOrder(prDispatchInfo.legacyDoDocNo);
@@ -3486,7 +3524,8 @@ function AddGti({ docData }) {
             siteCode: stockHdrs.tstoreNo,
             uom: stktrnItem.itemUom,
             qty: destQty,
-            batchCost: Number(stktrnItem.itemBatchCost) || 0,
+            // Old: batchCost: Number(stktrnItem.itemBatchCost) || 0
+            batchCost: resolveDestinationBatchUnitCost(stktrnItem, fb),
             batchNo: destBatchNo,
             expDate: normalizedExpDate, // Use normalized expiry date
           };
@@ -3600,7 +3639,8 @@ function AddGti({ docData }) {
           siteCode: stockHdrs.tstoreNo,
           uom: stktrnItem.itemUom,
           qty: qty,
-          batchCost: Number(stktrnItem.itemBatchCost) || 0,
+          // Old: batchCost: Number(stktrnItem.itemBatchCost) || 0
+          batchCost: resolveDestinationBatchUnitCost(stktrnItem),
           batchNo: stktrnItem.itemBatch,
           expDate: normalizedExpDate, // Use normalized expiry date
         };
@@ -3895,6 +3935,7 @@ function AddGti({ docData }) {
         trnQty: batchDetail.quantity,   // Use individual quantity
         trnCost: (Number(stktrnItem.trnCost) / Number(stktrnItem.trnQty)) * batchDetail.quantity, // Proportional cost
         itemBatchCost: stktrnItem.itemBatchCost, // Keep original batch cost per unit
+        transferBatchUnitCost: roundBatchUnitCost(batchDetail.batchCost ?? 0),
         docExpdate: batchDetail.expDate // Use individual expiry date
       };
 
@@ -4019,7 +4060,8 @@ function AddGti({ docData }) {
           siteCode: stktrnItem.storeNo,
           uom: stktrnItem.itemUom,
           qty: qty, // Use validated quantity
-          batchCost: Number(stktrnItem.itemBatchCost) || 0,
+          // Old: batchCost: Number(stktrnItem.itemBatchCost) || 0
+          batchCost: resolveDestinationBatchUnitCost(stktrnItem),
           batchNo: stktrnItem.itemBatch,
           expDate: normalizedExpDate, // Use normalized expiry date
         };
@@ -4284,7 +4326,8 @@ function AddGti({ docData }) {
         siteCode: stktrnItem.storeNo,
         uom: stktrnItem.itemUom,
         qty: cartItem.noBatchTransferQty,
-        batchCost: Number(stktrnItem.itemBatchCost), // Use same cost as main transfer
+        // Old: batchCost: Number(stktrnItem.itemBatchCost)
+        batchCost: resolveDestinationBatchUnitCost(stktrnItem),
         batchNo: "", // Empty string for "No Batch"
         expDate: null, // No expiry for "No Batch"
       };

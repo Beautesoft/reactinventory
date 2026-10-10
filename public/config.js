@@ -30,11 +30,13 @@ window.APP_CONFIG = {
 
 
 
-    // API_BASE_URL: "https://zenthtrain.beautecloud.com/lb/api",
+    API_BASE_URL: "https://zenthtrain.beautecloud.com/lb/api",
     // API_BASE_URL: "https://dragonhealth.beautecloud.com/lb/api",
     // API_BASE_URL: "https://inyeon.beautecloud.com/lb/api",
     // API_BASE_URL: "https://syy.beautecloud.com/lb/api",
-    API_BASE_URL: "https://trainfrontend.beautecloud.com/lb/api",
+    // API_BASE_URL: "https://trainfrontend.beautecloud.com/lb/api",
+    // API_BASE_URL: "https://tnctrain.beautecloud.com/lb/api",
+
 
     // API_BASE_URL: "https://hairdreams.beautecloud.com/lb/api",
     // API_BASE_URL: "https://inyeontrain.beautecloud.com/lb/api",
@@ -47,10 +49,11 @@ window.APP_CONFIG = {
     // API_BE_BASE_URL: "https://dragonhealth.beautecloud.com/be/api",
     //  API_BE_BASE_URL: "https://inyeon.beautecloud.com/be/api",
     //  API_BE_BASE_URL: "https://syy.beautecloud.com/be/api",
-     API_BE_BASE_URL: "https://trainfrontend.beautecloud.com/be",
+    //  API_BE_BASE_URL: "https://trainfrontend.beautecloud.com/be",
+    //  API_BE_BASE_URL: "https://tnctrain.beautecloud.com/be",
 
     // API_BE_BASE_URL: "https://hairdreams.beautecloud.com/be/api",
-    // API_BE_BASE_URL: "https://zenthtrain.beautecloud.com/be/api",
+    API_BE_BASE_URL: "https://zenthtrain.beautecloud.com/be",
 
 
 

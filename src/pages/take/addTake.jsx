@@ -60,6 +60,8 @@ import {
   getConfigValue,
   isVoidDocStatus,
   resolveSiteName,
+  formatOrdMemo4FromBatches,
+  formatOrdMemo4Pair,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -1284,34 +1286,12 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           // Store expiry dates: "expDate:qty,expDate:qty" (if expiry tracking enabled)
           // Normalize dates to YYYY-MM-DD format to avoid truncation errors
           if (getConfigValue("EXPIRY_DATE") === "Yes") {
-            ordMemoFields.ordMemo4 = batchesWithBatchNo
-              .map((batch) => {
-                // Normalize expiry date to YYYY-MM-DD format
-                let normalizedExpDate = batch.expDate || "";
-                if (normalizedExpDate) {
-                  // Handle ISO date format (e.g., "2026-10-15T00:00:00.000Z")
-                  if (normalizedExpDate.includes("T") || normalizedExpDate.includes("Z")) {
-                    normalizedExpDate = new Date(normalizedExpDate).toISOString().split('T')[0];
-                  } else if (normalizedExpDate.includes("/")) {
-                    // Handle DD/MM/YYYY format
-                    const parts = normalizedExpDate.split(" ")[0].split("/");
-                    if (parts.length === 3) {
-                      const day = parts[0].padStart(2, "0");
-                      const month = parts[1].padStart(2, "0");
-                      const year = parts[2];
-                      normalizedExpDate = `${year}-${month}-${day}`;
-                    }
-                  } else if (!normalizedExpDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                    // If not already in YYYY-MM-DD format, try to parse it
-                    const date = new Date(normalizedExpDate);
-                    if (!isNaN(date.getTime())) {
-                      normalizedExpDate = date.toISOString().split('T')[0];
-                    }
-                  }
-                }
-                return `${normalizedExpDate}:${batch.countedQty || 0}`;
-              })
-              .join(",");
+            ordMemoFields.ordMemo4 = formatOrdMemo4FromBatches(
+              batchesWithBatchNo.map((batch) => ({
+                expDate: batch.expDate,
+                quantity: batch.countedQty || 0,
+              }))
+            );
           }
 
           // Set primary batch number (first batch or combined)
@@ -1334,20 +1314,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         ordMemoFields.ordMemo1 = "specific";
         ordMemoFields.ordMemo2 = `${docBatchNo}:${item.countedQty || 0}`;
         if (getConfigValue("EXPIRY_DATE") === "Yes" && docExpdate) {
-          // Normalize expiry date to YYYY-MM-DD format to avoid truncation errors
-          let normalizedExpDate = docExpdate;
-          if (normalizedExpDate.includes("T") || normalizedExpDate.includes("Z")) {
-            normalizedExpDate = new Date(normalizedExpDate).toISOString().split('T')[0];
-          } else if (normalizedExpDate.includes("/")) {
-            const parts = normalizedExpDate.split(" ")[0].split("/");
-            if (parts.length === 3) {
-              const day = parts[0].padStart(2, "0");
-              const month = parts[1].padStart(2, "0");
-              const year = parts[2];
-              normalizedExpDate = `${year}-${month}-${day}`;
-            }
-          }
-          ordMemoFields.ordMemo4 = `${normalizedExpDate}:${item.countedQty || 0}`;
+          ordMemoFields.ordMemo4 =
+            formatOrdMemo4Pair(docExpdate, item.countedQty || 0) || "";
         }
       }
 
@@ -3084,12 +3052,11 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           ("0" + today.getSeconds()).slice(-2);
         
         const stktrnsRecords = Array.from(groupedItems.values()).map((group) => {
-          // Build comma-separated batch list for itemBatch field (summary)
-          const batchNumbers = group.batches.map((batch) => {
-            return batch.batchNo === "" ? "Unbatched" : batch.batchNo;
-          });
+          const batchNumbers = group.batches.map((batch) =>
+            batch.batchNo === "" ? "No Batch" : batch.batchNo
+          );
           const itemBatchSummary = batchNumbers.join(",");
-          
+
           // Calculate balance quantities based on current stock
           const totalVariance = group.totalVariance || 0;
           const totalAmt = group.itemPrice * Math.abs(totalVariance);

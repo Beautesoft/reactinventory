@@ -1,38 +1,15 @@
 import moment from "moment-timezone";
 import { roundMoney } from "@/utils/uomDecimalQty";
+import {
+  formatOrdMemo4Pair,
+  normalizeOrdMemo4Storage,
+} from "@/utils/utils";
 
 const getApprovedQty = (item) => {
   if (item.reqAppqty != null && item.reqAppqty !== "") {
     return parseFloat(item.reqAppqty) || 0;
   }
   return parseFloat(item.reqdQty) || 0;
-};
-
-const convertDateToISO = (dateStr) => {
-  if (!dateStr || dateStr.trim() === "") return "";
-
-  try {
-    if (dateStr.includes("T") || dateStr.includes("Z")) {
-      return dateStr;
-    }
-
-    const parsedDate = moment(dateStr);
-    if (parsedDate.isValid()) {
-      return parsedDate.toISOString();
-    }
-
-    const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (dateMatch) {
-      const parsed = moment(dateMatch[1]);
-      if (parsed.isValid()) {
-        return parsed.toISOString();
-      }
-    }
-
-    return dateStr;
-  } catch {
-    return dateStr;
-  }
 };
 
 export const calculateTransferTotals = (lineItems) => {
@@ -119,14 +96,14 @@ export const buildTransferLineDetails = (prData, lineItems, docNo, movCode, movT
         const [, qty] = pair.split(":");
         const qtyNum = parseFloat(qty) || 0;
 
-        let expDate = "";
+        let datePart = "";
         if (expDatePairs[idx]) {
           const expDatePair = expDatePairs[idx];
           const lastColonIndex = expDatePair.lastIndexOf(":");
           if (lastColonIndex > 0) {
-            expDate = convertDateToISO(expDatePair.substring(0, lastColonIndex).trim());
+            datePart = expDatePair.substring(0, lastColonIndex).trim();
           } else {
-            expDate = convertDateToISO(expDatePair.trim());
+            datePart = expDatePair.trim();
           }
         }
 
@@ -134,28 +111,15 @@ export const buildTransferLineDetails = (prData, lineItems, docNo, movCode, movT
           recQtyFields[`recQty${idx + 1}`] = qtyNum;
         }
 
-        return `${expDate}:${qtyNum}`;
+        return formatOrdMemo4Pair(datePart, qtyNum) || "";
       });
 
-      ordMemo4Str = ordMemo4Parts.join(",");
+      ordMemo4Str = ordMemo4Parts.filter(Boolean).join(",");
       recQtyFields.recQty5 = parseFloat(noBatchQty) || 0;
     } else if (ordMemo4Source) {
-      ordMemo4Str = ordMemo4Source;
+      ordMemo4Str = normalizeOrdMemo4Storage(ordMemo4Source);
     } else if (docExpdateSource) {
-      try {
-        const formattedParts = docExpdateSource.split(",").map((part) => {
-          const lastColonIndex = part.lastIndexOf(":");
-          if (lastColonIndex > 0) {
-            const datePart = part.substring(0, lastColonIndex).trim();
-            const qtyPart = part.substring(lastColonIndex + 1);
-            return `${convertDateToISO(datePart)}:${qtyPart}`;
-          }
-          return convertDateToISO(part.trim());
-        });
-        ordMemo4Str = formattedParts.join(",");
-      } catch {
-        ordMemo4Str = docExpdateSource;
-      }
+      ordMemo4Str = normalizeOrdMemo4Storage(docExpdateSource);
     }
 
     const formattedPrice = roundMoney(price);

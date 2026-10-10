@@ -9,6 +9,7 @@ import {
   searchAndAddItem,
   ensureNewBatchOnCart,
   ensureExistingBatchOnCart,
+  prepareOutboundCartBatch,
   resolveItemCode,
   getItemStockSnapshot,
   readStockBalanceQty,
@@ -108,7 +109,7 @@ test.describe("UAT — post stock documents", () => {
       await page.getByPlaceholder("Enter Ref 1").fill(ref);
       await page.getByPlaceholder("Enter remark").fill("E2E_TEST");
       await searchAndAddItem(page, { ...cfg, qty: "1" });
-      await ensureExistingBatchOnCart(page);
+      await prepareOutboundCartBatch(page, cfg.batchNo);
       await clickSaveOrPost(page, "post", {
         listPath: "/stock-usage-memo",
         successRe: /Posted successfully|Stock Usage Posted successfully|Created successfully/i,
@@ -133,7 +134,7 @@ test.describe("UAT — post stock documents", () => {
       if (await term.count()) await term.fill(cfg.term);
       await page.getByPlaceholder("Enter remarks").fill("E2E_TEST");
       await searchAndAddItem(page, { ...cfg, qty: "1" });
-      await ensureExistingBatchOnCart(page);
+      await prepareOutboundCartBatch(page, cfg.batchNo);
       await clickSaveOrPost(page, "post", {
         listPath: "/goods-return-note",
         successRe: /Posted successfully|Created successfully/i,
@@ -155,7 +156,7 @@ test.describe("UAT — post stock documents", () => {
       await page.waitForTimeout(1000);
       await assertOutboundStock(page, cfg.itemCode, 1, testInfo);
       await searchAndAddItem(page, { ...cfg, qty: "1" });
-      await ensureExistingBatchOnCart(page);
+      await prepareOutboundCartBatch(page, cfg.batchNo);
       await clickSaveOrPost(page, "post", {
         listPath: "/goods-transfer-out",
         successRe: /Posted successfully|Created successfully/i,

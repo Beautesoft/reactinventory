@@ -1,6 +1,12 @@
 import moment from "moment-timezone";
 import apiService from "./apiService";
 import { getConfigValue } from "@/utils/utils";
+import { executeBatchPrTransferPost } from "./gtiBatchTransferEngine";
+import {
+  applyItemBatchCostFromItemOnQty,
+  applyRunningBalanceFromItemOnQty,
+  roundBatchUnitCost,
+} from "@/utils/itemOnQtyBalance";
 
 const trimItemCode = (itemcode) => String(itemcode || "").replace(/0000$/, "");
 
@@ -55,7 +61,7 @@ const createStktrnRecord = (item, docNo, storeNo, fstoreNo, tstoreNo, multiplier
     itemUom: item.docUom,
     itemBatch: null,
     movType: "TFR",
-    itemBatchCost: item.itemprice,
+    itemBatchCost: roundBatchUnitCost(item.itemprice),
     stockIn: null,
     transPackageLineNo: null,
     docExpdate: null,
@@ -75,9 +81,8 @@ const enrichStktrnsWithBalances = async (stktrns) => {
     );
     if (resp.length) {
       const on = resp[0];
-      d.trnBalqty = (Number(d.trnBalqty) + Number(on.trnBalqty)).toString();
-      d.trnBalcst = (Number(d.trnBalcst) + Number(on.trnBalcst)).toString();
-      d.itemBatchCost = on.batchCost?.toString?.() ?? String(on.batchCost ?? 0);
+      applyRunningBalanceFromItemOnQty(d, on);
+      applyItemBatchCostFromItemOnQty(d, on);
     }
   }
 };
@@ -246,14 +251,12 @@ export async function closeDeliveryOrder(doDocNo) {
  * @param {'hq-only'|'destination-only'|'full'} mode
  */
 export async function executePrTransferPost({ docNo, header, details, mode }) {
-  if (getConfigValue("BATCH_NO") === "Yes") {
-    throw new Error(
-      "Automatic PR transfer posting is not supported when BATCH_NO is enabled. " +
-        "Post the document manually from the GTI screen."
-    );
+  if (!details?.length) {
+    return;
   }
 
-  if (!details?.length) {
+  if (getConfigValue("BATCH_NO") === "Yes") {
+    await executeBatchPrTransferPost({ docNo, header, details, mode });
     return;
   }
 

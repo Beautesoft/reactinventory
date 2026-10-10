@@ -18,8 +18,13 @@ export function getWorkflowEnv() {
   if (!itemCode) {
     throw new Error("Set E2E_ITEM_CODE in e2e/.env");
   }
+  const itemCode2 = String(process.env.E2E_ITEM_CODE_2 || "")
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "");
+
   return {
     itemCode,
+    itemCode2,
     supplier: String(process.env.E2E_SUPPLIER || "").trim().replace(/^['"]+|['"]+$/g, ""),
     qty: String(process.env.E2E_ITEM_QTY || "1").trim(),
     price: String(process.env.E2E_ITEM_PRICE || "1").trim(),
@@ -34,10 +39,40 @@ export async function selectComboboxByLabel(page, sectionLabel, optionText) {
   const section = page.locator("div.space-y-2").filter({ hasText: sectionLabel }).first();
   await section.getByRole("combobox").click();
   if (optionText) {
-    await page.getByRole("option").filter({ hasText: optionText }).first().click();
+    await pickComboboxOption(page, optionText);
   } else {
     await page.getByRole("option").first().click();
   }
+}
+
+/** Pick a dropdown option by exact label, then fuzzy / site hints (ZE01, ZEHQ). */
+export async function pickComboboxOption(page, optionText) {
+  const want = String(optionText || "")
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "");
+  const options = page.getByRole("option");
+  await options.first().waitFor({ state: "visible", timeout: 20_000 });
+  const texts = await options.allTextContents();
+  const norm = want.toLowerCase();
+  let idx = texts.findIndex((t) => t.trim().toLowerCase() === norm);
+  if (idx < 0) {
+    idx = texts.findIndex((t) => {
+      const label = t.trim().toLowerCase();
+      return label.includes(norm) || norm.includes(label);
+    });
+  }
+  if (idx < 0 && /kota damansara/i.test(want)) {
+    idx = texts.findIndex((t) => /kota damansara/i.test(t));
+  }
+  if (idx < 0 && /\bhq\b/i.test(want)) {
+    idx = texts.findIndex((t) => /\bhq\b/i.test(t) && !/kota damansara/i.test(t));
+  }
+  if (idx < 0) {
+    throw new Error(
+      `Combobox option "${want}" not found. Options: ${texts.map((t) => t.trim()).join(" | ")}`
+    );
+  }
+  await options.nth(idx).click();
 }
 
 export async function waitForStockRows(page) {
@@ -143,6 +178,32 @@ export function formatStockNote({ phase, outlet, snapshot, extra = "" }) {
   return extra ? `${base}, ${extra}` : base;
 }
 
+/**
+ * Outbound / transfer: add line without opening batch picker → FEFO when batch is enabled.
+ */
+export async function searchAndAddItemFefo(page, { itemCode, qty, price }) {
+  await searchAndAddItem(page, { itemCode, qty, price });
+  await page
+    .getByText(/FEFO|First Expired/i)
+    .first()
+    .waitFor({ state: "visible", timeout: 8_000 })
+    .catch(() => {});
+}
+
+/** Pick batch mode for outbound docs in post-all (default: specific). */
+export async function prepareOutboundCartBatch(page, batchNo) {
+  if (outboundUsesFefo()) {
+    return;
+  }
+  await ensureExistingBatchOnCart(page);
+}
+
+function outboundUsesFefo() {
+  return String(process.env.E2E_OUTBOUND_BATCH_MODE || "specific")
+    .trim()
+    .toLowerCase() === "fefo";
+}
+
 export async function searchAndAddItem(page, { itemCode, qty, price }) {
   const searchBox = page.getByPlaceholder("Search items...");
   await searchBox.fill("");
@@ -165,9 +226,114 @@ export async function searchAndAddItem(page, { itemCode, qty, price }) {
     }
   }
 
-  await itemRow.locator("button").last().click();
+  // Action column: first button = add to cart (+); last = manual batch picker (info).
+  const actionCell = itemRow.locator("td").last();
+  await actionCell.locator("button").first().click();
   await page.getByText(/Item added to cart|added to cart/i).waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
-  await page.getByText("Selected Items").waitFor({ state: "visible", timeout: 10_000 });
+  await page
+    .getByText(/Selected Items|Items to Dispatch/i)
+    .waitFor({ state: "visible", timeout: 15_000 });
+}
+
+/**
+ * Manual batch: enter qty, pick one real batch in the info dialog, then add (+).
+ * Line is stored as specific (not FEFO).
+ */
+export async function searchAndAddItemSpecific(page, { itemCode, qty, price }) {
+  const searchBox = page.getByPlaceholder("Search items...");
+  await searchBox.fill("");
+  await searchBox.fill(itemCode);
+  await page.waitForTimeout(1600);
+
+  const itemsTable = page.locator("table").first();
+  const itemRow = itemsTable.locator("tbody tr").filter({ hasText: itemCode }).first();
+  await itemRow.waitFor({ state: "visible", timeout: 20_000 });
+
+  const qtyInput = itemRow.locator("input").first();
+  await qtyInput.fill("");
+  await qtyInput.fill(String(qty));
+
+  const inputs = itemRow.locator("input");
+  if ((await inputs.count()) >= 2 && price) {
+    const priceInput = inputs.nth(1);
+    if ((await priceInput.getAttribute("type")) !== "date") {
+      await priceInput.fill(String(price));
+    }
+  }
+
+  const actionCell = itemRow.locator("td").last();
+  const buttons = actionCell.locator("button");
+  if ((await buttons.count()) < 2) {
+    throw new Error(`No manual batch button for ${itemCode} (manualBatchSelection off?)`);
+  }
+  await buttons.last().click();
+
+  const dialog = page.getByRole("dialog").filter({
+    hasText: /Select Specific Batches|Edit Batch Selection/i,
+  });
+  await dialog.waitFor({ state: "visible", timeout: 30_000 });
+  await dialog.getByText(/Loading batches/i).waitFor({ state: "hidden", timeout: 20_000 }).catch(() => {});
+  await confirmFirstRealBatch(page, dialog, qty);
+
+  await buttons.first().click();
+  await page.getByText(/Item added to cart|added to cart/i).waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+  await page
+    .getByText(/Selected Items|Items to Dispatch/i)
+    .waitFor({ state: "visible", timeout: 15_000 });
+}
+
+/** Check the first real batch row (skip "No Batch") and confirm the dialog. */
+export async function confirmFirstRealBatch(page, dialog, selectQty = "1") {
+  const bodyRows = dialog.locator("table tbody tr");
+  await bodyRows.first().waitFor({ state: "visible", timeout: 20_000 });
+  const count = await bodyRows.count();
+  let picked = false;
+  for (let i = 0; i < count; i++) {
+    const label = ((await bodyRows.nth(i).innerText()) || "").replace(/\s+/g, " ");
+    if (/No Batch/i.test(label)) continue;
+    const cb = bodyRows.nth(i).locator('input[type="checkbox"]');
+    if (!(await cb.count())) continue;
+    if (await cb.isDisabled().catch(() => true)) continue;
+    await cb.click();
+    const qtyBox = bodyRows.nth(i).locator('input:not([type="checkbox"])');
+    if (await qtyBox.count()) {
+      await qtyBox.first().waitFor({ state: "visible", timeout: 5_000 });
+      const want = String(selectQty);
+      const current = await qtyBox.first().inputValue().catch(() => "0");
+      if (String(current) !== want) {
+        await qtyBox.first().click();
+        await qtyBox.first().fill(want);
+        await qtyBox.first().blur();
+      }
+    }
+    picked = true;
+    break;
+  }
+  if (!picked) {
+    throw new Error("No selectable batch row in the batch dialog");
+  }
+  const confirm = dialog.getByRole("button", { name: /Confirm Selection/i });
+  const enabledAt = Date.now();
+  while (Date.now() - enabledAt < 8_000) {
+    if (await confirm.isEnabled().catch(() => false)) break;
+    await page.waitForTimeout(200);
+  }
+  if (!(await confirm.isEnabled().catch(() => false))) {
+    throw new Error("Confirm Selection stayed disabled — batch qty did not match");
+  }
+  await confirm.click();
+  const mismatch = page.getByText(/must match the required quantity/i);
+  const closed = await Promise.race([
+    dialog.waitFor({ state: "hidden", timeout: 20_000 }).then(() => "closed"),
+    mismatch.waitFor({ state: "visible", timeout: 20_000 }).then(() => "mismatch"),
+  ]).catch(() => "timeout");
+  if (closed === "mismatch") {
+    throw new Error((await mismatch.innerText()).trim());
+  }
+  if (closed !== "closed") {
+    const body = ((await dialog.innerText().catch(() => "")) || "").slice(0, 400);
+    throw new Error(`Batch dialog did not close. ${body}`);
+  }
 }
 
 /** New batch (inbound / receive / +ADJ) */

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, useRef } from "react";
+import React, { useState, useEffect, memo, useCallback, useRef, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,10 +48,11 @@ import moment from "moment-timezone";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import { prApi, getApprovedQty, resolveReqAppqtyForLoad } from "@/services/prApi";
+import { isHqSupplier } from "@/utils/prGrnBuild";
 
 /** When requesting from HQ, show HQ inventory; otherwise show the logged-in site's items. */
 const getPRStockSiteCode = (suppCode, userDetails) => {
-  if (suppCode === "HQ") {
+  if (isHqSupplier(suppCode)) {
     return userDetails?.HQSiteCode || userDetails?.siteCode || "";
   }
   return userDetails?.siteCode || "";
@@ -67,6 +68,8 @@ import {
   getConfigValue,
   filterActiveItemSites,
   resolveSiteName,
+  formatOrdMemo4FromBatches,
+  formatOrdMemo4Pair,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -273,7 +276,7 @@ const BatchSelectionDialog = memo(
 
     return (
       <Dialog open={showBatchDialog} onOpenChange={setShowBatchDialog}>
-        <DialogContent className="sm:max-w-[700px]">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {isCartItem 
@@ -468,14 +471,14 @@ const BatchSelectionDialog = memo(
               )}
             </div>
 
-            {/* Selection Summary */}
-            {selectedBatches.length > 0 && (
+            {/* Selection summary or multi-batch hint (one slot — avoids pushing footer off-screen) */}
+            {selectedBatches.length > 0 || noBatchSelected ? (
               <div className="bg-green-50 border border-green-200 rounded-md p-3">
                 <div className="flex items-start space-x-2">
-                  <Info className="h-4 w-4 text-green-600 mt-0.5" />
-                  <div className="text-sm text-green-800">
+                  <Info className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                  <div className="text-sm text-green-800 min-w-0 flex-1">
                     <p className="font-medium">Selected Batches</p>
-                    <div className="mt-2 space-y-1">
+                    <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
                       {selectedBatches.map((batch) => (
                         <p key={batch.batchNo} className="text-xs">
                           <strong>{batch.batchNo}:</strong>{" "}
@@ -501,21 +504,20 @@ const BatchSelectionDialog = memo(
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Transfer Mode Info */}
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-              <div className="flex items-start space-x-2">
-                <Info className="h-4 w-4 text-blue-600 mt-0.5" />
-                <div className="text-sm text-blue-800">
-                  <p className="font-medium">Multi-Batch Selection Mode</p>
-                  <p className="text-xs mt-1">
-                    Select multiple batches to reach your transfer quantity. You
-                    can select different quantities from each batch.
-                  </p>
+            ) : (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <div className="flex items-start space-x-2">
+                  <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium">Multi-Batch Selection Mode</p>
+                    <p className="text-xs mt-1">
+                      Select multiple batches to reach your transfer quantity. You
+                      can select different quantities from each batch.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -1022,7 +1024,7 @@ function AddPR() {
 
   // Check if user is HQ to set default supplier
   const isHQUser = userDetails?.siteCode?.includes('HQ');
-  
+
   const [formData, setFormData] = useState({
     reqNo: "",
     itemsiteCode: userDetails?.siteCode || "",
@@ -1064,6 +1066,25 @@ function AddPR() {
     reqRecttl: 0,
     reqTime: moment().format("HH:mm:ss")
   });
+
+  const requestToOptions = useMemo(() => {
+    if (!isHQUser) return supplyOptions;
+    const withoutHq = supplyOptions.filter((item) => item.value !== "HQ");
+    if (
+      isHqSupplier(formData.suppCode) &&
+      !withoutHq.some((item) => item.value === formData.suppCode)
+    ) {
+      return [
+        {
+          label: formData.supplierName || "HQ Warehouse",
+          value: "HQ",
+          disabled: true,
+        },
+        ...withoutHq,
+      ];
+    }
+    return withoutHq;
+  }, [isHQUser, supplyOptions, formData.suppCode, formData.supplierName]);
 
   // The status this screen must act on. For an existing PR it is the value loaded
   // from the database (formData.reqStatus); the raw ?status= from the URL is only a
@@ -1210,13 +1231,10 @@ function AddPR() {
   };
 
   // Load suppliers and HQ options
-  const loadSuppliers = async (overrideApprovalMode = null) => {
+  const loadSuppliers = async () => {
     try {
       const userDetails = JSON.parse(localStorage.getItem("userDetails"));
       const isHQUser = userDetails?.siteCode?.includes('HQ');
-      
-      // Use override approval mode if provided, otherwise use state
-      const currentApprovalMode = overrideApprovalMode !== null ? overrideApprovalMode : approvalMode;
       
       const res = await apiService.get("ItemSupplies");
       let options = res
@@ -1226,26 +1244,13 @@ function AddPR() {
           value: item.splyCode,
         }));
       
-      // For HQ users in Purchase Requisition tab (not approval mode), exclude HQ Warehouse
-      // For HQ users in approval mode, they can still see all suppliers including HQ (for viewing approved PRs)
-      if (isHQUser && !currentApprovalMode) {
-        // HQ user creating/editing PR - exclude HQ Warehouse option
+      // HQ site cannot request stock from itself (HQ Warehouse)
+      if (isHQUser) {
         options = options.filter((item) => item.value !== "HQ");
-      } else if (isHQUser && currentApprovalMode) {
-        // HQ user in approval mode - show all suppliers including HQ (for viewing existing PRs)
-        // Add HQ Warehouse option explicitly since it might not be in ItemSupplies
-        const hqOption = { label: "HQ Warehouse", value: "HQ" };
-        // Check if HQ already exists, if not add it
-        const hasHQ = options.some(item => item.value === "HQ");
-        if (!hasHQ) {
-          options = [hqOption, ...options];
-        }
       } else {
-        // For non-HQ users, add HQ option
         const hqOption = { label: "HQ Warehouse", value: "HQ" };
         options = [hqOption, ...options];
       }
-      console.log(options, "options", "approvalMode:", currentApprovalMode);
       setSupplyOptions(options);
     } catch (err) {
       console.error("Error fetching suppliers:", err);
@@ -1289,7 +1294,7 @@ function AddPR() {
       // Load suppliers first with the correct approval mode
       // This ensures suppliers are ready when formData is set
       await Promise.all([
-        loadSuppliers(currentApprovalMode), // Pass approval mode directly
+        loadSuppliers(),
         loadSiteOptions(),
         getOptions(),
       ]);
@@ -1809,48 +1814,8 @@ function AddPR() {
           .filter(Boolean)
           .join(",");
         
-        // Format dates to YYYY-MM-DD for docExpdate (convert from ISO format if needed)
-        const docExpdateStorage = batchDetails
-          .map(b => {
-            const expDate = b.expDate || '';
-            let formattedDate = expDate;
-            
-            if (expDate) {
-              try {
-                // Try to parse with moment and format to YYYY-MM-DD
-                const parsedDate = moment(expDate);
-                if (parsedDate.isValid()) {
-                  formattedDate = parsedDate.format("YYYY-MM-DD");
-                } else {
-                  // If moment can't parse, try to extract date part from ISO string
-                  const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
-                  if (dateMatch) {
-                    formattedDate = dateMatch[1];
-                  }
-                }
-              } catch (e) {
-                // If parsing fails, try to extract date part from ISO string
-                const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
-                if (dateMatch) {
-                  formattedDate = dateMatch[1];
-                }
-                // Otherwise keep original
-              }
-            }
-            
-            return `${formattedDate}:${b.quantity}`;
-          })
-          .join(",");
-        
-        // Store ordMemo4 in ISO format (like GTO): "expDate:qty,expDate:qty"
-        // Keep original ISO format dates (e.g., "2027-10-31T00:00:00.000Z:2")
-        const ordMemo4Storage = batchDetails
-          .map(b => {
-            const expDate = b.expDate || '';
-            // Keep original ISO format if available, otherwise use as-is
-            return `${expDate}:${b.quantity}`;
-          })
-          .join(",");
+        const docExpdateStorage = formatOrdMemo4FromBatches(batchDetails);
+        const ordMemo4Storage = docExpdateStorage;
 
         setCartData(prev => prev.map((item, idx) => 
           idx === batchDialogData.cartIndex
@@ -1860,7 +1825,7 @@ function AddPR() {
                 itemRemark2: itemRemark2,
                 docBatchNo: docBatchNoStorage,
                 docExpdate: docExpdateStorage,
-                ordMemo4: ordMemo4Storage, // Add ordMemo4 with ISO format (like GTO)
+                ordMemo4: ordMemo4Storage,
                 batchDetails: {
                   batchNo: combinedBatchData.batchNo,
                   expDate: combinedBatchData.expDate,
@@ -1928,33 +1893,10 @@ function AddPR() {
           ? `${combinedBatchData.batchNo}:${batchTransferQty},NOBATCH:${noBatchTransferQty}`
           : `${combinedBatchData.batchNo}:${batchTransferQty}`;
         
-        // Format date to YYYY-MM-DD for docExpdate
-        const expDate = combinedBatchData.expDate || '';
-        let formattedDate = expDate;
-        
-        if (expDate) {
-          try {
-            const parsedDate = moment(expDate);
-            if (parsedDate.isValid()) {
-              formattedDate = parsedDate.format("YYYY-MM-DD");
-            } else {
-              const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
-              if (dateMatch) {
-                formattedDate = dateMatch[1];
-              }
-            }
-          } catch (e) {
-            const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
-            if (dateMatch) {
-              formattedDate = dateMatch[1];
-            }
-          }
-        }
-        
-        const docExpdateStorage = `${formattedDate}:${batchTransferQty}`;
-        
-        // Store ordMemo4 in ISO format (like GTO): keep original ISO format
-        const ordMemo4Storage = expDate ? `${expDate}:${batchTransferQty}` : "";
+        const expDate = combinedBatchData.expDate || "";
+        const docExpdateStorage =
+          formatOrdMemo4Pair(expDate, batchTransferQty) || "";
+        const ordMemo4Storage = docExpdateStorage;
         
         setCartData(prev => prev.map((item, idx) => 
           idx === batchDialogData.cartIndex
@@ -1964,7 +1906,7 @@ function AddPR() {
                 itemRemark2: itemRemark2,
                 docBatchNo: combinedBatchData.batchNo,
                 docExpdate: docExpdateStorage,
-                ordMemo4: ordMemo4Storage, // Add ordMemo4 with ISO format (like GTO)
+                ordMemo4: ordMemo4Storage,
                 batchDetails: {
                   batchNo: combinedBatchData.batchNo,
                   expDate: combinedBatchData.expDate,
@@ -2076,7 +2018,7 @@ function AddPR() {
     let itemRemark2 = ""; // Batch breakdown: batchNo:qty,batchNo:qty (include NOBATCH if needed)
     let docBatchNoStorage = ""; // Just batch numbers: B01,B02
     let docExpdateStorage = ""; // Expiry dates: expDate:qty,expDate:qty (YYYY-MM-DD format)
-    let ordMemo4Storage = ""; // Expiry dates: expDate:qty,expDate:qty (ISO format like GTO)
+    let ordMemo4Storage = ""; // Expiry dates: YYYY-MM-DD:qty (GRN-style, same as docExpdate)
 
     if (item.selectedBatches) {
       // Set transfer type from selectedBatches if available, include UOM
@@ -2102,48 +2044,10 @@ function AddPR() {
           .filter(Boolean)
           .join(",");
         
-        // Store expiry dates in docExpdate: "expDate:qty,expDate:qty" (YYYY-MM-DD format)
-        docExpdateStorage = item.selectedBatches.batchDetails
-          .map(b => {
-            const expDate = b.expDate || '';
-            let formattedDate = expDate;
-            
-            if (expDate) {
-              try {
-                // Try to parse with moment and format to YYYY-MM-DD
-                const parsedDate = moment(expDate);
-                if (parsedDate.isValid()) {
-                  formattedDate = parsedDate.format("YYYY-MM-DD");
-                } else {
-                  // If moment can't parse, try to extract date part from ISO string
-                  const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
-                  if (dateMatch) {
-                    formattedDate = dateMatch[1];
-                  }
-                }
-              } catch (e) {
-                // If parsing fails, try to extract date part from ISO string
-                const dateMatch = expDate.match(/^(\d{4}-\d{2}-\d{2})/);
-                if (dateMatch) {
-                  formattedDate = dateMatch[1];
-                }
-                // Otherwise keep original
-              }
-            }
-            
-            return `${formattedDate}:${b.quantity}`;
-          })
-          .join(",");
-        
-        // Store expiry dates in ordMemo4: "expDate:qty,expDate:qty" (ISO format like GTO)
-        // Keep original ISO format dates (e.g., "2027-10-31T00:00:00.000Z:2")
-        ordMemo4Storage = item.selectedBatches.batchDetails
-          .map(b => {
-            const expDate = b.expDate || '';
-            // Keep original ISO format if available, otherwise use as-is
-            return `${expDate}:${b.quantity}`;
-          })
-          .join(",");
+        docExpdateStorage = formatOrdMemo4FromBatches(
+          item.selectedBatches.batchDetails
+        );
+        ordMemo4Storage = docExpdateStorage;
       }
     }
 
@@ -2181,7 +2085,7 @@ function AddPR() {
       allowDecimalQty: item.allowDecimalQty ?? false,
       docBatchNo: docBatchNoStorage || "",        // ✅ B01,B02
       docExpdate: docExpdateStorage || "",        // ✅ 2025-08-12:4,2025-09-15:6 (YYYY-MM-DD format)
-      ordMemo4: ordMemo4Storage || "",            // ✅ 2027-10-31T00:00:00.000Z:2,2027-11-30T00:00:00.000Z:1 (ISO format like GTO)
+      ordMemo4: ordMemo4Storage || "",
       itemRemark: "",                             // Keep for user remarks
       itemRemark1: itemRemark1 || "",             // ✅ fefo-UOM or specific-UOM (e.g., "fefo-PCS", "specific-BOTTLE")
       itemRemark2: itemRemark2 || "",             // ✅ B01:5,B02:3,NOBATCH:2
@@ -2337,6 +2241,10 @@ function AddPR() {
 
   // Handle supplier change
   const handleSupplierChange = (value) => {
+    if (isHQUser && isHqSupplier(value)) {
+      toast.error("HQ site cannot request from HQ Warehouse. Select an external supplier.");
+      return;
+    }
     setFormData(prev => ({ ...prev, suppCode: value }));
     
     // Find supplier info
@@ -2353,12 +2261,28 @@ function AddPR() {
     }
   };
 
+  const validateRequestToForHqSite = () => {
+    if (!isHQUser) return true;
+    // Outlet PRs to HQ Warehouse are approved on HQ; supplier stays HQ.
+    if (approvalMode) return true;
+    if (!formData.suppCode) {
+      toast.error("Please select Request To");
+      return false;
+    }
+    if (isHqSupplier(formData.suppCode)) {
+      toast.error("HQ site cannot request from HQ Warehouse. Select an external supplier.");
+      return false;
+    }
+    return true;
+  };
+
   // Save PR
   const handleSave = async () => {
     if (cartData.length === 0) {
       toast.error("Please add at least one item");
       return;
     }
+    if (!validateRequestToForHqSite()) return;
 
     setSaveLoading(true);
     try {
@@ -2394,6 +2318,7 @@ function AddPR() {
       toast.error("Please add at least one item");
       return;
     }
+    if (!validateRequestToForHqSite()) return;
 
     setPostLoading(true);
     try {
@@ -2446,6 +2371,7 @@ function AddPR() {
       toast.error("No items to approve");
       return;
     }
+    if (!validateRequestToForHqSite()) return;
 
     setApprovalLoading(true);
     try {
@@ -2511,7 +2437,7 @@ function AddPR() {
       }
 
       // 2. Check HQ stock availability (only if supplier is HQ)
-      if (formData.suppCode === "HQ") {
+      if (isHqSupplier(formData.suppCode)) {
         const stockErrors = await prApi.validateHQStockForApproval(cartData);
         if (stockErrors.length > 0) {
           const errorMessages = stockErrors.map((error) => {
@@ -2568,13 +2494,15 @@ function AddPR() {
       }
       
       // Now approve with the saved data (including batch selections, ordMemo4, etc.)
-      const shouldCreateTransfer = formData.suppCode === "HQ";
+      const shouldCreateTransfer = isHqSupplier(formData.suppCode);
+      const shouldCreateGrn = !shouldCreateTransfer;
       const useTwoWay = getConfigValue("PR_USE_DELIVERY_ORDER");
       const result = await prApi.approvePRWithQuantities(
         reqNo,
         cartData,
         shouldCreateTransfer,
         {
+          createGrn: shouldCreateGrn,
           dispatchImmediately:
             shouldCreateTransfer && useTwoWay && dispatchImmediately,
         }
@@ -2599,6 +2527,10 @@ function AddPR() {
         toast.success(
           `PR approved — transfer ${result.docNo} created for ${formData.itemsiteCode || "the store"}`
         );
+      } else if (shouldCreateGrn && result?.docNo && result?.mode === "grn") {
+        toast.success(
+          `PR approved — GRN ${result.docNo} created for ${formData.itemsiteCode || "the outlet"}. Post GRN at the outlet when goods arrive.`
+        );
       } else {
         toast.success("Purchase Requisition approved successfully");
       }
@@ -2607,7 +2539,9 @@ function AddPR() {
     } catch (err) { 
       console.error("Error approving PR:", err);
       const errorMessage = err.response?.data?.message || err.message || "Unknown error occurred";
-      toast.error(`Error approving Purchase Requisition: ${errorMessage}`);
+      toast.error(
+        `Approval did not complete. PR is still Posted — you can review and try again. ${errorMessage}`
+      );
       // Re-open dialog on error so user can retry
       setShowApprovalDialog(true);
     } finally {
@@ -3070,8 +3004,12 @@ function AddPR() {
                       <SelectValue placeholder="Select destination" />
                     </SelectTrigger>
                     <SelectContent>
-                    {supplyOptions.map((supplier) => (
-                        <SelectItem key={supplier.value} value={supplier.value}>
+                    {requestToOptions.map((supplier) => (
+                        <SelectItem
+                          key={supplier.value}
+                          value={supplier.value}
+                          disabled={supplier.disabled}
+                        >
                           {supplier.label}
                         </SelectItem>
                       ))}
@@ -3171,7 +3109,7 @@ function AddPR() {
                 siteName={resolveSiteName(
                   getPRStockSiteCode(formData.suppCode, userDetails),
                   siteOptions,
-                  formData.suppCode === "HQ"
+                  isHqSupplier(formData.suppCode)
                     ? formData.supplierName || "HQ"
                     : userDetails?.siteName
                 )}
@@ -3689,7 +3627,7 @@ function AddPR() {
           </DialogHeader>
           <div className="space-y-4">
             <p>Are you sure you want to approve this Purchase Requisition?</p>
-            {formData.suppCode === "HQ" ? (
+            {isHqSupplier(formData.suppCode) ? (
               <>
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                   <p className="text-sm text-blue-800">
@@ -3785,9 +3723,23 @@ function AddPR() {
                 </div>
               </>
             ) : (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-2">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This will approve the Purchase Requisition without creating a transfer document.
+                  <strong>Note:</strong> A{" "}
+                  <strong>Goods Receive Note (GRN)</strong> will be created at the
+                  requesting outlet (
+                  <strong>
+                    {resolveSiteName(
+                      formData.itemsiteCode,
+                      siteOptions,
+                      formData.itemsiteCode
+                    )}
+                  </strong>
+                  ). The outlet posts the GRN when goods arrive — stock is added at
+                  the outlet only; <strong>HQ stock is not deducted</strong>.
+                </p>
+                <p className="text-xs text-blue-700">
+                  Supplier: {formData.supplierName || formData.suppCode || "—"}
                 </p>
               </div>
             )}

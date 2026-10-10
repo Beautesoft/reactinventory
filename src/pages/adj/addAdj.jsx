@@ -36,6 +36,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import { persistFefoMemosOnDocumentLines } from "@/services/gtiBatchTransferEngine";
 import { claimControlNumber } from "@/utils/controlNo";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
@@ -48,6 +49,8 @@ import {
   getConfigValue,
   isVoidDocStatus,
   resolveSiteName,
+  formatOrdMemo4FromBatches,
+  normalizeExpDate,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -221,7 +224,7 @@ const BatchSelectionDialog = memo(
 
       // Validate that selected quantity matches the required transfer quantity
       // For adjustments, we need to match the exact transfer quantity (can be positive or negative)
-      if (totalSelectedQty !== transferQty) {
+      if (Number(totalSelectedQty) !== Number(transferQty)) {
         toast.error(`Selected quantity (${totalSelectedQty}) must match the required quantity (${transferQty}). Please adjust your selection.`);
         return;
       }
@@ -2599,7 +2602,7 @@ function AddAdj({ docData }) {
                 siteCode: userDetails.siteCode,
                 uom: processedItem.docUom,
                 qty: Number(batch.quantity),
-                batchCost: Number(batch.batchCost),
+                batchCost: roundMoney(batch.batchCost),
                 batchNo: batch.batchNo,
                 ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
                   expDate: batch.expDate || calculateDefaultExpiryDate(),
@@ -2815,35 +2818,22 @@ function AddAdj({ docData }) {
       itemBatch:
         getConfigValue("BATCH_NO") === "Yes"
           ? (() => {
-              // First check for grouped batch details (from groupCartItemsByItem)
+              const labelBatch = (batch) =>
+                batch.batchNo === "" ? "No Batch" : batch.batchNo;
               if (item?.batchDetails?.individualBatches?.length > 0) {
-                const batchNumbers = item.batchDetails.individualBatches.map((batch) => {
-                  return batch.batchNo === "" ? "Unbatched" : batch.batchNo;
-                });
-                const result = batchNumbers.join(",");
-                console.log(`🔍 itemBatch construction (from grouped batches) for ${item.itemcode}:`, {
-                  batchDetails: item.batchDetails.individualBatches,
-                  batchNumbers: batchNumbers,
-                  result: result
-                });
-                return result;
+                return item.batchDetails.individualBatches
+                  .filter((batch) => Number(batch.quantity) !== 0)
+                  .map(labelBatch)
+                  .join(",");
               }
-              
-              // Fallback to getProcessedBatchDetails for other cases
               const batchDetails = getProcessedBatchDetails(item);
-              const batchNumbers = batchDetails.map((batch) => {
-                return batch.batchNo === "" ? "Unbatched" : batch.batchNo;
-              });
-              const result = batchNumbers.join(",");
-              console.log(`🔍 itemBatch construction (from getProcessedBatchDetails) for ${item.itemcode}:`, {
-                batchDetails: batchDetails,
-                batchNumbers: batchNumbers,
-                result: result
-              });
-              return result;
+              return batchDetails
+                .filter((batch) => Number(batch.quantity) !== 0)
+                .map(labelBatch)
+                .join(",");
             })()
           : null,
-      itemBatchCost: item.itemprice,
+      itemBatchCost: roundMoney(item.itemprice),
       stockIn: null,
       transPackageLineNo: null,
       docExpdate:
@@ -3066,7 +3056,7 @@ function AddAdj({ docData }) {
           .map((b) => `${b.batchNo}:${b.quantity}`)
           .join(","),
         ordMemo3: item.selectedBatches.noBatchTransferQty.toString(),
-        ordMemo4: item.selectedBatches.batchDetails.map(b => `${b.expDate}:${b.quantity}`).join(','),
+        ordMemo4: formatOrdMemo4FromBatches(item.selectedBatches.batchDetails),
       };
     }
 
@@ -3493,7 +3483,8 @@ function AddAdj({ docData }) {
                 trnBalcst: on.trnBalcst
               });
               
-              d.itemBatchCost = (on.batchCost || 0).toString();
+              // Old: d.itemBatchCost = (on.batchCost || 0).toString(); — ITEMONQTY view (see itemOnQtyBalance.js)
+              d.itemBatchCost = String(roundMoney(d.itemBatchCost || 0));
               console.log(`✅ Set itemBatchCost to: ${d.itemBatchCost} for ${d.itemcode}`);
             } else {
               const errorLog = {
@@ -3570,6 +3561,16 @@ function AddAdj({ docData }) {
               docStatus: "7",
             }
           );
+
+          if (getConfigValue("BATCH_NO") === "Yes" && details?.length) {
+            await persistFefoMemosOnDocumentLines({
+              docNo,
+              details,
+              processedLines: details,
+              mode: "full",
+              stockMovementApplied: true,
+            });
+          }
         }
 
         message = "Stock Adjustment posted successfully";

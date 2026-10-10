@@ -1,0 +1,15 @@
+---
+description: When testing this app against live data, read LoopBack only. Do not write unless the user explicitly asks.
+alwaysApply: false
+---
+
+# LoopBack testing (read only)
+
+Use this when checking live inventory data, PR / batch / expiry behavior, or any API-backed test.
+
+- Base URL is `API_BASE_URL` in `public/config.js` (verified: `https://zenthtrain.beautecloud.com/lb/api`).
+- GET does not need an `Authorization` token. A filter query works, for example `ItemBatches?filter={"limit":1}`.
+- Read only. Do not POST, PUT, PATCH, or DELETE unless the user explicitly asks for a write in that turn.
+- `ItemBatches` on this database has both empty-batch rows (`batchNo` blank, `expDate` null) and real batches with expiry. HQ sample: item `11600277`, site `ZEHQ`, batch `A01`, UOM `PIECE`, expiry `2025-12-25`.
+
+PR with batch and expiry on: the outlet does not pick a batch. The line is saved as `fefo-<UOM>`. HQ assigns a specific batch only in approval mode. Automatic stock posting (`executePrTransferPost`, one-way approval, Delivery Order Out) throws when `BATCH_NO` is `Yes`. The path that applies batch and expiry is an open transfer posted from the GTI screen.

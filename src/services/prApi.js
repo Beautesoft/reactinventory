@@ -2,7 +2,7 @@ import apiService from "./apiService";
 import moment from "moment-timezone";
 import { roundMoney } from "@/utils/uomDecimalQty";
 import { claimControlNumber } from "@/utils/controlNo";
-import { getConfigValue } from "@/utils/utils";
+import { getConfigValue, isVoidDocStatus } from "@/utils/utils";
 import {
   buildTransferHeader,
   buildTransferLineDetails,
@@ -13,11 +13,112 @@ import {
   executeDeliveryOrderOut,
   isHqDispatchDone,
 } from "./prTransferPost";
+import {
+  processPrApprovalGrn,
+  tryCompleteApprovedPrGrn,
+} from "./prGrnFromPr";
+import { isHqSupplier } from "@/utils/prGrnBuild";
 
 const isPrLinkedGtiHeader = (header) => {
   const remk1 = String(header?.docRemk1 || "");
   return remk1.includes("Created from PR:") && !remk1.includes("via DO:");
 };
+
+/** Non-void PR-linked GTI for this req (latest docNo if several). */
+async function findPrLinkedGtiByReqNo(reqNo) {
+  if (!reqNo) return null;
+
+  const filter = {
+    where: {
+      and: [{ movCode: "TFRF" }, { docRef1: reqNo }],
+    },
+    order: "docNo DESC",
+  };
+  const rows = await apiService.get(
+    `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(filter))}`
+  );
+  const linked = (Array.isArray(rows) ? rows : []).filter(
+    (h) => isPrLinkedGtiHeader(h) && !isVoidDocStatus(h.docStatus)
+  );
+  return linked[0] || null;
+}
+
+async function saveApprovedQuantitiesOnLines(lineItems) {
+  for (const item of lineItems) {
+    if (item.reqId && item.reqId !== "") {
+      await apiService.post(`reqdetails/update?[where][reqId]=${item.reqId}`, {
+        reqAppqty: getApprovedQty(item),
+        reqdQty: item.reqdQty,
+      });
+    }
+  }
+}
+
+async function markPrApproved(reqNo) {
+  await apiService.post(`reqs/update?[where][reqNo]=${reqNo}`, {
+    reqStatus: "Approved",
+  });
+}
+
+function isGtiPosted(header) {
+  return header?.docStatus === 7 || header?.docStatus === "7";
+}
+
+/** Idempotent success when PR was already approved and transfer work is complete. */
+async function tryCompleteApprovedPrTransfer(reqNo, createTransfer) {
+  if (!createTransfer) {
+    return { done: false };
+  }
+
+  const gti = await findPrLinkedGtiByReqNo(reqNo);
+  if (!gti) {
+    return { done: false };
+  }
+
+  const useDeliveryOrder = getConfigValue("PR_USE_DELIVERY_ORDER");
+  const autoPost = getConfigValue("AUTO_POST") === "Yes";
+
+  if (useDeliveryOrder) {
+    return {
+      done: true,
+      result: {
+        success: true,
+        docNo: gti.docNo,
+        mode: "two-way",
+        hqDispatched: false,
+        message: `Transfer ${gti.docNo} already linked to this PR`,
+      },
+    };
+  }
+
+  if (autoPost && isGtiPosted(gti)) {
+    return {
+      done: true,
+      result: {
+        success: true,
+        docNo: gti.docNo,
+        mode: "one-way",
+        hqDispatched: false,
+        message: `Transfer ${gti.docNo} already completed for this PR`,
+      },
+    };
+  }
+
+  if (!autoPost) {
+    return {
+      done: true,
+      result: {
+        success: true,
+        docNo: gti.docNo,
+        mode: "one-way",
+        hqDispatched: false,
+        message: `Transfer ${gti.docNo} already created for this PR`,
+      },
+    };
+  }
+
+  return { done: false };
+}
 
 const BASE_URL = ""; // Will use the base URL from apiService
 
@@ -511,32 +612,47 @@ export const prApi = {
     }
   },
 
-  // Approve PR with modified quantities
+  // Approve PR with modified quantities (transfer + stock before PR status = Approved)
   async approvePRWithQuantities(reqNo, lineItems, createTransfer = false, options = {}) {
-    const { dispatchImmediately = false } = options;
+    const { dispatchImmediately = false, createGrn = false } = options;
 
     try {
-      // 1. Update PR header status to "Approved"
-      await apiService.post(`reqs/update?[where][reqNo]=${reqNo}`, {
-        reqStatus: "Approved"
-      });
-
-      // 2. Update each line item with approved quantities
-      for (const item of lineItems) {
-        if (item.reqId && item.reqId !== "") {
-          await apiService.post(`reqdetails/update?[where][reqId]=${item.reqId}`, {
-            reqAppqty: getApprovedQty(item),
-            reqdQty: item.reqdQty // Keep original requested qty
-          });
-        }
+      const prData = await this.getPR(reqNo);
+      if (!prData) {
+        throw new Error(`Purchase Requisition ${reqNo} not found`);
       }
 
-      // 3. If createTransfer is true, create GTI based on site config (Two-Way or One-Way)
+      const alreadyApproved = prData.reqStatus === "Approved";
+
+      if (alreadyApproved) {
+        if (createTransfer) {
+          const shortCircuit = await tryCompleteApprovedPrTransfer(reqNo, true);
+          if (shortCircuit.done) {
+            return shortCircuit.result;
+          }
+        } else if (createGrn) {
+          const grnDone = await tryCompleteApprovedPrGrn(reqNo);
+          if (grnDone.done) {
+            return grnDone.result;
+          }
+        } else {
+          return {
+            success: true,
+            docNo: null,
+            mode: null,
+            hqDispatched: false,
+            message: "Purchase Requisition already approved",
+          };
+        }
+      } else {
+        await saveApprovedQuantitiesOnLines(lineItems);
+      }
+
       let transferResult = null;
+      let grnResult = null;
       let hqDispatched = false;
 
       if (createTransfer) {
-        const prData = await this.getPR(reqNo);
         transferResult = await this.processPrApprovalTransfer(prData, lineItems);
 
         if (
@@ -553,14 +669,23 @@ export const prApi = {
           });
           hqDispatched = !dispatchResult.alreadyDone;
         }
+      } else if (createGrn) {
+        grnResult = await processPrApprovalGrn(prData, lineItems);
       }
+
+      if (!alreadyApproved) {
+        await markPrApproved(reqNo);
+      }
+
+      const docResult = transferResult || grnResult;
 
       return {
         success: true,
-        docNo: transferResult?.docNo || null,
-        mode: transferResult?.mode || null,
+        docNo: docResult?.docNo || null,
+        mode: docResult?.mode || null,
         hqDispatched,
-        message: transferResult?.message || "Purchase Requisition approved successfully",
+        message:
+          docResult?.message || "Purchase Requisition approved successfully",
       };
     } catch (error) {
       console.error("Error approving PR with quantities:", error);
@@ -900,7 +1025,7 @@ export const prApi = {
     return { header: hdr, details };
   },
 
-  // GTI at destination — Open for Two-Way, posted for One-Way
+  // GTI at destination — Open for Two-Way, posted for One-Way (reuses existing PR-linked GTI)
   async createGoodsTransferFromPR(prData, lineItems, options = {}) {
     try {
       const requestingSiteCode = prData.itemsiteCode;
@@ -918,6 +1043,40 @@ export const prApi = {
           header: null,
           details: [],
           message: "Purchase Requisition approved with no items to transfer",
+        };
+      }
+
+      const existingGti = await findPrLinkedGtiByReqNo(prData.reqNo);
+      if (existingGti?.docNo) {
+        const loaded = await this.getGtiWithDetails(existingGti.docNo);
+        if (loaded.details.length > 0) {
+          console.log(`Reusing GTI ${loaded.header.docNo} for PR ${prData.reqNo}`);
+          return {
+            success: true,
+            docNo: loaded.header.docNo,
+            header: loaded.header,
+            details: loaded.details,
+            message: `Transfer ${loaded.header.docNo} linked to PR ${prData.reqNo}`,
+          };
+        }
+
+        const details = buildTransferLineDetails(
+          prData,
+          lineItems,
+          existingGti.docNo,
+          "TFRF",
+          "TFR"
+        );
+        if (details.length > 0) {
+          await apiService.post("StkMovdocDtls", details);
+        }
+        console.log(`Completed lines on existing GTI ${existingGti.docNo} for PR ${prData.reqNo}`);
+        return {
+          success: true,
+          docNo: existingGti.docNo,
+          header: loaded.header,
+          details,
+          message: `Transfer ${existingGti.docNo} linked to PR ${prData.reqNo}`,
         };
       }
 
@@ -981,25 +1140,36 @@ export const prApi = {
       return { ...gtiResult, mode: "one-way" };
     }
 
-    await executePrTransferPost({
-      docNo: gtiResult.docNo,
-      header: gtiResult.header,
-      details: gtiResult.details,
-      mode: "full",
-    });
+    if (getConfigValue("AUTO_POST") === "Yes") {
+      await executePrTransferPost({
+        docNo: gtiResult.docNo,
+        header: gtiResult.header,
+        details: gtiResult.details,
+        mode: "full",
+      });
 
-    const postDate = moment().format("YYYY-MM-DD");
-    await apiService.post(
-      `StkMovdocHdrs/update?[where][docNo]=${encodeURIComponent(gtiResult.docNo)}`,
-      { docStatus: "7", postDate }
-    );
-    gtiResult.header.docStatus = "7";
-    gtiResult.header.postDate = postDate;
+      if (!isGtiPosted(gtiResult.header)) {
+        const postDate = moment().format("YYYY-MM-DD");
+        await apiService.post(
+          `StkMovdocHdrs/update?[where][docNo]=${encodeURIComponent(gtiResult.docNo)}`,
+          { docStatus: "7", postDate }
+        );
+        gtiResult.header.docStatus = "7";
+        gtiResult.header.postDate = postDate;
+      }
+
+      return {
+        ...gtiResult,
+        mode: "one-way",
+        message: `PR approved: transfer ${gtiResult.docNo} completed and stock updated`,
+      };
+    }
 
     return {
       ...gtiResult,
       mode: "one-way",
-      message: `PR approved: transfer ${gtiResult.docNo} completed and stock updated`,
+      message:
+        `PR approved: transfer ${gtiResult.docNo} created — post from Goods Transfer In when ready`,
     };
   },
 
@@ -1057,6 +1227,8 @@ export const prApi = {
     return claim.docNo;
   }
 };
+
+export { isHqSupplier };
 
 export default prApi;
 

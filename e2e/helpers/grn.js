@@ -2,6 +2,7 @@
  * GRN form helpers for workflow / docs capture tests.
  * Creates documents tagged with GR Ref 1 = E2E-... for easier DB cleanup.
  */
+import { findPostedDocNoByRef } from "./outboundFefo.js";
 
 function todayISO() {
   return new Date().toISOString().split("T")[0];
@@ -324,6 +325,27 @@ export async function clickGrnPost(page) {
   await expectEnabled(postBtn);
   await postBtn.click();
   await awaitGrnSubmit(page, "post");
+}
+
+/** Post GRN with a new batch on the cart line (inbound stock). */
+export async function postGrnWithNewBatch(
+  page,
+  { cfg, itemCode, qty = 2, batchNo, ref } = {}
+) {
+  const e2eRef = ref || makeE2eRef();
+  const bn = String(batchNo || `E2E${String(Date.now()).slice(-6)}`).slice(0, 10);
+  await fillNewGrnForm(page, {
+    itemCode,
+    supplier: cfg?.supplier,
+    qty: String(qty),
+    price: cfg?.price || "1",
+    term: cfg?.term || "30",
+    batchNo: bn,
+    ref: e2eRef,
+  });
+  await clickGrnPost(page);
+  const docNo = await findPostedDocNoByRef(page, "/goods-receive-note", e2eRef);
+  return { docNo, ref: e2eRef, batchNo: bn };
 }
 
 export async function openGrnByRef(page, ref) {

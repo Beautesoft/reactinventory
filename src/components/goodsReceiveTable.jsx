@@ -275,6 +275,19 @@ function GoodsReceiveTable({
       if (aValue > bValue) {
         return sortConfig.direction === 'ascending' ? 1 : -1;
       }
+      if (type === "pr" && sortConfig.key === "reqDate") {
+        const aTime = a.reqTime ? new Date(a.reqTime).getTime() : 0;
+        const bTime = b.reqTime ? new Date(b.reqTime).getTime() : 0;
+        if (aTime !== bTime) {
+          return sortConfig.direction === "ascending"
+            ? aTime < bTime
+              ? -1
+              : 1
+            : aTime < bTime
+              ? 1
+              : -1;
+        }
+      }
       return 0;
     });
   }, [data, sortConfig, supplierDetails, type]);

@@ -45,6 +45,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import { persistFefoMemosOnDocumentLines } from "@/services/gtiBatchTransferEngine";
 import { claimControlNumber } from "@/utils/controlNo";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
@@ -58,6 +59,7 @@ import {
   isVoidDocStatus,
   normalizeExpDate,
   resolveSiteName,
+  formatOrdMemo4FromBatches,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -1748,7 +1750,7 @@ function AddRtn({ docData }) {
         ordMemo1: "specific",
         ordMemo2: item.selectedBatches.batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(','),
         ordMemo3: item.selectedBatches.noBatchTransferQty.toString(),
-        ordMemo4: item.selectedBatches.batchDetails.map(b => `${b.expDate}:${b.quantity}`).join(',')
+        ordMemo4: formatOrdMemo4FromBatches(item.selectedBatches.batchDetails),
       };
     }
 
@@ -2143,7 +2145,7 @@ function AddRtn({ docData }) {
           }
           return item?.docBatchNo || null;
         })() : null,
-      itemBatchCost: item.itemprice,
+      itemBatchCost: roundMoney(item.itemprice),
       stockIn: null,
       transPackageLineNo: null,
       // Only set docExpdate if batch functionality is enabled and we have a valid date
@@ -2474,7 +2476,7 @@ function AddRtn({ docData }) {
               Number(d.trnBalcst || 0) + Number(on.trnBalcst || 0)
             ).toString();
             // d.itemBatchCost = (on.batchCost || 0).toString();
-            d.itemBatchCost = (d.itemBatchCost || 0).toString();
+            d.itemBatchCost = String(roundMoney(d.itemBatchCost || 0));
           } else {
             const errorLog = {
               trnDocNo: docNo,
@@ -2559,7 +2561,7 @@ function AddRtn({ docData }) {
                 Qty: stktrn.trnQty,
                 ExpDate: stktrn?.docExpdate ? stktrn?.docExpdate : null,
                 formName: "GRNReturn",
-                batchCost: Number(stktrn.itemBatchCost),
+                batchCost: roundMoney(stktrn.itemBatchCost),
               });
 
               const payload = {
@@ -2573,7 +2575,7 @@ function AddRtn({ docData }) {
                 expDate: stktrn.docExpdate
                   ? new Date(stktrn.docExpdate).toISOString()
                   : null,
-                batchCost: Number(stktrn.itemBatchCost) || 0,
+                batchCost: roundMoney(stktrn.itemBatchCost),
               };
 
               try {
@@ -2716,6 +2718,16 @@ function AddRtn({ docData }) {
         await apiService.post(`StkMovdocHdrs/update?[where][docNo]=${docNo}`, {
           docStatus: "7",
         });
+
+        if (getConfigValue("BATCH_NO") === "Yes" && processedDetails?.length) {
+          await persistFefoMemosOnDocumentLines({
+            docNo,
+            details,
+            processedLines: processedDetails,
+            mode: "full",
+            stockMovementApplied: true,
+          });
+        }
       }
 
       toast.success(

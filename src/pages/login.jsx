@@ -104,8 +104,8 @@ function extractLoginPayload(response, parsed) {
     defaultExpiryDays:
       inventory.defaultExpiryDays ?? response.defaultExpiryDays,
     autoPost: inventory.autoPost ?? response.autoPost,
-    prUseDeliveryOrder:
-      inventory.prUseDeliveryOrder ?? response.prUseDeliveryOrder,
+    prUseDeliveryOrder:'False',
+      // inventory.prUseDeliveryOrder ?? response.prUseDeliveryOrder,
     HQSiteCode: inventory.HQSiteCode ?? response.HQSiteCode,
   };
 }

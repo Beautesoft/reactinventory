@@ -58,6 +58,7 @@ import {
   queryParamsGenerate,
   getConfigValue,
   normalizeExpDate,
+  formatOrdMemo4Pair,
   isVoidDocStatus,
   resolveSiteName,
 } from "@/utils/utils";
@@ -1617,8 +1618,9 @@ function AddGrn({ docData }) {
         ordMemoFields.ordMemo1 = "specific";
         ordMemoFields.ordMemo2 = `${updatedEditData.docBatchNo}:${updatedEditData.docQty}`;
         ordMemoFields.ordMemo3 = "0"; // No "No Batch" qty in GRN
-        ordMemoFields.ordMemo4 = updatedEditData.docExpdate ? 
-          `${updatedEditData.docExpdate}:${updatedEditData.docQty}` : "";
+        ordMemoFields.ordMemo4 =
+          formatOrdMemo4Pair(updatedEditData.docExpdate, updatedEditData.docQty) ||
+          "";
       }
 
       const updatedItem = {
@@ -1954,7 +1956,7 @@ function AddGrn({ docData }) {
                 siteCode: userDetails.siteCode,
                 uom: d.itemUom,
                 qty: Number(batch.quantity),
-                batchCost: Number(batch.batchCost),
+                batchCost: roundMoney(batch.batchCost),
                 batchNo: batch.batchNo,
                 ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
                   expDate: batch.expDate || calculateDefaultExpiryDate(),
@@ -2080,12 +2082,14 @@ function AddGrn({ docData }) {
       // Only set itemBatch if batch functionality is enabled
       // Store comma-separated batch numbers if multiple batches, otherwise single batch
       itemBatch:
-        getConfigValue('BATCH_NO') === "Yes" ? 
-          (item?.batchDetails?.individualBatches?.length > 0 ?
-            item.batchDetails.individualBatches.map(batch => batch.batchNo).join(',') :
-            item?.docBatchNo || null
-          ) : null,
-      itemBatchCost: item.itemprice,
+        getConfigValue("BATCH_NO") === "Yes"
+          ? item?.batchDetails?.individualBatches?.length > 0
+            ? item.batchDetails.individualBatches
+                .map((batch) => batch.batchNo || "No Batch")
+                .join(",")
+            : item?.docBatchNo || "No Batch"
+          : null,
+      itemBatchCost: roundMoney(item.itemprice),
       stockIn: null,
       transPackageLineNo: null,
       // Only set docExpdate if batch functionality is enabled, use auto-calculated if needed
@@ -2887,7 +2891,9 @@ function AddGrn({ docData }) {
           
           d.trnBalqty = (Number(d.trnQty) + Number(balance.qty)).toString();
           d.trnBalcst = (Number(d.trnAmt) + Number(balance.cost)).toString();
-          d.itemBatchCost = (d.itemBatchCost || balance.batchCost || 0).toString();
+          d.itemBatchCost = String(
+            roundMoney(d.itemBatchCost || balance.batchCost || 0)
+          );
           
           console.log(`✅ Balance calculated for ${d.itemcode}: Qty ${d.trnQty} + Current ${balance.qty} = Running Balance: ${d.trnBalqty}`);
         }
@@ -3032,8 +3038,8 @@ function AddGrn({ docData }) {
           ordMemoFields.ordMemo1 = "specific";
           ordMemoFields.ordMemo2 = `${fields.docBatchNo}:${item.docQty}`;
           ordMemoFields.ordMemo3 = "0";
-          ordMemoFields.ordMemo4 = fields.docExpdate ? 
-            `${fields.docExpdate}:${item.docQty}` : "";
+          ordMemoFields.ordMemo4 =
+            formatOrdMemo4Pair(fields.docExpdate, item.docQty) || "";
         }
 
         return { 

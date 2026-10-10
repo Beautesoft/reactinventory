@@ -35,6 +35,7 @@ import {
 import { toast, Toaster } from "sonner";
 import moment from "moment";
 import apiService from "@/services/apiService";
+import { persistFefoMemosOnDocumentLines } from "@/services/gtiBatchTransferEngine";
 import { claimControlNumber } from "@/utils/controlNo";
 import ReverseDocumentButton from "@/components/ReverseDocumentButton";
 import {
@@ -47,6 +48,7 @@ import {
   getConfigValue,
   isVoidDocStatus,
   resolveSiteName,
+  formatOrdMemo4FromBatches,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -1770,7 +1772,7 @@ function AddSum({ docData }) {
         ordMemo1: "specific",
         ordMemo2: item.selectedBatches.batchDetails.map(b => `${b.batchNo}:${b.quantity}`).join(','),
         ordMemo3: item.selectedBatches.noBatchTransferQty.toString(),
-        ordMemo4: item.selectedBatches.batchDetails.map(b => `${b.expDate || ''}:${b.quantity}`).join(',')
+        ordMemo4: formatOrdMemo4FromBatches(item.selectedBatches.batchDetails),
       };
     }
 
@@ -1908,10 +1910,11 @@ function AddSum({ docData }) {
             .map(b => `${b.batchNo}:${b.quantity}`)
             .join(',');
           g.ordMemo3 = noBatchQty.toString();
-          g.ordMemo4 = g.batchDetails.individualBatches
-            .filter(b => b.batchNo && b.batchNo !== "No Batch")
-            .map(b => `${b.expDate || ''}:${b.quantity}`)
-            .join(',');
+          g.ordMemo4 = formatOrdMemo4FromBatches(
+            g.batchDetails.individualBatches.filter(
+              (b) => b.batchNo && b.batchNo !== "No Batch"
+            )
+          );
           
           // Update docBatchNo with first batch or combined batches
           const batchNos = g.batchDetails.individualBatches
@@ -2128,7 +2131,7 @@ function AddSum({ docData }) {
           return allBatches.length > 0 ? [...new Set(allBatches)].join(',') : "No Batch";
         })()
         : "No Batch",
-      itemBatchCost: item.docPrice,
+      itemBatchCost: roundMoney(item.docPrice),
       stockIn: null,
       transPackageLineNo: null,
       docExpdate: null,
@@ -2372,7 +2375,9 @@ function AddSum({ docData }) {
             const balance = balanceMap.get(key) || { qty: 0, cost: 0, batchCost: 0 };
             d.trnBalqty = (Number(d.trnQty) + Number(balance.qty)).toString();
             d.trnBalcst = (Number(d.trnAmt) + Number(balance.cost)).toString();
-            d.itemBatchCost = (d.itemBatchCost || balance.batchCost || 0).toString();
+            d.itemBatchCost = String(
+              roundMoney(d.itemBatchCost || balance.batchCost || 0)
+            );
           }
 
           // Check if Stktrns already exist
@@ -2517,6 +2522,16 @@ function AddSum({ docData }) {
                   });
               }
             }
+          }
+
+          if (getConfigValue("BATCH_NO") === "Yes" && processedDetails?.length) {
+            await persistFefoMemosOnDocumentLines({
+              docNo,
+              details,
+              processedLines: processedDetails,
+              mode: "full",
+              stockMovementApplied: true,
+            });
           }
         } catch (err) {
           console.error("Error creating stock transactions:", err);
