@@ -182,6 +182,47 @@ const calculateDisplayVariance = (countedQty, onHandQty) => {
   return onHand < 0 ? counted : counted - onHand;
 };
 
+const getStockTakeBatchKey = (batch) =>
+  `${batch.batchNo || ""}_${batch.expDate || ""}`;
+
+/** Map each batch's available qty into counted qty (user may edit before confirm). */
+const buildStockTakeAutoFillState = (batchBreakdown, fallbackNoBatchQty) => {
+  const batchQuantities = {};
+  (batchBreakdown || [])
+    .filter((b) => b.batchNo !== "")
+    .forEach((b) => {
+      batchQuantities[getStockTakeBatchKey(b)] = Number(b.availableQty) || 0;
+    });
+
+  const noBatchEntry = (batchBreakdown || []).find((b) => b.batchNo === "");
+  const noBatchFromBreakdown =
+    noBatchEntry != null ? Number(noBatchEntry.availableQty) || 0 : null;
+  const noBatchQuantity =
+    noBatchFromBreakdown != null
+      ? noBatchFromBreakdown
+      : Number(fallbackNoBatchQty) || 0;
+
+  return {
+    batchQuantities,
+    noBatchQuantity,
+    includeNoBatch:
+      noBatchEntry !== undefined || fallbackNoBatchQty !== undefined,
+  };
+};
+
+/** Keep what the user typed. Confirm checks the batch total. */
+const keepBatchCountedInput = (quantity) => {
+  if (quantity === "" || quantity == null) return "";
+  const qty = parseFloat(quantity);
+  if (!Number.isFinite(qty) || qty < 0) return "";
+  return String(quantity);
+};
+
+const batchCountedNumber = (value) => {
+  const qty = parseFloat(value);
+  return Number.isFinite(qty) && qty >= 0 ? qty : 0;
+};
+
 // Batch Selection Dialog Component for Stock Take
 const StockTakeBatchSelectionDialog = memo(
   ({
@@ -196,15 +237,13 @@ const StockTakeBatchSelectionDialog = memo(
     itemdesc,
     allowDecimalQty = false,
   }) => {
-    // Helper function to create unique batch key from batchNo and expDate
-    const getBatchKey = (batch) => {
-      return `${batch.batchNo || ''}_${batch.expDate || ''}`;
-    };
+    const getBatchKey = getStockTakeBatchKey;
 
     const [selectedBatches, setSelectedBatches] = useState([]);
     const [batchQuantities, setBatchQuantities] = useState({});
     const [noBatchSelected, setNoBatchSelected] = useState(false);
     const [noBatchQuantity, setNoBatchQuantity] = useState(0);
+    const [autoFillChecked, setAutoFillChecked] = useState(false);
 
     // Reset dialog state when dialog closes
     useEffect(() => {
@@ -213,6 +252,7 @@ const StockTakeBatchSelectionDialog = memo(
         setBatchQuantities({});
         setNoBatchSelected(false);
         setNoBatchQuantity(0);
+        setAutoFillChecked(false);
       }
     }, [showBatchDialog]);
 
@@ -252,11 +292,31 @@ const StockTakeBatchSelectionDialog = memo(
       selectedBatches.reduce(
         (sum, batch) => {
           const batchKey = getBatchKey(batch);
-          return sum + (batchQuantities[batchKey] || 0);
+          return sum + batchCountedNumber(batchQuantities[batchKey]);
         },
         0
-      ) + (noBatchSelected ? noBatchQuantity : 0);
+      ) + (noBatchSelected ? batchCountedNumber(noBatchQuantity) : 0);
     const remainingQty = Math.abs(countedQty || 0) - totalSelectedQty;
+
+    const applyAutoFill = useCallback(() => {
+      if (!batchBreakdown?.length) return;
+
+      const { batchQuantities: filled, noBatchQuantity: filledNoBatch, includeNoBatch } =
+        buildStockTakeAutoFillState(batchBreakdown, noBatchQty);
+
+      setBatchQuantities(filled);
+      if (includeNoBatch) {
+        setNoBatchSelected(true);
+        setNoBatchQuantity(filledNoBatch);
+      }
+    }, [batchBreakdown, noBatchQty]);
+
+    const handleAutoFillChange = (checked) => {
+      setAutoFillChecked(checked);
+      if (checked) {
+        applyAutoFill();
+      }
+    };
 
     const handleBatchSelection = (batch, isSelected) => {
       const batchKey = getBatchKey(batch);
@@ -276,26 +336,13 @@ const StockTakeBatchSelectionDialog = memo(
 
     const handleQuantityChange = (batch, quantity) => {
       if (!batch) return;
-      
+
       const batchKey = getBatchKey(batch);
-      const qty = parseFloat(quantity) || 0;
-      
-      // Calculate current total selected quantity (excluding this batch)
-      const currentTotal = selectedBatches.reduce(
-        (sum, b) => {
-          const key = getBatchKey(b);
-          return sum + (key === batchKey ? 0 : (batchQuantities[key] || 0));
-        },
-        0
-      ) + (noBatchSelected ? noBatchQuantity : 0);
-      
-      // Calculate remaining quantity available for this batch
-      const remainingForThisBatch = Math.abs(countedQty || 0) - currentTotal;
-      
-      // Allow quantity between 0 and remaining, but can exceed available if counted more
-      const currentQty = batchQuantities[batchKey] || 0;
-      const validQty = Math.max(0, Math.min(qty, remainingForThisBatch + currentQty));
-      setBatchQuantities((prev) => ({ ...prev, [batchKey]: validQty }));
+      setAutoFillChecked(false);
+      setBatchQuantities((prev) => ({
+        ...prev,
+        [batchKey]: keepBatchCountedInput(quantity),
+      }));
     };
 
     const handleNoBatchSelection = (isSelected) => {
@@ -310,23 +357,8 @@ const StockTakeBatchSelectionDialog = memo(
     };
 
     const handleNoBatchQuantityChange = (quantity) => {
-      const qty = parseFloat(quantity) || 0;
-      
-      // Calculate current total selected quantity (excluding current No Batch quantity)
-      const currentTotal = selectedBatches.reduce(
-        (sum, b) => {
-          const batchKey = getBatchKey(b);
-          return sum + (batchQuantities[batchKey] || 0);
-        },
-        0
-      );
-      
-      // Calculate remaining quantity available for No Batch
-      const remainingForNoBatch = Math.abs(countedQty || 0) - currentTotal;
-      
-      // Allow quantity between 0 and remaining
-      const validQty = Math.max(0, Math.min(qty, remainingForNoBatch + noBatchQuantity));
-      setNoBatchQuantity(validQty);
+      setAutoFillChecked(false);
+      setNoBatchQuantity(keepBatchCountedInput(quantity));
     };
 
     const handleSubmit = () => {
@@ -351,7 +383,7 @@ const StockTakeBatchSelectionDialog = memo(
       const batchesWithQuantity = selectedBatches.filter(
         (batch) => {
           const batchKey = getBatchKey(batch);
-          return (batchQuantities[batchKey] || 0) > 0;
+          return batchCountedNumber(batchQuantities[batchKey]) > 0;
         }
       );
 
@@ -362,14 +394,14 @@ const StockTakeBatchSelectionDialog = memo(
           return {
             batchNo: batch.batchNo,
             availableQty: batch.availableQty || 0,
-            countedQty: batchQuantities[batchKey] || 0,
+            countedQty: batchCountedNumber(batchQuantities[batchKey]),
             expDate: batch.expDate || null,
           };
         }),
-        ...(noBatchSelected && noBatchQuantity > 0 ? [{
+        ...(noBatchSelected && batchCountedNumber(noBatchQuantity) > 0 ? [{
           batchNo: "",
           availableQty: noBatchQty || 0,
-          countedQty: noBatchQuantity,
+          countedQty: batchCountedNumber(noBatchQuantity),
           expDate: null,
         }] : []),
       ];
@@ -427,6 +459,13 @@ const StockTakeBatchSelectionDialog = memo(
                       <strong>Over by:</strong> {Math.abs(remainingQty).toFixed(2)}
                     </p>
                   )}
+                  {autoFillChecked &&
+                    (remainingQty > 0.01 || remainingQty < -0.01) && (
+                      <p className="text-blue-700 mt-1">
+                        Adjust counted qty on batches until selected qty matches
+                        counted qty.
+                      </p>
+                    )}
                 </div>
               </div>
             </div>
@@ -435,7 +474,29 @@ const StockTakeBatchSelectionDialog = memo(
           {/* Available Batches Table */}
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Available Batches</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>Available Batches</Label>
+                {batchBreakdown && batchBreakdown.length > 0 && (
+                  <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5">
+                    <Checkbox
+                      id="stock-take-batch-auto-fill"
+                      checked={autoFillChecked}
+                      onCheckedChange={(checked) =>
+                        handleAutoFillChange(Boolean(checked))
+                      }
+                    />
+                    <Label
+                      htmlFor="stock-take-batch-auto-fill"
+                      className="text-sm font-medium cursor-pointer leading-none"
+                    >
+                      Auto Fill
+                    </Label>
+                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                      Copy available qty into counted qty
+                    </span>
+                  </div>
+                )}
+              </div>
               {batchBreakdown && batchBreakdown.length > 0 ? (
                 <div className="max-h-60 overflow-y-auto border rounded-md">
                   <Table>
@@ -444,7 +505,7 @@ const StockTakeBatchSelectionDialog = memo(
                         <TableHead className="w-12">Select</TableHead>
                         <TableHead>Batch No</TableHead>
                         <TableHead className="text-right">Available Qty</TableHead>
-                        <TableHead className="text-right">Counted Qty</TableHead>
+                        <TableHead className="text-right w-28">Counted Qty</TableHead>
                         <TableHead>Expiry Date</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -476,11 +537,11 @@ const StockTakeBatchSelectionDialog = memo(
                               <TableCell className="text-right">
                                 {batch.availableQty || 0}
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="text-right">
                                 {isSelected ? (
                                   <QtyInput
                                     item={{ allowDecimalQty }}
-                                    className="w-24 text-right"
+                                    className="w-24 ml-auto text-right"
                                     value={selectedQty}
                                     onChange={(e) =>
                                       handleQuantityChange(
@@ -517,11 +578,11 @@ const StockTakeBatchSelectionDialog = memo(
                           <TableCell className="text-right">
                             {noBatchQty || 0}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-right">
                             {noBatchSelected ? (
                               <QtyInput
                                 item={{ allowDecimalQty }}
-                                className="w-24 text-right"
+                                className="w-24 ml-auto text-right"
                                 value={noBatchQuantity}
                                 onChange={(e) =>
                                   handleNoBatchQuantityChange(e.target.value)
