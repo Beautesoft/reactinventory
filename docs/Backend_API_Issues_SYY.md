@@ -11,6 +11,8 @@ Run these against **each client** (and each live site) before go-live. Fill the 
 
 Do **not** treat 404 or 500 as “no data”. Empty data must still be **HTTP 200** with an empty array / `result: []`.
 
+Column widths (batch number and related fields): [client-db-checks.md](client-db-checks.md).
+
 ---
 
 ## 1. Titles — print / report header

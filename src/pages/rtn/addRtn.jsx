@@ -1,4 +1,4 @@
-import React, { useState, useEffect, use, memo, useCallback } from "react";
+import React, { useState, useEffect, use, memo, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +60,8 @@ import {
   normalizeExpDate,
   resolveSiteName,
   formatOrdMemo4FromBatches,
+  buildLinkCodeLookup,
+  lookupLinkCode,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -580,6 +582,13 @@ function AddRtn({ docData }) {
   const [supplyOptions, setSupplyOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
+  const linkCodeLookup = useMemo(
+    () =>
+      buildLinkCodeLookup(
+        originalStockList.length > 0 ? originalStockList : stockList,
+      ),
+    [originalStockList, stockList],
+  );
   const userDetails = JSON.parse(localStorage.getItem("userDetails"));
 
   const [editData, setEditData] = useState(null);
@@ -637,7 +646,7 @@ function AddRtn({ docData }) {
     docRemk1: "",
     postDate: "",
     deliveryDate: moment().format("YYYY-MM-DD"),
-    createUser: userDetails?.username,
+    createUser: userDetails?.username || userDetails?.usercode || "",
   });
   // The status this screen must act on. For an existing document it is the value
   // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
@@ -2354,13 +2363,14 @@ function AddRtn({ docData }) {
         daddr2: supplierInfo.sline2,
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
-        createUser: hdr.createUser,
+        createUser: urlDocNo
+          ? hdr.createUser
+          : (userDetails?.username || userDetails?.usercode || ""),
         staffNo: userDetails.usercode,
 
-        createDate:
-          type === "post" && urlDocNo
-            ? hdr.createDate
-            : new Date().toISOString(),
+        createDate: urlDocNo
+          ? hdr.createDate
+          : new Date().toISOString(),
       };
 
       // ── Claim the running number BEFORE the document is created ───────────
@@ -3657,7 +3667,7 @@ function AddRtn({ docData }) {
                     Created By
                   </Label>
                   <Input
-                    value={stockHdrs.createUser}
+                    value={stockHdrs.createUser || stockHdrs.staffNo || ""}
                     disabled
                     className="bg-gray-50"
                   />
@@ -3928,6 +3938,7 @@ function AddRtn({ docData }) {
                       Item Code
                     </TableHead>
                     <TableHead>Item Description</TableHead>
+                    <TableHead>Link Code</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead>Quantity</TableHead>
                     {userDetails?.isSettingViewPrice === "True" && (
@@ -3948,10 +3959,10 @@ function AddRtn({ docData }) {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableSpinner colSpan={9} />
+                    <TableSpinner colSpan={10} />
                   ) : cartData.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
+                      <TableCell colSpan={10} className="text-center py-10">
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -3990,6 +4001,7 @@ function AddRtn({ docData }) {
                           </TableCell>
                           <TableCell>{item.itemcode}</TableCell>
                           <TableCell>{item.itemdesc}</TableCell>
+                          <TableCell>{lookupLinkCode(linkCodeLookup, item) || "-"}</TableCell>
                           <TableCell>{item.docUom}</TableCell>
                           <TableCell className="font-medium">
                             {item.docQty}
@@ -4056,7 +4068,7 @@ function AddRtn({ docData }) {
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="text-right text-slate-700"
                         >
                           Totals:

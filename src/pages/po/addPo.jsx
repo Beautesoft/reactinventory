@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,8 @@ import {
   queryParamsGenerate,
   getConfigValue,
   resolveSiteName,
+  buildLinkCodeLookup,
+  lookupLinkCode,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -517,6 +519,13 @@ function AddPO() {
   const [supplyOptions, setSupplyOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
+  const linkCodeLookup = useMemo(
+    () =>
+      buildLinkCodeLookup(
+        originalStockList.length > 0 ? originalStockList : stockList,
+      ),
+    [originalStockList, stockList],
+  );
   const [batchOptions, setBatchOptions] = useState([]);
   const [batches, setBatches] = useState([]);
 
@@ -1747,6 +1756,7 @@ function AddPO() {
                   <TableHead>No</TableHead>
                     <TableHead>Item Code</TableHead>
                     <TableHead>Description</TableHead>
+                  <TableHead>Link Code</TableHead>
                   <TableHead>UOM</TableHead>
                     <TableHead>Qty</TableHead>
                   {userDetails?.isSettingViewPrice === "True" && <TableHead>Price</TableHead>}
@@ -1781,6 +1791,7 @@ function AddPO() {
                     <TableCell className="max-w-[200px] whitespace-normal break-words">
                       {item.podItemdesc}
                     </TableCell>
+                    <TableCell>{lookupLinkCode(linkCodeLookup, item) || "-"}</TableCell>
                     <TableCell>{item.docUom}</TableCell>
                       <TableCell>{item.podQty}</TableCell>
                     {userDetails?.isSettingViewPrice === "True" && (

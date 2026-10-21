@@ -1,8 +1,9 @@
-import { createContext, useState } from "react";
+import { createContext, useCallback, useState } from "react";
 import { deleteCookie, getCookie, setCookie } from "@/utils/utils";
 import { toast } from "sonner";
 import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
+import { getUrlAuthToken } from "@/auth/urlTokenAuth";
 // Create the context
 export const AuthContext = createContext(null);
 
@@ -58,8 +59,22 @@ function readAuthStateFromStorage() {
   }
 }
 
+function getInitialAuthState() {
+  if (getUrlAuthToken()) {
+    return {
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: true,
+      salon: [],
+      loginDetails: null,
+    };
+  }
+  return readAuthStateFromStorage();
+}
+
 export const AuthProvider = ({ children }) => {
-  const [state, setState] = useState(readAuthStateFromStorage);
+  const [state, setState] = useState(getInitialAuthState);
 
   // const login = async (credentials) => {
   //   try {
@@ -121,7 +136,7 @@ export const AuthProvider = ({ children }) => {
   //   }
   // };
 
-  const loginSuccess = async (data) => {
+  const loginSuccess = useCallback(async (data) => {
     try {
       const token =
         data.token ||
@@ -132,6 +147,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: true,
         loginDetails: data,
         token,
+        isLoading: false,
       }));
 
       const userDetails = {
@@ -142,13 +158,15 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem("userDetails", JSON.stringify(userDetails));
       setCookie("token", token);
       apiService.setToken(token);
+      apiService1.setToken(token);
 
       return true;
     } catch (error) {
       console.error("Login success error:", error);
+      setState((prev) => ({ ...prev, isLoading: false }));
       return false;
     }
-  };
+  }, []);
   const logout = () => {
     try {
       deleteCookie("token");

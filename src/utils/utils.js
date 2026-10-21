@@ -814,3 +814,50 @@ export function resolveCodeDesc(map, code, fallback = "-") {
   if (!key) return fallback;
   return map?.get(key) || key;
 }
+
+function normalizeCatalogItemCode(code) {
+  return String(code || "").trim().replace(/0000$/, "");
+}
+
+/**
+ * Index link codes from the already-loaded catalog (GetInvitems).
+ * Display-only: callers must not write this onto StkMovdocDtls.
+ * Exact key is item code + UOM; item code alone is the fallback.
+ */
+export function buildLinkCodeLookup(stockRows = []) {
+  const byCodeAndUom = new Map();
+  const byCode = new Map();
+
+  for (const row of Array.isArray(stockRows) ? stockRows : []) {
+    if (!row) continue;
+    const code = normalizeCatalogItemCode(row.stockCode || row.itemcode);
+    const linkCode = String(row.linkCode || row.LinkCode || "").trim();
+    if (!code || !linkCode) continue;
+
+    const uom = String(row.uom || row.itemUom || row.docUom || "").trim();
+    if (uom && !byCodeAndUom.has(`${code}|${uom}`)) {
+      byCodeAndUom.set(`${code}|${uom}`, linkCode);
+    }
+    if (!byCode.has(code)) byCode.set(code, linkCode);
+  }
+
+  return { byCodeAndUom, byCode };
+}
+
+export function lookupLinkCode(lookup, item) {
+  if (!lookup || !item) return "";
+  const code = normalizeCatalogItemCode(
+    item.itemcode ||
+      item.stockCode ||
+      item.podItemcode ||
+      item.reqdItemcode,
+  );
+  if (!code) return "";
+
+  const uom = String(item.docUom || item.uom || item.itemUom || "").trim();
+  if (uom) {
+    const exact = lookup.byCodeAndUom.get(`${code}|${uom}`);
+    if (exact) return exact;
+  }
+  return lookup.byCode.get(code) || "";
+}

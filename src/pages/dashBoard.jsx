@@ -9,8 +9,28 @@ import apiService from "@/services/apiService";
 import apiService1 from "@/services/apiService1";
 import itemMasterApi from "@/services/itemMasterApi";
 import { toast } from "sonner";
-import { format_Date, getActiveCurrency, formatCurrency } from "@/utils/utils";
+import {
+  format_Date,
+  getActiveCurrency,
+  formatCurrency,
+  getUserAuthorizations,
+  hasUserAuthorization,
+  hasUserAuthorizationByName,
+  MENU_AUTH_MAPPING,
+} from "@/utils/utils";
 import { Link } from "react-router-dom";
+
+const catalogItemCode = (code) => String(code || "").trim().replace(/0000$/, "");
+
+/** Same gate as sidebar "Replenishment Report" (F10017). */
+const canViewReplenishmentReport = () => {
+  const userAuths = getUserAuthorizations();
+  if (!userAuths || userAuths.length === 0) return true;
+  const authCode = MENU_AUTH_MAPPING["Replenishment Report"];
+  if (!authCode) return true;
+  if (hasUserAuthorization(authCode)) return true;
+  return hasUserAuthorizationByName("Replenishment Report");
+};
 
 function DashBoard() {
   const [loading, setLoading] = useState(true);
@@ -32,6 +52,7 @@ function DashBoard() {
   const [batchLoading, setBatchLoading] = useState(false);
 
   const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  const canViewReplenishment = canViewReplenishmentReport();
 
   // Fetch dashboard data
   const fetchDashboardData = async () => {
@@ -43,12 +64,13 @@ function DashBoard() {
         return;
       }
 
-      // Fetch stock items (cards / top stock value) + reorder sources for Low Stock Alert
+      // Fetch stock items (cards / top stock value); reorder data only if Replenishment Report is authorized
       const stockQuery = `?Site=${siteCode}`;
-      const [stockResponse, reorderStocks, siteStocklists] = await Promise.all([
+      const [stockResponse, reorderStocks] = await Promise.all([
         apiService1.get(`api/GetInvitems${stockQuery}`),
-        itemMasterApi.getReorderActiveStocks(),
-        itemMasterApi.getItemStocklistsBySites([siteCode]),
+        canViewReplenishment
+          ? itemMasterApi.getReorderActiveStocks()
+          : Promise.resolve([]),
       ]);
       const stockItems = Array.isArray(stockResponse?.result) ? stockResponse.result : [];
 
@@ -90,42 +112,47 @@ function DashBoard() {
         `StkMovdocHdrs?filter=${encodeURIComponent(JSON.stringify(pendingFilter))}`
       );
 
-      // Low Stock Alert: current site only — same rule as Replenishment Report
-      // reorderActive + reorderMinqty > 0 + site onhandQty <= reorderMinqty
-      const stockByCode = new Map();
-      for (const stock of reorderStocks || []) {
-        if (!stock?.itemCode) continue;
-        if (stock.itemIsactive === false) continue;
-        const minQty = Number(stock.reorderMinqty);
-        if (!Number.isFinite(minQty) || minQty <= 0) continue;
-        stockByCode.set(String(stock.itemCode), stock);
-      }
+      let lowStockItems = [];
+      if (canViewReplenishment) {
+        // Low Stock Alert: same rule and on-hand source as Replenishment Report
+        const stockByCode = new Map();
+        for (const stock of reorderStocks || []) {
+          if (!stock?.itemCode) continue;
+          if (stock.itemIsactive === false) continue;
+          const minQty = Number(stock.reorderMinqty);
+          if (!Number.isFinite(minQty) || minQty <= 0) continue;
+          const key = catalogItemCode(stock.itemCode);
+          if (key) stockByCode.set(key, stock);
+        }
 
-      const lowStockItems = (siteStocklists || [])
-        .filter((sl) => {
-          if (sl.itemsiteCode !== siteCode) return false;
-          if (sl.itemstocklistStatus === false) return false;
-          const stock = stockByCode.get(String(sl.itemCode || ""));
-          if (!stock) return false;
-          const onHand = Number(sl.onhandQty) || 0;
-          const reorderMin = Number(stock.reorderMinqty) || 0;
-          return onHand <= reorderMin;
-        })
-        .map((sl) => {
-          const stock = stockByCode.get(String(sl.itemCode || ""));
-          const onHand = Number(sl.onhandQty) || 0;
-          const reorderMin = Number(stock.reorderMinqty) || 0;
-          return {
-            stockCode: stock.itemCode,
-            stockName: stock.itemName || stock.itemDesc || "N/A",
-            quantity: onHand,
-            reorderMin,
-            suggestedQty: Math.max(0, reorderMin - onHand),
-            uomDescription: stock.itemUom || "",
-          };
-        })
-        .sort((a, b) => a.quantity - b.quantity || a.stockCode.localeCompare(b.stockCode))
-        .slice(0, 8);
+        lowStockItems = (stockItems || [])
+          .filter((item) => {
+            const itemCode = catalogItemCode(item.stockCode || item.itemcode);
+            const stock = stockByCode.get(itemCode);
+            if (!stock) return false;
+            const parsedQty = Number(item.quantity);
+            const onHand = Number.isFinite(parsedQty) ? parsedQty : 0;
+            const reorderMin = Number(stock.reorderMinqty) || 0;
+            return onHand <= reorderMin;
+          })
+          .map((item) => {
+            const itemCode = catalogItemCode(item.stockCode || item.itemcode);
+            const stock = stockByCode.get(itemCode);
+            const parsedQty = Number(item.quantity);
+            const onHand = Number.isFinite(parsedQty) ? parsedQty : 0;
+            const reorderMin = Number(stock.reorderMinqty) || 0;
+            return {
+              stockCode: item.stockCode || stock.itemCode,
+              stockName: item.stockName || stock.itemName || stock.itemDesc || "N/A",
+              quantity: onHand,
+              reorderMin,
+              suggestedQty: Math.max(0, reorderMin - onHand),
+              uomDescription: item.uom || item.uomDescription || stock.itemUom || "",
+            };
+          })
+          .sort((a, b) => a.quantity - b.quantity || a.stockCode.localeCompare(b.stockCode))
+          .slice(0, 8);
+      }
 
       // Calculate top stock items by value
       const topStockItems = stockItems
@@ -421,7 +448,7 @@ function DashBoard() {
 
         {/* Right column */}
         <div className="space-y-6">
-          {/* Low Stock Alert — current site, based on Re-Order Level (same as Replenishment Report) */}
+          {canViewReplenishment && (
           <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
             <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -431,7 +458,7 @@ function DashBoard() {
                 <div>
                   <h2 className="text-lg font-bold text-gray-800">Low Stock Alert</h2>
                   <p className="text-xs text-gray-500">
-                    Site {userDetails?.siteCode || "—"} · on-hand ≤ reorder min
+                    Site {userDetails?.siteCode || "—"} · on-hand at or below reorder minimum
                   </p>
                 </div>
               </div>
@@ -449,22 +476,29 @@ function DashBoard() {
                 dashboardData.lowStockItems.map((item, index) => {
                   const qty = Number(item.quantity || 0);
                   const isCritical = qty <= 0;
+                  const uom = item.uomDescription ? ` ${item.uomDescription}` : "";
                   return (
-                  <div key={index} className={`flex items-center justify-between p-3 rounded-xl border-l-4 ${isCritical ? "bg-red-50 border-red-400" : "bg-orange-50 border-orange-400"}`}>
-                    <div>
+                  <div key={index} className={`flex items-start justify-between gap-3 p-3 rounded-xl border-l-4 ${isCritical ? "bg-red-50 border-red-400" : "bg-orange-50 border-orange-400"}`}>
+                    <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm">{item.stockCode}</p>
                       <p className="text-xs text-gray-600">{item.stockName}</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">
-                        Min {item.reorderMin}
-                        {item.suggestedQty > 0 ? ` · Suggest ${item.suggestedQty}` : ""}
-                        {item.uomDescription ? ` ${item.uomDescription}` : ""}
-                      </p>
+                      <dl className="mt-1.5 space-y-0.5 text-[11px] text-gray-600">
+                        <div className="flex flex-wrap gap-x-1">
+                          <dt className="font-medium text-gray-500">Reorder Min:</dt>
+                          <dd>{item.reorderMin}{uom}</dd>
+                        </div>
+                        <div className="flex flex-wrap gap-x-1">
+                          <dt className="font-medium text-gray-500">Suggested Qty:</dt>
+                          <dd>{item.suggestedQty}{uom}</dd>
+                        </div>
+                      </dl>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] font-medium text-gray-500">On Hand</p>
                       <p className={`text-sm font-semibold ${isCritical ? "text-red-600" : "text-orange-600"}`}>
-                        {item.quantity}{item.uomDescription ? ` ${item.uomDescription}` : ""}
+                        {item.quantity}{uom}
                       </p>
-                      <p className={`text-xs font-medium ${isCritical ? "text-red-500" : "text-orange-500"}`}>
+                      <p className={`text-xs font-medium mt-0.5 ${isCritical ? "text-red-500" : "text-orange-500"}`}>
                         {isCritical ? "Critical" : "Low Stock"}
                       </p>
                     </div>
@@ -481,6 +515,7 @@ function DashBoard() {
               )}
             </div>
           </Card>
+          )}
 
           {/* Stock Balance Mini View */}
           <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">

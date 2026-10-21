@@ -3,6 +3,7 @@ import { GrnProvider } from "./context/grnContext";
 import { GtoProvider } from "@/context/gtoContext";
 import { SidebarProvider } from "./components/ui/sidebar";
 import { AuthProvider } from "./context/AuthContext";
+import UrlTokenAuthBootstrap from "./components/UrlTokenAuthBootstrap";
 import { Route, Routes } from "react-router-dom";
 import { BrowserRouter as Router } from "react-router-dom";
 import PublicRoute from "./router/PublicRoutes";
@@ -45,6 +46,7 @@ function App() {
             <SidebarProvider>
               <Toaster richColors />
               <Router>
+              <UrlTokenAuthBootstrap>
                 <Routes>
                 {/* Public Route */}
                   <Route
@@ -150,6 +152,7 @@ function App() {
                   <Route path="settings" element={<SettingsPage />} />
                 </Route>
                 </Routes>
+              </UrlTokenAuthBootstrap>
               </Router>
             </SidebarProvider>
           </GtoProvider>

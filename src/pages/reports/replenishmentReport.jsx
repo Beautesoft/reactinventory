@@ -29,11 +29,13 @@ const toArray = (response) => {
 };
 
 /**
- * Phase 1 Replenishment Report
+ * Replenishment Report
  * - Threshold: Stocks.reorderActive + Stocks.reorderMinqty
- * - On-hand: ItemStocklists.onhandQty per site
- * - Row shown when reorderActive && reorderMinqty > 0 && siteOnHand <= reorderMinqty
+ * - On-hand: GetInvitems.quantity for the selected site (one row per item + UOM)
+ * - Suggested Qty: max(0, reorder min − on hand)
+ * - Row shown when reorder is on, reorder min > 0, and quantity <= reorder min
  */
+const catalogItemCode = (code) => String(code || "").trim().replace(/0000$/, "");
 const ReplenishmentReport = () => {
   const [filters, setFilters] = useState({
     departments: [],
@@ -204,9 +206,11 @@ const ReplenishmentReport = () => {
         filters.site.map((s) => [s.value, s.label])
       );
 
-      const [reorderStocks, siteStocklists] = await Promise.all([
+      const [reorderStocks, ...invResponses] = await Promise.all([
         itemMasterApi.getReorderActiveStocks(),
-        itemMasterApi.getItemStocklistsBySites(selectedSiteCodes),
+        ...selectedSiteCodes.map((siteCode) =>
+          apiService1.get(`api/GetInvitems?Site=${encodeURIComponent(siteCode)}`)
+        ),
       ]);
 
       const stockByCode = new Map();
@@ -215,53 +219,67 @@ const ReplenishmentReport = () => {
         if (!matchesOptionalFilters(stock)) continue;
         const minQty = Number(stock.reorderMinqty);
         if (!Number.isFinite(minQty) || minQty <= 0) continue;
-        stockByCode.set(String(stock.itemCode), stock);
+        const key = catalogItemCode(stock.itemCode);
+        if (key) stockByCode.set(key, stock);
       }
 
       const rows = [];
-      for (const sl of siteStocklists || []) {
-        const siteCode = sl.itemsiteCode;
-        if (!selectedSiteCodes.includes(siteCode)) continue;
-        if (sl.itemstocklistStatus === false) continue;
+      invResponses.forEach((response, siteIndex) => {
+        const siteCode = selectedSiteCodes[siteIndex];
+        const invItems = Array.isArray(response?.result)
+          ? response.result
+          : toArray(response);
 
-        const stock = stockByCode.get(String(sl.itemCode || ""));
-        if (!stock) continue;
+        for (const item of invItems) {
+          const itemCode = catalogItemCode(item.stockCode || item.itemcode);
+          const stock = stockByCode.get(itemCode);
+          if (!stock) continue;
 
-        const onHand = Number(sl.onhandQty) || 0;
-        const reorderMin = Number(stock.reorderMinqty) || 0;
-        if (onHand > reorderMin) continue;
+          const parsedQty = Number(item.quantity);
+          const onHand = Number.isFinite(parsedQty) ? parsedQty : 0;
+          const reorderMin = Number(stock.reorderMinqty) || 0;
+          if (onHand > reorderMin) continue;
 
-        const shortfall = Math.max(0, reorderMin - onHand);
-        // Display descriptions, not codes (Stocks.itemDept/itemBrand/itemRange
-        // are codes; resolveCodeDesc falls back to the code, then "-").
-        rows.push({
-          Outlet: siteLabelByCode[siteCode] || siteCode,
-          SiteCode: siteCode,
-          ItemCode: stock.itemCode,
-          ItemName: stock.itemName || stock.itemDesc || "",
-          Dept: resolveCodeDesc(deptDescByCode, stock.itemDept),
-          Brand: resolveCodeDesc(brandDescByCode, stock.itemBrand),
-          Ranges: resolveCodeDesc(rangeDescByCode, stock.itemRange),
-          // Primary UOM lives in ItemUomprices; Stocks.itemUom is null for many
-          // items (e.g. SET-type divisions), which is why this column was blank.
-          UOM:
-            primaryUomByItem.get(String(stock.itemCode || "").trim()) ||
-            stock.itemUom ||
-            "-",
-          OnHand: onHand,
-          ReorderMin: reorderMin,
-          Shortfall: shortfall,
-          SuggestedQty: shortfall,
-          Supplier: stock.itemSupp || "",
-          Active: stock.itemIsactive !== false ? "Yes" : "No",
-          Status: onHand <= 0 ? "Critical" : "Low",
-        });
-      }
+          const shortfall = Math.max(0, reorderMin - onHand);
+          const uomCode = catalogItemCode(stock.itemCode);
+          rows.push({
+            Outlet: siteLabelByCode[siteCode] || siteCode,
+            SiteCode: siteCode,
+            ItemCode: item.stockCode || stock.itemCode,
+            ItemName: item.stockName || stock.itemName || stock.itemDesc || "",
+            Dept:
+              item.Department ||
+              resolveCodeDesc(deptDescByCode, item.DeptCode || stock.itemDept),
+            Brand:
+              item.Brand ||
+              resolveCodeDesc(brandDescByCode, item.BrandCode || stock.itemBrand),
+            Ranges:
+              item.Range ||
+              resolveCodeDesc(rangeDescByCode, item.RangeCode || stock.itemRange),
+            UOM:
+              item.uom ||
+              item.uomDescription ||
+              primaryUomByItem.get(uomCode) ||
+              primaryUomByItem.get(String(stock.itemCode || "").trim()) ||
+              stock.itemUom ||
+              "-",
+            OnHand: onHand,
+            ReorderMin: reorderMin,
+            Shortfall: shortfall,
+            SuggestedQty: shortfall,
+            Supplier: stock.itemSupp || "",
+            Active: stock.itemIsactive !== false ? "Yes" : "No",
+            Status: onHand <= 0 ? "Critical" : "Low",
+          });
+        }
+      });
 
       rows.sort((a, b) => {
         const siteCmp = String(a.Outlet).localeCompare(String(b.Outlet));
         if (siteCmp !== 0) return siteCmp;
-        return String(a.ItemCode).localeCompare(String(b.ItemCode));
+        const itemCmp = String(a.ItemCode).localeCompare(String(b.ItemCode));
+        if (itemCmp !== 0) return itemCmp;
+        return String(a.UOM).localeCompare(String(b.UOM));
       });
 
       setReportData(rows);
@@ -366,6 +384,19 @@ const ReplenishmentReport = () => {
     const tableHeaders = [exportColumns.map((col) => col.header)];
     const itemsData = [];
     const groupedData = {};
+    const numericKeys = new Set(["OnHand", "ReorderMin", "SuggestedQty"]);
+
+    const blankRow = () => exportColumns.map(() => "");
+    const sumKey = (rows, key) =>
+      rows.reduce((sum, item) => sum + (Number(item[key]) || 0), 0);
+    const totalRow = (label, rows) => {
+      const row = blankRow();
+      row[0] = label;
+      exportColumns.forEach((col, index) => {
+        if (numericKeys.has(col.key)) row[index] = sumKey(rows, col.key);
+      });
+      return row;
+    };
 
     data.forEach((item) => {
       const outlet = item.Outlet || "Unknown";
@@ -375,57 +406,30 @@ const ReplenishmentReport = () => {
 
     Object.keys(groupedData).forEach((outlet) => {
       const outletData = groupedData[outlet];
-      itemsData.push([outlet, "", "", "", "", "", "", "", "", "", "", ""]);
+      const outletHeader = blankRow();
+      outletHeader[0] = outlet;
+      itemsData.push(outletHeader);
 
       outletData.forEach((item) => {
-        itemsData.push([
-          "",
-          item.ItemCode || "",
-          item.ItemName || "",
-          item.Dept || "",
-          item.Brand || "",
-          item.Ranges || "",
-          item.UOM || "",
-          Number(item.OnHand || 0),
-          Number(item.ReorderMin || 0),
-          Number(item.SuggestedQty || 0),
-          item.Supplier || "",
-          item.Status || "",
-        ]);
+        itemsData.push(
+          exportColumns.map((col, index) => {
+            if (index === 0) return "";
+            if (numericKeys.has(col.key)) return Number(item[col.key] || 0);
+            return item[col.key] ?? "";
+          })
+        );
       });
 
-      const outletSuggested = outletData.reduce(
-        (sum, item) => sum + Number(item.SuggestedQty || 0),
-        0
-      );
-      itemsData.push([
-        `${outlet} Total :`,
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        outletSuggested,
-        "",
-        "",
-      ]);
-      itemsData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+      itemsData.push(totalRow(`${outlet} Total :`, outletData));
+      itemsData.push(blankRow());
     });
-
-    const grandSuggested = data.reduce(
-      (sum, item) => sum + Number(item.SuggestedQty || 0),
-      0
-    );
 
     const excelData = [
       ...headerData,
       ...tableHeaders,
       ...itemsData,
       [""],
-      ["Total", "", "", "", "", "", "", "", "", grandSuggested, "", ""],
+      totalRow("Total", data),
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet(excelData);
@@ -439,7 +443,7 @@ const ReplenishmentReport = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Replenishment Report</h1>
           <p className="text-gray-600 mt-2">
-            Items with Re-Order Level enabled where site on-hand is at or below reorder minimum
+            Items with Re-Order Level enabled where inventory quantity is at or below reorder minimum
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -563,8 +567,7 @@ const ReplenishmentReport = () => {
             <div className="mt-6 text-center text-sm text-gray-600">
               <p>Generated on {moment().format("DD/MM/YYYY HH:mm:ss")}</p>
               <p>
-                Rule: reorderActive = true, reorderMinqty &gt; 0, site on-hand &le;
-                reorder min
+                On hand is the site inventory quantity. Suggested Qty is reorder minimum minus on hand.
               </p>
               <p>
                 Selected Sites:{" "}

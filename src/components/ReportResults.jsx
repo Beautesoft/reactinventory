@@ -235,6 +235,32 @@ const ReportResults = ({
     return grouped;
   };
 
+  const isReplenishmentReport = columns.some((col) => col.key === "SuggestedQty");
+  const replenishmentQtyKeys = new Set(["OnHand", "ReorderMin", "SuggestedQty"]);
+
+  const sumReportColumn = (rows, key) =>
+    rows.reduce((sum, item) => sum + (Number(item[key]) || 0), 0);
+
+  const renderAlignedTotalRow = (label, rows, className) => (
+    <tr className={className}>
+      {columns.map((column, index) => {
+        const showSum = replenishmentQtyKeys.has(column.key);
+        return (
+          <td
+            key={`${label}-${column.key}`}
+            className={`py-3 px-4 print-cell font-semibold ${showSum ? "text-right" : ""}`}
+          >
+            {index === 0
+              ? label
+              : showSum
+                ? sumReportColumn(rows, column.key).toLocaleString()
+                : ""}
+          </td>
+        );
+      })}
+    </tr>
+  );
+
   // Calculate outlet totals - make it dynamic for different column structures
   const calculateOutletTotals = (outletData) => {
     return outletData.reduce((totals, item) => {
@@ -848,7 +874,13 @@ const ReportResults = ({
                           ))}
                           
                           {/* Outlet Total Row */}
-                          {!isCollapsed && (
+                          {!isCollapsed && isReplenishmentReport &&
+                            renderAlignedTotalRow(
+                              `${outlet} Total :`,
+                              outletData,
+                              "bg-blue-50 font-semibold print-row"
+                            )}
+                          {!isCollapsed && !isReplenishmentReport && (
                             <tr className="bg-blue-50 font-semibold print-row">
                               <td className="py-3 px-4 font-semibold print-cell">{outlet} Total :</td>
                               <td className="print-cell"></td>
@@ -912,6 +944,13 @@ const ReportResults = ({
                   })()}
                   
                   {/* Grand Total Row */}
+                  {isReplenishmentReport &&
+                    renderAlignedTotalRow(
+                      "Total",
+                      filteredData,
+                      "bg-blue-100 font-bold text-lg border-t-2 print-row"
+                    )}
+                  {!isReplenishmentReport && (
                   <tr className="bg-blue-100 font-bold text-lg border-t-2 print-row">
                     <td className="py-3 px-4 font-bold print-cell">Total</td>
                     <td className="print-cell"></td>
@@ -966,6 +1005,7 @@ const ReportResults = ({
                       })()}
                     </td>
                   </tr>
+                  )}
                 </tbody>
               </table>
             </div>

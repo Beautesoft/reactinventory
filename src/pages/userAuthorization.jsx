@@ -18,6 +18,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Users, Shield, RefreshCw, UserPlus, Save, Search } from "lucide-react";
@@ -29,6 +39,8 @@ const UserAuthorization = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [userSearch, setUserSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [selectAllConfirm, setSelectAllConfirm] = useState(null);
 
   // Authorization data from API
   const [userAuthorizations, setUserAuthorizations] = useState([]);
@@ -119,7 +131,9 @@ const UserAuthorization = () => {
   };
 
   const handleUserSelect = (userCode) => {
-    const user = userList.find(u => u.itemCode === userCode);
+    const user = userList.find((u) => u.itemCode === userCode);
+    if (!user) return;
+    setSelectAllConfirm(null);
     setSelectedUser(user);
     fetchUserAuthorizations(userCode);
   };
@@ -148,10 +162,89 @@ const UserAuthorization = () => {
     }
   };
 
+  const authorizedCount = userAuthorizations.filter((auth) => auth.Active === "Y").length;
+  const totalAuthForms = userAuthorizations.length;
+  const selectAllChecked =
+    totalAuthForms > 0 && authorizedCount === totalAuthForms
+      ? true
+      : authorizedCount > 0
+        ? "indeterminate"
+        : false;
+
+  const handleSelectAllToggle = (checked) => {
+    if (!selectedUser || savingAll || selectAllConfirm) {
+      if (!selectedUser) toast.error("Please select a user first");
+      return;
+    }
+
+    const active = checked === true ? "Y" : "N";
+    const count = userAuthorizations.filter((auth) => auth.Active !== active).length;
+    if (count === 0) return;
+
+    setSelectAllConfirm({
+      active,
+      userCode: selectedUser.itemCode,
+      userName: selectedUser.itemDesc,
+      count,
+    });
+  };
+
+  // Check or clear every form for the selected user. Only rows that change are saved.
+  const applySelectAll = async (pendingConfirm) => {
+    if (!pendingConfirm || savingAll) return;
+    if (!selectedUser || selectedUser.itemCode !== pendingConfirm.userCode) {
+      toast.error("Select the user again before changing access");
+      return;
+    }
+
+    const active = pendingConfirm.active;
+    const previous = userAuthorizations;
+    const pending = previous.filter((auth) => auth.Active !== active);
+    if (pending.length === 0) return;
+
+    setSavingAll(true);
+    try {
+      setUserAuthorizations((prev) => prev.map((auth) => ({ ...auth, Active: active })));
+
+      const results = await Promise.allSettled(
+        pending.map((auth) => saveAuthorization(selectedUser.itemCode, auth.Code, active))
+      );
+      const failed = new Set(
+        pending
+          .filter((_, index) => results[index].status === "rejected")
+          .map((auth) => auth.Code)
+      );
+
+      if (failed.size > 0) {
+        setUserAuthorizations((prev) =>
+          prev.map((auth) => {
+            if (!failed.has(auth.Code)) return auth;
+            const prior = previous.find((item) => item.Code === auth.Code);
+            return prior ? { ...auth, Active: prior.Active } : auth;
+          })
+        );
+        toast.error(
+          failed.size === pending.length
+            ? "Failed to update authorizations"
+            : `Failed to update ${failed.size} of ${pending.length} forms`
+        );
+      } else {
+        const isCurrentUser = getCurrentUser()?.username === selectedUser.itemCode;
+        toast.success(
+          isCurrentUser
+            ? "All authorizations updated. Please logout and login again for changes to take effect."
+            : "All authorizations updated."
+        );
+      }
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
   // Handle authorization toggle with real-time saving
   const handleAuthorizationToggle = async (code, checked) => {
-    if (!selectedUser) {
-      toast.error("Please select a user first");
+    if (!selectedUser || savingAll) {
+      if (!selectedUser) toast.error("Please select a user first");
       return;
     }
 
@@ -340,7 +433,18 @@ const UserAuthorization = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-12">Access</TableHead>
+                      <TableHead className="w-28">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            aria-label="Toggle all access"
+                            className="cursor-pointer"
+                            checked={selectAllChecked}
+                            disabled={savingAll || totalAuthForms === 0}
+                            onCheckedChange={handleSelectAllToggle}
+                          />
+                          <span>Access</span>
+                        </div>
+                      </TableHead>
                       <TableHead className="w-20">Code</TableHead>
                       <TableHead>Form Name</TableHead>
                     </TableRow>
@@ -350,8 +454,9 @@ const UserAuthorization = () => {
                       <TableRow key={auth.Code}>
                         <TableCell>
                           <Checkbox
-                          className={'cursor-pointer'}
+                            className="cursor-pointer"
                             checked={auth.Active === "Y"}
+                            disabled={savingAll}
                             onCheckedChange={(checked) => handleAuthorizationToggle(auth.Code, checked)}
                           />
                         </TableCell>
@@ -422,6 +527,38 @@ const UserAuthorization = () => {
         </CardContent>
       </Card>
       */}
+
+      <AlertDialog
+        open={!!selectAllConfirm}
+        onOpenChange={(open) => {
+          if (!open) setSelectAllConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {selectAllConfirm?.active === "Y" ? "Enable all access?" : "Disable all access?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectAllConfirm?.active === "Y"
+                ? `Turn on access for ${selectAllConfirm?.count} form${selectAllConfirm?.count === 1 ? "" : "s"} for ${selectAllConfirm?.userName}.`
+                : `Turn off access for ${selectAllConfirm?.count} form${selectAllConfirm?.count === 1 ? "" : "s"} for ${selectAllConfirm?.userName}.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pending = selectAllConfirm;
+                setSelectAllConfirm(null);
+                applySelectAll(pending);
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

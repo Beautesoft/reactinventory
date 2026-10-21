@@ -17,97 +17,20 @@ import bslogo from "@/assets/companylogo.png";
 
 import { useNavigate } from "react-router-dom";
 import apiService from "@/services/apiService";
-import apiService1 from "@/services/apiService1";
 import VersionStamp from "@/components/VersionStamp";
-
-function normalizeLoginSite(site) {
-  return {
-    id: site.id,
-    itemsiteCode:
-      site.itemsite_code ??
-      site.itemsiteCode ??
-      site.siteCode ??
-      String(site.id ?? ""),
-    itemsiteDesc:
-      site.itemsite_desc ?? site.itemsiteDesc ?? site.siteDesc ?? "",
-    itemsiteAddress:
-      site.itemsite_address ??
-      site.itemsiteAddress ??
-      site.location_addr ??
-      "",
-    itemsiteCity: site.itemsite_city ?? site.itemsiteCity ?? "",
-    itemsiteCountry:
-      site.itemsite_country ?? site.itemsiteCountry ?? "",
-    itemsiteState: site.itemsite_state ?? site.itemsiteState ?? "",
-    itemsitePostcode:
-      site.itemsite_postcode ?? site.itemsitePostcode ?? "",
-    itemsitePhone1: site.itemsite_phone1 ?? site.itemsitePhone1 ?? "",
-    locationName: site.location_name ?? site.locationName ?? "",
-  };
-}
+import {
+  establishUserSession,
+  isAuthVerificationSuccessful,
+  normalizeLoginSite,
+  parseAuthApiResponse,
+} from "@/auth/loginSession";
 
 function parseLoginResponse(response) {
-  const root = response ?? {};
-  const data = root.data ?? root;
-  const sites = data.sites ?? root.sites ?? [];
-
-  return {
-    data,
-    sites: Array.isArray(sites) ? sites : [],
-    success: root.success ?? data.success,
-    status: root.status,
-    statusText: root.statusText ?? data.statusText,
-    message: root.message,
-    error: root.error,
-  };
+  return parseAuthApiResponse(response);
 }
 
 function isLoginSuccessful(response, parsed) {
-  const { data, success, status, message, error } = parsed;
-
-  if (success === "1") return true;
-  if (success === "2" || success === "3" || success === "0") return false;
-
-  if (status === 200 && error === false && data?.token) return true;
-  if (message === "Login Successful" && data?.token) return true;
-
-  return false;
-}
-
-function extractLoginPayload(response, parsed) {
-  const data = parsed.data ?? {};
-  const inventory = data.inventory ?? {};
-
-  return {
-    username: data.username ?? response.username ?? "",
-    userCode: inventory.userCode ?? data.userCode ?? response.userCode ?? "",
-    token: data.token ?? response.token ?? "",
-    branch: data.branch ?? response.branch ?? "",
-    role: data.role ?? response.role ?? "",
-    salon: data.salon ?? response.salon ?? "",
-    currency: data.currency ?? response.currency ?? "",
-    sessionId: data.session_id ?? data.sessionId ?? "",
-    isSettingEnabled:
-      inventory.isSettingEnabled ?? response.isSettingEnabled,
-    isSettingViewCost:
-      inventory.isSettingViewCost ?? response.isSettingViewCost,
-    isSettingViewPrice:
-      inventory.isSettingViewPrice ?? response.isSettingViewPrice,
-    isSettingPostedChangePrice:
-      inventory.isSettingPostedChangePrice ??
-      response.isSettingPostedChangePrice,
-    batchNo: inventory.batchNo ?? response.batchNo,
-    expiryDate: inventory.expiryDate ?? response.expiryDate,
-    manualBatchSelection:
-      inventory.manualBatchSelection ?? response.manualBatchSelection,
-    batchSNo: inventory.batchSNo ?? response.batchSNo,
-    defaultExpiryDays:
-      inventory.defaultExpiryDays ?? response.defaultExpiryDays,
-    autoPost: inventory.autoPost ?? response.autoPost,
-    prUseDeliveryOrder:'False',
-      // inventory.prUseDeliveryOrder ?? response.prUseDeliveryOrder,
-    HQSiteCode: inventory.HQSiteCode ?? response.HQSiteCode,
-  };
+  return isAuthVerificationSuccessful(response, parsed);
 }
 
 const Login = () => {
@@ -123,45 +46,6 @@ const Login = () => {
   const [salonDetail, setSalonDetail] = useState([]);
   const [loginPhase, setLoginPhase] = useState("credentials");
   const isSubmittingRef = useRef(false);
-
-  const fetchUserAuthorizations = async (userCode) => {
-    try {
-      const response = await apiService1.get(
-        `api/getInventoryAuth?userCode=${userCode}`
-      );
-      if (response && response.result) {
-        return Array.isArray(response.result) ? response.result : [];
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching user authorizations:", error);
-      return [];
-    }
-  };
-
-  const fetchActiveCurrency = async () => {
-    try {
-      const filter = {
-        where: {
-          currencyIsActive: true,
-        },
-      };
-      const query = `?filter=${encodeURIComponent(JSON.stringify(filter))}`;
-      const response = await apiService.get(`CurrencyTables${query}`);
-
-      if (response && response.length > 0) {
-        return {
-          currencyCode: response[0].currencyCode,
-          currencyName: response[0].currencyName,
-          currencyRate: response[0].currencyRate,
-        };
-      }
-      return null;
-    } catch (error) {
-      console.error("Error fetching active currency:", error);
-      return null;
-    }
-  };
 
   const resetOutletSelection = () => {
     setLoginPhase("credentials");
@@ -189,56 +73,27 @@ const Login = () => {
   };
 
   const completeLogin = async (response, parsed, outlet) => {
-    const payload = extractLoginPayload(response, parsed);
-
-    const [userAuthorizations, currencyData] = await Promise.all([
-      fetchUserAuthorizations(username || payload.userCode),
-      fetchActiveCurrency(),
-    ]);
-
-    const successData = {
-      username: payload.username || username,
-      usercode: payload.userCode,
-      token: payload.token,
-      role: payload.role,
-      branch: payload.branch,
-      sessionId: payload.sessionId,
-      isSettingEnabled: payload.isSettingEnabled,
-      isSettingViewCost: payload.isSettingViewCost,
-      isSettingViewPrice: payload.isSettingViewPrice,
-      isSettingPostedChangePrice: payload.isSettingPostedChangePrice,
-      batchNo: payload.batchNo,
-      expiryDate: payload.expiryDate,
-      manualBatchSelection: payload.manualBatchSelection,
-      batchSNo: payload.batchSNo,
-      defaultExpiryDays: payload.defaultExpiryDays,
-      autoPost: payload.autoPost,
-      prUseDeliveryOrder: payload.prUseDeliveryOrder,
-      HQSiteCode: payload.HQSiteCode,
-      siteCode: outlet?.itemsiteCode ?? payload.branch ?? "",
-      siteName: outlet?.itemsiteDesc ?? payload.salon ?? "",
-      siteAddress: outlet?.itemsiteAddress ?? "",
-      siteCity: outlet?.itemsiteCity ?? "",
-      siteCountry: outlet?.itemsiteCountry ?? "",
-      siteState: outlet?.itemsiteState ?? "",
-      sitePostCode: outlet?.itemsitePostcode ?? "",
-      sitePhone: outlet?.itemsitePhone1 ?? "",
-      currencyCode: currencyData?.currencyCode || payload.currency || "$",
-      currencyName: currencyData?.currencyName || payload.currency || "USD",
-      currencyRate: currencyData?.currencyRate || 1,
+    const responseWithOutlet = {
+      ...response,
+      data: {
+        ...(parsed.data ?? response?.data ?? response ?? {}),
+        site: outlet,
+        salon: outlet?.itemsiteDesc ?? parsed.data?.salon,
+        branch: outlet?.itemsiteCode ?? parsed.data?.branch,
+      },
     };
 
-    localStorage.setItem(
-      "userAuthorizations",
-      JSON.stringify(userAuthorizations)
-    );
-
-    const success = await loginSuccess(successData);
+    await establishUserSession({
+      loginSuccess,
+      response: responseWithOutlet,
+      token: parsed.data?.token ?? response?.data?.token ?? response?.token,
+      usernameFallback: username,
+    });
 
     toast.success("Login successful!", {
       duration: 2000,
       onDismiss: () => {
-        success && navigate("/dashboard", { replace: true });
+        navigate("/dashboard", { replace: true });
       },
     });
   };

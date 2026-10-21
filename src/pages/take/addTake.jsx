@@ -778,7 +778,7 @@ function AddTake({ docData }) {
     docStatus: null,
     storeNo: userDetails?.siteCode,
     docRemk1: "",
-    createUser: userDetails?.username,
+    createUser: userDetails?.username || userDetails?.usercode || "",
   });
   // The status this screen must act on. For an existing document it is the value
   // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
@@ -3710,7 +3710,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
         docRemk1: hdr.docRemk1,
-        createUser: hdr.createUser,
+        createUser: urlDocNo
+          ? hdr.createUser
+          : (userDetails?.username || userDetails?.usercode || ""),
         postDate: type === "submit" ? new Date().toISOString() : "",
         createDate: urlDocNo ? hdr.createDate : new Date().toISOString(),
         staffNo: userDetails.usercode || userDetails.username,
@@ -4028,7 +4030,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                       Created By
                     </Label>
                     <Input
-                      value={stockHdrs.createUser}
+                      value={stockHdrs.createUser || stockHdrs.staffNo || ""}
                       disabled
                       className="bg-gray-50"
                     />

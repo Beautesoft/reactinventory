@@ -70,6 +70,8 @@ import {
   resolveSiteName,
   formatOrdMemo4FromBatches,
   formatOrdMemo4Pair,
+  buildLinkCodeLookup,
+  lookupLinkCode,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -984,6 +986,13 @@ function AddPR() {
   const [siteOptions, setSiteOptions] = useState([]);
   const [stockList, setStockList] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
+  const linkCodeLookup = useMemo(
+    () =>
+      buildLinkCodeLookup(
+        originalStockList.length > 0 ? originalStockList : stockList,
+      ),
+    [originalStockList, stockList],
+  );
   const [batchOptions, setBatchOptions] = useState([]);
   const [batches, setBatches] = useState([]);
 
@@ -3404,6 +3413,7 @@ function AddPR() {
                   <TableHead>No</TableHead>
                     <TableHead>Item Code</TableHead>
                     <TableHead>Description</TableHead>
+                  <TableHead>Link Code</TableHead>
                   <TableHead>UOM</TableHead>
                   <TableHead>Requested Qty</TableHead>
                   {!isHQUser && (isViewOnlyStatus || formData.reqStatus === "Rejected") && <TableHead>Approved Qty</TableHead>}
@@ -3443,6 +3453,7 @@ function AddPR() {
                     <TableCell className="max-w-[200px] whitespace-normal break-words">
                       {item.reqdItemdesc}
                     </TableCell>
+                    <TableCell>{lookupLinkCode(linkCodeLookup, item) || "-"}</TableCell>
                     <TableCell>{item.docUom}</TableCell>
                       <TableCell>{parseFloat(item.reqdQty || 0)}</TableCell>
                       {!isHQUser && (isViewOnlyStatus || formData.reqStatus === "Rejected") && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, use, memo, useCallback } from "react";
+import React, { useState, useEffect, use, memo, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +49,8 @@ import {
   isVoidDocStatus,
   resolveSiteName,
   formatOrdMemo4FromBatches,
+  buildLinkCodeLookup,
+  lookupLinkCode,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -617,7 +619,7 @@ function AddSum({ docData }) {
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     postDate: "",
-    createUser: userDetails?.username,
+    createUser: userDetails?.username || userDetails?.usercode || "",
   });
   // The status this screen must act on. For an existing document it is the value
   // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
@@ -629,6 +631,13 @@ function AddSum({ docData }) {
 
   const [cartData, setCartData] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
+  const linkCodeLookup = useMemo(
+    () =>
+      buildLinkCodeLookup(
+        originalStockList.length > 0 ? originalStockList : stockList,
+      ),
+    [originalStockList, stockList],
+  );
   const [controlData, setControlData] = useState({
     docNo: "",
     RunningNo: "",
@@ -2254,8 +2263,10 @@ function AddSum({ docData }) {
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
         docRemk1: hdr.docRemk1,
-        createUser: hdr.createUser,
-        createDate: type === "post" && urlDocNo ? hdr.createDate : new Date().toISOString(),
+        createUser: urlDocNo
+          ? hdr.createUser
+          : (userDetails?.username || userDetails?.usercode || ""),
+        createDate: urlDocNo ? hdr.createDate : new Date().toISOString(),
         staffNo: userDetails.usercode,
       };
 
@@ -2713,7 +2724,7 @@ function AddSum({ docData }) {
                       Created By
                     </Label>
                     <Input
-                      value={stockHdrs.createUser}
+                      value={stockHdrs.createUser || stockHdrs.staffNo || ""}
                       disabled
                       className="bg-gray-50"
                     />
@@ -2873,6 +2884,7 @@ function AddSum({ docData }) {
                       Item Code
                     </TableHead>
                                           <TableHead>Item Description</TableHead>
+                    <TableHead>Link Code</TableHead>
                       <TableHead>UOM</TableHead>
                       <TableHead>Quantity</TableHead>
                       {userDetails?.isSettingViewPrice === "True" && (
@@ -2895,7 +2907,7 @@ function AddSum({ docData }) {
                 <TableBody>
                   {loading ? (
                     <TableSpinner colSpan={
-                      5 + // Base columns: NO, Item Code, Description, UOM, Quantity
+                      6 + // Base columns: NO, Item Code, Description, Link Code, UOM, Quantity
                       (userDetails?.isSettingViewPrice === "True" ? 2 : 0) + // Price, Amount
                       (getConfigValue('BATCH_NO') === "Yes" ? 1 : 0) + // Usage Type
                       1 + // Remarks
@@ -2904,7 +2916,7 @@ function AddSum({ docData }) {
                   ) : cartData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={
-                        5 + // Base columns: NO, Item Code, Description, UOM, Quantity
+                        6 + // Base columns: NO, Item Code, Description, Link Code, UOM, Quantity
                         (userDetails?.isSettingViewPrice === "True" ? 2 : 0) + // Price, Amount
                         (getConfigValue('BATCH_NO') === "Yes" ? 1 : 0) + // Usage Type
                         1 + // Remarks
@@ -2928,6 +2940,7 @@ function AddSum({ docData }) {
                           </TableCell>
                           <TableCell>{item.itemcode}</TableCell>
                           <TableCell>{item.itemdesc}</TableCell>
+                          <TableCell>{lookupLinkCode(linkCodeLookup, item) || "-"}</TableCell>
                           <TableCell>{item.docUom}</TableCell>
                           <TableCell className="font-medium">
                             {item.docQty}
@@ -2996,7 +3009,7 @@ function AddSum({ docData }) {
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="text-right text-slate-700"
                         >
                           Totals:

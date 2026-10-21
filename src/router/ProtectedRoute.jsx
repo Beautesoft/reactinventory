@@ -8,7 +8,7 @@ const PrivateRoute = ({ children }) => {
   // Wait for authentication to initialize before making routing decisions
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="fixed inset-0 z-50 flex min-h-svh w-full items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from "react";
+import React, { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,6 +67,8 @@ import {
   filterActiveItemSites,
   isHqUser,
   resolveSiteName,
+  buildLinkCodeLookup,
+  lookupLinkCode,
 } from "@/utils/utils";
 import {
   applyItemBatchCostFromItemOnQty,
@@ -788,7 +790,7 @@ function AddGto({ docData }) {
     fstoreNo: userDetails?.siteCode,
     tstoreNo: "",
     docRemk1: "",
-    createUser: userDetails?.username,
+    createUser: userDetails?.username || userDetails?.usercode || "",
     movCode: "TFRT",
     movType: "TFR",
   });
@@ -834,6 +836,16 @@ function AddGto({ docData }) {
 
   const [originalStockList, setOriginalStockList] = useState([]);
   const [searchTimer, setSearchTimer] = useState(null);
+
+  // Display-only. Prefer the unfiltered catalog so a brand/range filter
+  // cannot hide a link code on a line already in the cart.
+  const linkCodeLookup = useMemo(
+    () =>
+      buildLinkCodeLookup(
+        originalStockList.length > 0 ? originalStockList : stockList,
+      ),
+    [originalStockList, stockList],
+  );
 
   // Add sorting state for ItemTable
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
@@ -2596,13 +2608,14 @@ function AddGto({ docData }) {
         daddr2: supplierInfo.sline2,
         daddr3: supplierInfo.sline3,
         dpostcode: supplierInfo.spcode,
-        createUser: hdr.createUser,
+        createUser: urlDocNo
+          ? hdr.createUser
+          : (userDetails?.username || userDetails?.usercode || ""),
         staffNo: userDetails.usercode,
 
-        createDate:
-          type === "post" && urlDocNo
-            ? hdr.createDate
-            : new Date().toISOString(),
+        createDate: urlDocNo
+          ? hdr.createDate
+          : new Date().toISOString(),
       };
 
       // Handle header operations based on type and urlDocNo
@@ -6430,7 +6443,7 @@ function AddGto({ docData }) {
                   <div className="space-y-2">
                     <Label>Created By</Label>
                     <Input
-                      value={stockHdrs.createUser}
+                      value={stockHdrs.createUser || stockHdrs.staffNo || ""}
                       disabled
                       className="bg-gray-50"
                     />
@@ -6637,6 +6650,7 @@ function AddGto({ docData }) {
                       Item Code
                     </TableHead>
                     <TableHead>Item Description</TableHead>
+                    <TableHead>Link Code</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead>Quantity</TableHead>
                     <TableHead>FOC Qty</TableHead>
@@ -6663,7 +6677,7 @@ function AddGto({ docData }) {
                   {loading ? (
                     <TableSpinner
                       colSpan={
-                        10 +
+                        11 +
                         (urlStatus != 7 ||
                         (urlStatus == 7 &&
                           userDetails?.isSettingPostedChangePrice === "True")
@@ -6674,7 +6688,7 @@ function AddGto({ docData }) {
                     />
                   ) : cartData.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
+                      <TableCell colSpan={10} className="text-center py-10">
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -6714,6 +6728,7 @@ function AddGto({ docData }) {
                           </TableCell>
                           <TableCell>{item.itemcode}</TableCell>
                           <TableCell>{item.itemdesc}</TableCell>
+                          <TableCell>{lookupLinkCode(linkCodeLookup, item) || "-"}</TableCell>
                           <TableCell>{item.docUom}</TableCell>
                           <TableCell className="font-medium">
                             {item.docQty}
@@ -6790,8 +6805,8 @@ function AddGto({ docData }) {
                             (urlStatus == 7 &&
                               userDetails?.isSettingPostedChangePrice ===
                                 "True")
-                              ? 5
-                              : 4
+                              ? 6
+                              : 5
                           }
                           className="text-right text-slate-700"
                         >

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, use, memo, useCallback } from "react";
+import React, { useState, useEffect, use, memo, useCallback, useMemo } from "react";
 // Stock Adjustment component - allows both positive and negative quantities for inventory adjustments
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,8 @@ import {
   resolveSiteName,
   formatOrdMemo4FromBatches,
   normalizeExpDate,
+  buildLinkCodeLookup,
+  lookupLinkCode,
 } from "@/utils/utils";
 import {
   enrichStockItemsWithDecimalFlag,
@@ -850,7 +852,7 @@ function AddAdj({ docData }) {
     storeNo: userDetails?.siteCode,
     docRemk1: "",
     postDate: "",
-    createUser: userDetails?.username,
+    createUser: userDetails?.username || userDetails?.usercode || "",
   });
   // The status this screen must act on. For an existing document it is the value
   // loaded from the database (stockHdrs.docStatus); the raw ?status= from the URL
@@ -862,6 +864,13 @@ function AddAdj({ docData }) {
 
   const [cartData, setCartData] = useState([]);
   const [originalStockList, setOriginalStockList] = useState([]);
+  const linkCodeLookup = useMemo(
+    () =>
+      buildLinkCodeLookup(
+        originalStockList.length > 0 ? originalStockList : stockList,
+      ),
+    [originalStockList, stockList],
+  );
   const [controlData, setControlData] = useState({
     docNo: "",
     RunningNo: "",
@@ -3351,11 +3360,12 @@ function AddAdj({ docData }) {
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
         docRemk1: hdr.docRemk1,
-        createUser: hdr.createUser,
-        createDate:
-          type === "post" && urlDocNo
-            ? hdr.createDate
-            : new Date().toISOString(),
+        createUser: urlDocNo
+          ? hdr.createUser
+          : (userDetails?.username || userDetails?.usercode || ""),
+        createDate: urlDocNo
+          ? hdr.createDate
+          : new Date().toISOString(),
         staffNo: userDetails.usercode || userDetails.username,
       };
 
@@ -4199,7 +4209,7 @@ function AddAdj({ docData }) {
                       Created By
                     </Label>
                     <Input
-                      value={stockHdrs.createUser}
+                      value={stockHdrs.createUser || stockHdrs.staffNo || ""}
                       disabled
                       className="bg-gray-50"
                     />
@@ -4410,6 +4420,7 @@ function AddAdj({ docData }) {
                       Item Code
                     </TableHead>
                     <TableHead>Item Description</TableHead>
+                    <TableHead>Link Code</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead>Adj Qty (±)</TableHead>
                     {userDetails?.isSettingViewPrice === "True" && (
@@ -4432,10 +4443,10 @@ function AddAdj({ docData }) {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableSpinner colSpan={9} />
+                    <TableSpinner colSpan={10} />
                   ) : cartData.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
+                      <TableCell colSpan={10} className="text-center py-10">
                         <div className="flex flex-col items-center gap-2 text-gray-500">
                           <FileText size={40} />
                           <p>No items added</p>
@@ -4475,6 +4486,7 @@ function AddAdj({ docData }) {
                           </TableCell>
                           <TableCell>{item.itemcode}</TableCell>
                           <TableCell>{item.itemdesc}</TableCell>
+                          <TableCell>{lookupLinkCode(linkCodeLookup, item) || "-"}</TableCell>
                           <TableCell>{item.docUom}</TableCell>
                           <TableCell
                             className={`font-medium ${
@@ -4547,7 +4559,7 @@ function AddAdj({ docData }) {
                       {/* Totals Row */}
                       <TableRow className="bg-slate-100 font-medium">
                         <TableCell
-                          colSpan={5}
+                          colSpan={6}
                           className="text-right text-slate-700"
                         >
                           Totals:
