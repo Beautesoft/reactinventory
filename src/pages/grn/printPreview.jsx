@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import apiService from "@/services/apiService";
 import { buildFilterQuery, format_Date, formatCurrentDate } from "@/utils/utils";
+import { expandStockTakePrintRows } from "@/pages/take/stockTakeDraft";
 import * as XLSX from "xlsx";
 import html2canvas from "html2canvas-pro";
 import jsPDF from "jspdf";
@@ -360,11 +361,37 @@ function PrintPreview({
   // Column configurations for different modes
   // For PR documents, include "Approved Qty" after "Required Qty" only if status is "Approved"
   const isPR = documentType === 'pr';
+  const isTke = documentType === "tke";
   const isPRApproved = useMemo(() => {
     return isPR && (prStatus === 'Approved' || documentData?.reqStatus === 'Approved');
   }, [isPR, prStatus, documentData?.reqStatus]);
   
   const columnConfigs = useMemo(() => {
+    if (isTke) {
+      const user = {
+        headers: [
+          "No",
+          "Item Code",
+          "Item Description",
+          "Batch",
+          "Expiry Date",
+          "Count Qty",
+          "System Qty",
+          "Variance",
+          "Remarks",
+        ],
+        alignments: ["left", "left", "left", "left", "left", "right", "right", "right", "left"],
+        colSpan: 5,
+      };
+      return {
+        user,
+        admin: {
+          headers: [...user.headers, "Selling Price", "Cost Price"],
+          alignments: [...user.alignments, "right", "right"],
+          colSpan: 5,
+        },
+      };
+    }
     if (isPR && isPRApproved) {
       // PR with Approved status - show Approved Qty
       return {
@@ -420,7 +447,7 @@ function PrintPreview({
         }
       };
     }
-  }, [isPR, isPRApproved]);
+  }, [isPR, isPRApproved, isTke]);
 
   // Update current mode based on selection and permissions
   const effectiveMode = selectedMode; // Allow mode switching regardless of admin status
@@ -568,6 +595,33 @@ function PrintPreview({
             batchselect: batchDisplay,
           };
         });
+      } else if (documentType === "tke") {
+        const details = await apiService.get(
+          `StkMovdocDtls${buildFilterQuery(filter)}`
+        );
+        const lines = Array.isArray(details) ? details : [];
+        const codes = [
+          ...new Set(
+            lines
+              .map((line) => String(line.itemcode || "").replace(/0000$/, ""))
+              .filter(Boolean)
+          ),
+        ];
+        let priceRows = [];
+        if (codes.length > 0) {
+          try {
+            const priceFilter = encodeURIComponent(
+              JSON.stringify({ where: { itemCode: { inq: codes } } })
+            );
+            const prices = await apiService.get(
+              `ItemUomprices?filter=${priceFilter}`
+            );
+            priceRows = Array.isArray(prices) ? prices : [];
+          } catch (priceErr) {
+            console.error("Failed to load item prices for stock take print:", priceErr);
+          }
+        }
+        response = expandStockTakePrintRows(lines, priceRows);
       } else {
         // For other documents, use Stkprintlists
         response = await apiService.get(
@@ -648,7 +702,50 @@ function PrintPreview({
     return chunks;
   }, [filteredItems]);
 
-  const renderLineItemRow = (item, rowNo) => (
+  const renderStockTakeQty = (value) =>
+    value === "" || value == null ? "" : value;
+
+  const renderStockTakeRow = (item, rowNo) => (
+    <tr
+      key={`tke-${rowNo}-${item.itemcode}-${item.batchselect}`}
+      className="border-b hover:bg-gray-50 print-row print-data-row"
+    >
+      <td className="py-3 px-3 print-cell">{item.showItem ? item.itemNo : ""}</td>
+      <td className="py-3 px-3 print-cell font-medium">
+        {item.showItem ? item.itemcode : ""}
+      </td>
+      <td className="py-3 px-3 print-cell">{item.showItem ? item.itemdesc : ""}</td>
+      <td className="py-3 px-3 print-cell">{item.batchselect || "-"}</td>
+      <td className="py-3 px-3 print-cell">{item.expiry ? format_Date(item.expiry) : "-"}</td>
+      <td className="py-3 px-3 print-cell text-right font-medium">
+        {renderStockTakeQty(item.docQty)}
+      </td>
+      <td className="py-3 px-3 print-cell text-right">
+        {item.showItem ? item.systemQty : ""}
+      </td>
+      <td className="py-3 px-3 print-cell text-right">
+        {item.showItem && item.variance != null && item.variance !== ""
+          ? Number(item.variance).toFixed(2)
+          : ""}
+      </td>
+      <td className="py-3 px-3 print-cell">{item.showItem ? item.remarks || "" : ""}</td>
+      {effectiveMode === "admin" && (
+        <>
+          <td className="py-3 px-3 print-cell text-right">
+            {item.showItem ? Number(item.docPrice || 0).toFixed(2) : ""}
+          </td>
+          <td className="py-3 px-3 print-cell text-right">
+            {item.showItem ? Number(item.itemCost || 0).toFixed(2) : ""}
+          </td>
+        </>
+      )}
+    </tr>
+  );
+
+  const renderLineItemRow = (item, rowNo) =>
+    item.isStockTake ? (
+      renderStockTakeRow(item, rowNo)
+    ) : (
     <tr
       key={`line-${rowNo}-${item.itemcode ?? item.itemdesc ?? rowNo}`}
       className="border-b hover:bg-gray-50 print-row print-data-row"
@@ -682,7 +779,18 @@ function PrintPreview({
     </tr>
   );
 
-  const renderGrandTotalRow = () => (
+  const renderGrandTotalRow = () =>
+    isTke ? (
+    <tr className="border-t-4 border-double border-black bg-blue-50 font-bold text-lg print-keep-together">
+      <td colSpan={5} className="py-4 px-4 text-right">
+        Grand Total:
+      </td>
+      <td className="py-4 px-4 text-right text-blue-800">
+        {filteredItems.reduce((sum, item) => sum + (Number(item.countForTotal) || 0), 0)}
+      </td>
+      <td colSpan={effectiveMode === "admin" ? 5 : 3} />
+    </tr>
+  ) : (
     <tr className="border-t-4 border-double border-black bg-blue-50 font-bold text-lg print-keep-together">
       <td colSpan={currentColumnConfig.colSpan} className="py-4 px-4 text-right">
         Grand Total:
@@ -908,6 +1016,28 @@ function PrintPreview({
         ];
 
                  const itemsData = filteredItems.map((item, index) => {
+           if (isTke) {
+             const row = [
+               item.showItem ? item.itemNo : "",
+               item.showItem ? item.itemcode : "",
+               item.showItem ? item.itemdesc : "",
+               item.batchselect || "-",
+               item.expiry ? format_Date(item.expiry) : "-",
+               item.docQty === "" || item.docQty == null ? "" : item.docQty,
+               item.showItem ? item.systemQty : "",
+               item.showItem && item.variance != null && item.variance !== ""
+                 ? Number(item.variance).toFixed(2)
+                 : "",
+               item.showItem ? item.remarks || "" : "",
+             ];
+             if (effectiveMode === "admin") {
+               row.push(
+                 item.showItem ? Number(item.docPrice || 0).toFixed(2) : "",
+                 item.showItem ? Number(item.itemCost || 0).toFixed(2) : ""
+               );
+             }
+             return row;
+           }
            const row = [
              index + 1,
              item.itemcode,
@@ -949,11 +1079,13 @@ function PrintPreview({
           0
         );
 
-                 const totalsRow = ["", "", "Grand Total", "", totalQty];
+                 const totalsRow = isTke
+           ? ["", "", "Grand Total", "", "", filteredItems.reduce((sum, item) => sum + (Number(item.countForTotal) || 0), 0)]
+           : ["", "", "Grand Total", "", totalQty];
          if (isPRApproved && totalApprovedQty != null) {
            totalsRow.push(totalApprovedQty);
          }
-         if (effectiveMode === 'admin') {
+         if (!isTke && effectiveMode === 'admin') {
            totalsRow.push("", parseFloat(totalAmt).toFixed(2), "", "");
          }
         const totalsData = [totalsRow];
