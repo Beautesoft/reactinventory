@@ -26,14 +26,19 @@ const printStyles = `
     }
     
     .print-table {
-      font-size: 10px !important;
+      width: 100% !important;
+      table-layout: fixed !important;
+      font-size: 8px !important;
       line-height: 1.2 !important;
     }
     
     .print-table th,
     .print-table td {
-      padding: 4px 6px !important;
+      padding: 2px !important;
       border: 1px solid #ccc !important;
+      white-space: normal !important;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     
     .print-table th {
@@ -320,6 +325,50 @@ const ReportResults = ({
       return totals;
     }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0, value: 0 });
   };
+
+  const columnHeader = (column) => (
+    <>
+      <span className={column.printHeader ? "print:hidden" : undefined}>{column.header}</span>
+      {column.printHeader ? (
+        <span className="hidden print:inline">{column.printHeader}</span>
+      ) : null}
+    </>
+  );
+
+  const groupedTotalText = (column, totals) => {
+    if (column.key === "Qty" || column.key === "TranQty" || column.key === "trnQty") {
+      return totals.qty.toLocaleString();
+    }
+    if (column.key === "TotalCost") return totals.totalCost.toFixed(2);
+    if (column.key === "TotalAmount") return totals.totalAmount.toFixed(2);
+    if (column.key === "TranAmt" || column.key === "trnAmt") return totals.value.toFixed(2);
+    return "";
+  };
+
+  // Label spans the text columns so the outlet name can wrap instead of clipping.
+  const renderGroupedTotalRow = (label, totals, className) => {
+    const amountIndex = columns.findIndex((column) =>
+      column.key === "Qty" || column.key === "TranQty" || column.key === "trnQty"
+    );
+    const span = amountIndex > 0 ? amountIndex : 1;
+    return (
+      <tr className={className}>
+        <td colSpan={span} className="py-2 px-2 font-semibold print-cell whitespace-normal break-words">
+          {label}
+        </td>
+        {columns.slice(span).map((column) => (
+          <td
+            key={`${label}-${column.key}`}
+            className={`py-2 px-1 print-cell font-semibold text-${column.align || "left"}`}
+          >
+            {groupedTotalText(column, totals)}
+          </td>
+        ))}
+      </tr>
+    );
+  };
+
+  const hasColumnWidths = columns.some((column) => column.width);
 
   // Toggle outlet collapse state
   const toggleOutlet = (outlet) => {
@@ -815,16 +864,23 @@ const ReportResults = ({
           {/* Data Table */}
           {groupByOutlet && showOutletGrouping ? (
             // Outlet Grouped Table with Collapsible Sections
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse mb-6 print-table">
+            <div className={hasColumnWidths ? "overflow-x-auto print:overflow-visible" : "overflow-x-auto"}>
+              <table className={`w-full border-collapse mb-6 print-table ${hasColumnWidths ? "table-fixed text-xs" : "text-sm"}`}>
+                {hasColumnWidths && (
+                  <colgroup>
+                    {columns.map((column) => (
+                      <col key={column.key} style={{ width: column.width }} />
+                    ))}
+                  </colgroup>
+                )}
                 <thead>
                   <tr className="border-y bg-gray-50">
                     {columns.map((column, index) => (
                       <th 
                         key={index} 
-                        className={`py-3 px-4 text-${column.align || 'left'} font-semibold`}
+                        className={`py-2 px-1 text-${column.align || 'left'} font-semibold align-bottom whitespace-normal break-words`}
                       >
-                        {column.header}
+                        {columnHeader(column)}
                       </th>
                     ))}
                   </tr>
@@ -843,34 +899,60 @@ const ReportResults = ({
                         <React.Fragment key={outlet}>
                           {/* Outlet Header Row */}
                           <tr className="bg-gray-50 font-semibold print-row">
-                            <td className="py-3 px-4 print-cell">
+                            <td colSpan={columns.length} className="py-2 px-2 print-cell whitespace-normal break-words">
                               <button
                                 onClick={() => toggleOutlet(outlet)}
-                                className="flex items-center gap-2 text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer"
+                                className="flex items-center gap-2 text-left font-semibold hover:text-blue-600 transition-colors cursor-pointer whitespace-normal"
                               >
                                 {isCollapsed ? (
-                                  <ChevronRightIcon className="h-4 w-4" />
+                                  <ChevronRightIcon className="h-4 w-4 shrink-0 print:hidden" />
                                 ) : (
-                                  <ChevronDown className="h-4 w-4" />
+                                  <ChevronDown className="h-4 w-4 shrink-0 print:hidden" />
                                 )}
                                 {outlet}
                               </button>
                             </td>
-                            <td colSpan={columns.length - 1}></td>
                           </tr>
                           
                           {/* Outlet Items (hidden if collapsed) */}
                           {!isCollapsed && outletData.map((item, index) => (
-                            <tr key={`${outlet}-${index}`} className="border-b hover:bg-gray-50 print-row">
+                            <React.Fragment key={`${outlet}-${index}`}>
+                            <tr className="border-b hover:bg-gray-50 print-row">
                               {columns.map((column, colIndex) => (
                                 <td 
                                   key={colIndex} 
-                                  className={`py-3 px-3 print-cell text-${column.align || 'left'}`}
+                                  className={`py-1.5 px-1 print-cell align-top whitespace-normal break-words text-${column.align || 'left'}`}
                                 >
                                   {colIndex === 0 ? "" : (column.render ? column.render(item[column.key], item) : item[column.key])}
                                 </td>
                               ))}
                             </tr>
+                            {Array.isArray(item.batches) && item.batches.map((batch, batchIndex) => (
+                              <tr key={`${outlet}-${index}-batch-${batchIndex}`} className="border-b print-row">
+                                {columns.map((column, colIndex) => {
+                                  if (column.key === "UOM" && columns[colIndex - 1]?.key === "ItemName") {
+                                    return null;
+                                  }
+                                  const batchLabel = [batch.batchNo, batch.expDateLabel].filter(Boolean).join("  ");
+                                  const isBatchLabel = column.key === "ItemName";
+                                  const content = isBatchLabel
+                                    ? batchLabel
+                                    : column.key === "Qty"
+                                      ? Number(batch.qty || 0).toLocaleString()
+                                      : "";
+                                  return (
+                                    <td
+                                      key={colIndex}
+                                      colSpan={isBatchLabel ? 2 : undefined}
+                                      className={`py-1 px-1 print-cell text-xs text-fuchsia-600 text-${column.align || "left"} ${isBatchLabel ? "whitespace-nowrap print-nowrap" : ""}`}
+                                    >
+                                      {content}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                            </React.Fragment>
                           ))}
                           
                           {/* Outlet Total Row */}
@@ -880,59 +962,12 @@ const ReportResults = ({
                               outletData,
                               "bg-blue-50 font-semibold print-row"
                             )}
-                          {!isCollapsed && !isReplenishmentReport && (
-                            <tr className="bg-blue-50 font-semibold print-row">
-                              <td className="py-3 px-4 font-semibold print-cell">{outlet} Total :</td>
-                              <td className="print-cell"></td>
-                              <td className="print-cell"></td>
-                              <td className="print-cell"></td>
-                              {columns.some(col => col.key === 'LinkCode') && <td className="print-cell"></td>}
-                              <td className="print-cell"></td>
-                              <td className="print-cell"></td>
-                              <td className="py-3 px-4 text-right font-semibold print-cell">
-                                {(() => {
-                                  // Handle different column structures for different reports
-                                  if (columns.some(col => col.key === 'Qty')) {
-                                    // Stock Balance report - show quantity total
-                                    return outletTotals.qty.toLocaleString();
-                                  } else if (columns.some(col => col.key === 'TranQty' || col.key === 'trnQty')) {
-                                    // Stock Movement report - show transaction quantity total
-                                    return outletTotals.qty.toLocaleString();
-                                  }
-                                  return "0";
-                                })()}
-                              </td>
-                              <td className="py-3 px-4 text-right font-semibold print-cell">
-                                {/* Cost Price column - no total (unit price) */}
-                              </td>
-                              <td className="py-3 px-4 text-right font-semibold print-cell">
-                                {(() => {
-                                  // Handle different column structures for different reports
-                                  if (columns.some(col => col.key === 'TotalCost')) {
-                                    // Stock Balance report - show total cost
-                                    return outletTotals.totalCost.toFixed(2);
-                                  } else if (columns.some(col => col.key === 'TranAmt' || col.key === 'trnAmt')) {
-                                    // Stock Movement report - show transaction amount total
-                                    return outletTotals.value.toFixed(2);
-                                  }
-                                  return "0.00";
-                                })()}
-                              </td>
-                              <td className="py-3 px-4 text-right font-semibold print-cell">
-                                {/* Selling Price column - no total */}
-                              </td>
-                              <td className="py-3 px-4 text-right font-semibold print-cell">
-                                {(() => {
-                                  // Handle different column structures for different reports
-                                  if (columns.some(col => col.key === 'TotalAmount')) {
-                                    // Stock Balance report - show total amount
-                                    return outletTotals.totalAmount.toFixed(2);
-                                  }
-                                  return "0.00";
-                                })()}
-                              </td>
-                            </tr>
-                          )}
+                          {!isCollapsed && !isReplenishmentReport &&
+                            renderGroupedTotalRow(
+                              `${outlet} Total :`,
+                              outletTotals,
+                              "bg-blue-50 font-semibold print-row"
+                            )}
                           
                           {/* Empty row for spacing */}
                           <tr>
@@ -950,62 +985,12 @@ const ReportResults = ({
                       filteredData,
                       "bg-blue-100 font-bold text-lg border-t-2 print-row"
                     )}
-                  {!isReplenishmentReport && (
-                  <tr className="bg-blue-100 font-bold text-lg border-t-2 print-row">
-                    <td className="py-3 px-4 font-bold print-cell">Total</td>
-                    <td className="print-cell"></td>
-                    <td className="print-cell"></td>
-                    <td className="print-cell"></td>
-                    {columns.some(col => col.key === 'LinkCode') && <td className="print-cell"></td>}
-                    <td className="print-cell"></td>
-                    <td className="print-cell"></td>
-                    <td className="py-3 px-4 text-right font-bold print-cell">
-                      {(() => {
-                        const grandTotals = calculateGrandTotals(filteredData);
-                        // Handle different column structures for different reports
-                        if (columns.some(col => col.key === 'Qty')) {
-                          // Stock Balance report - show quantity total
-                          return grandTotals.qty.toLocaleString();
-                        } else if (columns.some(col => col.key === 'TranQty' || col.key === 'trnQty')) {
-                          // Stock Movement report - show transaction quantity total
-                          return grandTotals.qty.toLocaleString();
-                        }
-                        return "0";
-                      })()}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold print-cell">
-                      {/* Cost Price column - no total (unit price) */}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold print-cell">
-                      {(() => {
-                        const grandTotals = calculateGrandTotals(filteredData);
-                        // Handle different column structures for different reports
-                        if (columns.some(col => col.key === 'TotalCost')) {
-                          // Stock Balance report - show total cost
-                          return grandTotals.totalCost.toFixed(2);
-                        } else if (columns.some(col => col.key === 'TranAmt' || col.key === 'trnAmt')) {
-                          // Stock Movement report - show transaction amount total
-                          return grandTotals.value.toFixed(2);
-                        }
-                        return "0.00";
-                      })()}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold print-cell">
-                      {/* Selling Price column - no total */}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold print-cell">
-                      {(() => {
-                        const grandTotals = calculateGrandTotals(filteredData);
-                        // Handle different column structures for different reports
-                        if (columns.some(col => col.key === 'TotalAmount')) {
-                          // Stock Balance report - show total amount
-                          return grandTotals.totalAmount.toFixed(2);
-                        }
-                        return "0.00";
-                      })()}
-                    </td>
-                  </tr>
-                  )}
+                  {!isReplenishmentReport &&
+                    renderGroupedTotalRow(
+                      "Total",
+                      calculateGrandTotals(filteredData),
+                      "bg-blue-100 font-bold border-t-2 print-row"
+                    )}
                 </tbody>
               </table>
             </div>

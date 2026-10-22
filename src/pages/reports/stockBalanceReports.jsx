@@ -13,8 +13,96 @@ import apiService from "@/services/apiService";
 import { toast } from "sonner";
 import apiService1, { ApiService1 } from "@/services/apiService1";
 import { buildFilterQuery, filterActiveItemSites } from "@/utils/utils";
+import { displayItemCode } from "@/utils/itemMaster/itemCodeHelpers";
 import ReportResults from "@/components/ReportResults";
 import * as XLSX from "xlsx";
+
+const norm = (value) => String(value || "").trim().toUpperCase();
+
+const formatBatchExpiry = (expDate) => {
+  if (!expDate) return "";
+  const parsed = moment(expDate);
+  return parsed.isValid() ? parsed.format("DD/MM/YYYY") : "";
+};
+
+/** Current on-hand batches for the selected sites. ItemBatches has no as-of history. */
+const loadItemBatches = async (siteCodes) => {
+  const pageSize = 500;
+  const rows = [];
+  let skip = 0;
+
+  while (skip <= 20000) {
+    const filter = {
+      where: { siteCode: { inq: siteCodes } },
+      fields: {
+        itemCode: true,
+        siteCode: true,
+        batchNo: true,
+        uom: true,
+        qty: true,
+        expDate: true,
+      },
+      limit: pageSize,
+      skip,
+      order: "itemCode ASC",
+    };
+    const page = await apiService.get(
+      `ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`
+    );
+    const chunk = Array.isArray(page) ? page : [];
+    rows.push(...chunk);
+    if (chunk.length < pageSize) break;
+    skip += pageSize;
+  }
+
+  return rows;
+};
+
+const attachBatchDetails = (rows, batchRows, showZeroQty) => {
+  const byItemUom = new Map();
+  const byItem = new Map();
+
+  batchRows.forEach((batch) => {
+    const qty = Number(batch.qty) || 0;
+    if (!showZeroQty && qty === 0) return;
+
+    const entry = {
+      batchNo: String(batch.batchNo || "").trim() || "No Batch",
+      expDateLabel: formatBatchExpiry(batch.expDate),
+      qty,
+    };
+    const itemKey = `${norm(batch.siteCode)}|${norm(displayItemCode(batch.itemCode))}`;
+    const uomKey = `${itemKey}|${norm(batch.uom)}`;
+    if (!byItemUom.has(uomKey)) byItemUom.set(uomKey, []);
+    byItemUom.get(uomKey).push(entry);
+    if (!byItem.has(itemKey)) byItem.set(itemKey, []);
+    byItem.get(itemKey).push(entry);
+  });
+
+  const sortBatches = (list) =>
+    [...list].sort((a, b) => {
+      if (!a.expDateLabel && !b.expDateLabel) return a.batchNo.localeCompare(b.batchNo);
+      if (!a.expDateLabel) return 1;
+      if (!b.expDateLabel) return -1;
+      return (
+        moment(a.expDateLabel, "DD/MM/YYYY").valueOf() -
+        moment(b.expDateLabel, "DD/MM/YYYY").valueOf()
+      );
+    });
+
+  return rows.map((row) => {
+    const itemKey = `${norm(row.siteCode)}|${norm(displayItemCode(row.ItemCode))}`;
+    const uomKey = `${itemKey}|${norm(row.UOM)}`;
+    const batches = sortBatches(byItemUom.get(uomKey) || byItem.get(itemKey) || []);
+    return {
+      ...row,
+      batches,
+      batchText: batches
+        .map((batch) => `${batch.batchNo} ${batch.expDateLabel} ${batch.qty}`)
+        .join(" "),
+    };
+  });
+};
 
 
 const StockBalanceReports = () => {
@@ -29,6 +117,7 @@ const StockBalanceReports = () => {
     asOnDate: new Date().toISOString().split("T")[0],
     showZeroQty: false,
     showInactive: false,
+    showBatchDetails: false,
   });
 
   const [loading, setLoading] = useState(false);
@@ -191,16 +280,33 @@ const StockBalanceReports = () => {
       if (response && response.success === "1") {
         if (response.result && Array.isArray(response.result) && response.result.length > 0) {
           // Process the data to add calculated fields
-          const processedData = response.result.map(item => ({
+          let processedData = response.result.map(item => ({
             ...item,
+            siteCode: item.Outlet,
             // Show the outlet name (itemsite_desc) instead of the code (itemsite_code)
             Outlet: siteLabelByCode[item.Outlet] || item.Outlet,
+            ItemCode: item.ItemCode || item.itemCode || item.itemcode || "",
             LinkCode: item.linkCode || item.LinkCode || '-',
             // Calculate TotalCost = Qty * Cost
             TotalCost: (Number(item.Qty || 0) * Number(item.Cost || 0)).toFixed(2),
             // Calculate TotalAmount = Qty * Price
             TotalAmount: (Number(item.Qty || 0) * Number(item.Price || 0)).toFixed(2)
           }));
+
+          if (filters.showBatchDetails) {
+            try {
+              const siteCodes = filters.site.map((site) => site.value).filter(Boolean);
+              const batchRows = await loadItemBatches(siteCodes);
+              processedData = attachBatchDetails(
+                processedData,
+                batchRows,
+                filters.showZeroQty
+              );
+            } catch (batchError) {
+              console.error("Error loading batch details:", batchError);
+              toast.error("Report generated, but batch details could not be loaded");
+            }
+          }
           
           setReportData(processedData);
           setHasGeneratedReport(true);
@@ -242,6 +348,7 @@ const StockBalanceReports = () => {
       asOnDate: new Date().toISOString().split("T")[0],
       showZeroQty: false,
       showInactive: false,
+      showBatchDetails: false,
     });
     setReportData([]);
     setHasGeneratedReport(false);
@@ -249,18 +356,19 @@ const StockBalanceReports = () => {
 
   // Column configuration for the report - updated headers as requested
   const columns = [
-    { key: 'Outlet', header: 'Site', align: 'left' },
-    { key: 'Dept', header: 'Dept', align: 'left' },
-    { key: 'Brand', header: 'Brand', align: 'left' },
-    { key: 'Ranges', header: 'Range', align: 'left' },
-    { key: 'LinkCode', header: 'LinkCode', align: 'left' },
-    { key: 'ItemName', header: 'Item Name', align: 'left' },
-    { key: 'UOM', header: 'UOM', align: 'left' },
-    { key: 'Qty', header: 'Qty', align: 'right', type: 'number', render: (value) => Number(value).toLocaleString() },
-    { key: 'Cost', header: 'Cost Price', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) },
-    { key: 'TotalCost', header: 'Total Cost', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) },
-    { key: 'Price', header: 'Selling Price', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) },
-    { key: 'TotalAmount', header: 'Total Amount', align: 'right', type: 'number', render: (value) => Number(value).toFixed(2) }
+    { key: 'Outlet', header: 'Site', printHeader: 'Site', align: 'left', width: '7%' },
+    { key: 'Dept', header: 'Dept', align: 'left', width: '8%' },
+    { key: 'Brand', header: 'Brand', align: 'left', width: '8%' },
+    { key: 'Ranges', header: 'Range', align: 'left', width: '7%' },
+    { key: 'LinkCode', header: 'LinkCode', printHeader: 'Link', align: 'left', width: '7%' },
+    { key: 'ItemCode', header: 'Item Code', printHeader: 'Code', align: 'left', width: '8%', render: (value) => displayItemCode(value) },
+    { key: 'ItemName', header: 'Item Name', printHeader: 'Item', align: 'left', width: '16%' },
+    { key: 'UOM', header: 'UOM', align: 'left', width: '6%' },
+    { key: 'Qty', header: 'Qty', align: 'right', width: '6%', type: 'number', render: (value) => Number(value).toLocaleString() },
+    { key: 'Cost', header: 'Cost Price', printHeader: 'Cost', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) },
+    { key: 'TotalCost', header: 'Total Cost', printHeader: 'Total', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) },
+    { key: 'Price', header: 'Selling Price', printHeader: 'Price', align: 'right', width: '6%', type: 'number', render: (value) => Number(value).toFixed(2) },
+    { key: 'TotalAmount', header: 'Total Amount', printHeader: 'Amount', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) }
   ];
 
   // Company information - use titles from API if available, fallback to default
@@ -310,29 +418,39 @@ const StockBalanceReports = () => {
           groupedData[outlet].push(item);
         });
         
+        const excelRow = (valuesByKey) =>
+          columns.map((col) => (valuesByKey[col.key] !== undefined ? valuesByKey[col.key] : ""));
+
         // Add data with outlet grouping
         Object.keys(groupedData).forEach(outlet => {
           const outletData = groupedData[outlet];
           
           // Add outlet header row
-          itemsData.push([outlet, "", "", "", "", "", "", "", "", "", "", ""]);
+          itemsData.push(excelRow({ Outlet: outlet }));
           
-          // Add outlet items
+          // Add outlet items, with batch lines under each item when requested
           outletData.forEach(item => {
-            itemsData.push([
-              "", // Empty outlet column for items
-              item.Dept || "",
-              item.Brand || "",
-              item.Ranges || "",
-              item.LinkCode || "-",
-              item.ItemName || "",
-              item.UOM || "",
-              Number(item.Qty || 0),
-              Number(item.Cost || 0),
-              Number(item.TotalCost || 0),
-              item.Price || "-",
-              item.TotalAmount || "-"
-            ]);
+            itemsData.push(excelRow({
+              Dept: item.Dept || "",
+              Brand: item.Brand || "",
+              Ranges: item.Ranges || "",
+              LinkCode: item.LinkCode || "-",
+              ItemCode: displayItemCode(item.ItemCode),
+              ItemName: item.ItemName || "",
+              UOM: item.UOM || "",
+              Qty: Number(item.Qty || 0),
+              Cost: Number(item.Cost || 0),
+              TotalCost: Number(item.TotalCost || 0),
+              Price: item.Price || "-",
+              TotalAmount: item.TotalAmount || "-",
+            }));
+
+            (item.batches || []).forEach((batch) => {
+              itemsData.push(excelRow({
+                ItemName: [batch.batchNo, batch.expDateLabel].filter(Boolean).join("  "),
+                Qty: batch.qty,
+              }));
+            });
           });
           
           // Calculate outlet totals
@@ -345,23 +463,17 @@ const StockBalanceReports = () => {
           }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0 });
           
           // Add outlet total row
-          itemsData.push([
-            `${outlet} Total :`,
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            outletTotals.qty,
-            outletTotals.cost,
-            outletTotals.totalCost,
-            "-",
-            outletTotals.totalAmount
-          ]);
+          itemsData.push(excelRow({
+            Outlet: `${outlet} Total :`,
+            Qty: outletTotals.qty,
+            Cost: outletTotals.cost,
+            TotalCost: outletTotals.totalCost,
+            Price: "-",
+            TotalAmount: outletTotals.totalAmount,
+          }));
           
           // Add empty row for spacing
-          itemsData.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+          itemsData.push(excelRow({}));
         });
 
         // Calculate grand totals
@@ -374,7 +486,14 @@ const StockBalanceReports = () => {
         }, { qty: 0, cost: 0, totalCost: 0, totalAmount: 0 });
         
         // Add grand totals row
-        const totalsRow = ["Total", "", "", "", "", "", "", grandTotals.qty, grandTotals.cost, grandTotals.totalCost, "-", grandTotals.totalAmount];
+        const totalsRow = excelRow({
+          Outlet: "Total",
+          Qty: grandTotals.qty,
+          Cost: grandTotals.cost,
+          TotalCost: grandTotals.totalCost,
+          Price: "-",
+          TotalAmount: grandTotals.totalAmount,
+        });
 
         // Combine all data
         const excelData = [
@@ -512,6 +631,14 @@ const StockBalanceReports = () => {
               />
               <Label htmlFor="showInactive">Show Inactive Items</Label>
             </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="showBatchDetails"
+                checked={filters.showBatchDetails}
+                onCheckedChange={(checked) => handleFilterChange("showBatchDetails", checked)}
+              />
+              <Label htmlFor="showBatchDetails">Show Batch Details</Label>
+            </div>
           </div>
 
           {/* Submit Button */}
@@ -558,6 +685,14 @@ const StockBalanceReports = () => {
               <p>Generated on {moment().format("DD/MM/YYYY HH:mm:ss")}</p>
               <p>As On Date: {moment(filters.asOnDate).format("DD/MM/YYYY")}</p>
               <p>Selected Sites: {Array.isArray(filters.site) && filters.site.length > 0 ? filters.site.map(s => s.label).join(', ') : "ALL"}</p>
+              {filters.showBatchDetails && (
+                <p>
+                  Batch lines show the current on-hand batch number, expiry, and quantity.
+                  {filters.asOnDate !== moment().format("YYYY-MM-DD")
+                    ? " They are not recalculated for a past As on Date."
+                    : ""}
+                </p>
+              )}
             </div>
           }
         />
