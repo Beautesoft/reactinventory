@@ -1,4 +1,4 @@
-import React, { useState, useEffect, use, memo, useCallback, useMemo } from "react";
+import React, { useState, useEffect, use, memo, useCallback, useMemo, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,6 +99,14 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import { printStockTakeList } from "./printStockTakeList";
+import {
+  STOCK_TAKE_RESUME_KEY,
+  isBlankCountedQty,
+  isPendingSavedLine,
+  displayCountedQty,
+  buildPendingDetailFields,
+  sheetRowFromDocumentLine,
+} from "./stockTakeDraft";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -767,6 +775,33 @@ function AddTake({ docData }) {
   const { docNo } = useParams();
   const navigate = useNavigate();
   const urlDocNo = docNo || null;
+  const persistedDocNoRef = useRef(urlDocNo || null);
+  const didRestoreSheet = useRef(false);
+
+  // A reload of /stock-take/add, after the header was created, opens that document.
+  // A normal visit to Add clears the marker so a new count is not pulled into an old one.
+  useEffect(() => {
+    if (urlDocNo) {
+      sessionStorage.removeItem(STOCK_TAKE_RESUME_KEY);
+      persistedDocNoRef.current = urlDocNo;
+      return;
+    }
+    const resumeDocNo = sessionStorage.getItem(STOCK_TAKE_RESUME_KEY);
+    if (!resumeDocNo) return;
+    const navEntry = performance.getEntriesByType("navigation")[0];
+    const reloadedAddPage =
+      navEntry?.type === "reload" &&
+      typeof navEntry.name === "string" &&
+      navEntry.name.includes("/stock-take/add");
+    if (reloadedAddPage) {
+      persistedDocNoRef.current = resumeDocNo;
+      navigate(`/stock-take/edit/${encodeURIComponent(resumeDocNo)}`, {
+        replace: true,
+      });
+      return;
+    }
+    sessionStorage.removeItem(STOCK_TAKE_RESUME_KEY);
+  }, [urlDocNo, navigate]);
   const [searchParams] = useSearchParams();
   // Raw ?status= from the URL. Only a fallback for a NEW document, which has no
   // database status yet — see urlStatus below.
@@ -912,7 +947,7 @@ function AddTake({ docData }) {
     if (!stockHdrs.docNo) {
       return true; // New document - can edit
     }
-    if (stockHdrs.docStatus === 0) {
+    if (stockHdrs.docStatus === 0 || stockHdrs.docStatus === "0") {
       return true; // Open - can edit
     }
     return false; // Posted - no one can edit
@@ -935,6 +970,47 @@ function AddTake({ docData }) {
     setStockList(sortedList);
   };
 
+  const activeStockItems = stockList.filter((item) => item.isActive === "True");
+  const currentPageStockItems = activeStockItems.slice(
+    itemFilter.skip,
+    itemFilter.skip + itemFilter.limit
+  );
+  const pageAllSelected =
+    currentPageStockItems.length > 0 &&
+    currentPageStockItems.every((item) =>
+      selectedItems.has(getStockLineKey(item))
+    );
+  const allItemsSelected =
+    activeStockItems.length > 0 &&
+    activeStockItems.every((item) => selectedItems.has(getStockLineKey(item)));
+
+  const setStockKeysSelected = (keys, checked) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      keys.forEach((key) => {
+        if (checked) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+  };
+
+  // Header checkbox: this page only. Other pages stay as they are.
+  const handleSelectPage = (checked) => {
+    setStockKeysSelected(
+      currentPageStockItems.map((item) => getStockLineKey(item)),
+      checked === true
+    );
+  };
+
+  // Selects every active item in the current filtered list, on every page.
+  const handleSelectAllItems = (checked) => {
+    setStockKeysSelected(
+      activeStockItems.map((item) => getStockLineKey(item)),
+      checked === true
+    );
+  };
+
   // Handle item selection in Step 1
   const handleItemSelection = (item, checked) => {
     const key = getStockLineKey(item);
@@ -947,31 +1023,6 @@ function AddTake({ docData }) {
       }
       return newSet;
     });
-  };
-
-  // Handle select all items in Step 1 (selects all visible items in current filtered list)
-  const handleSelectAll = (checked) => {
-    if (checked) {
-      const allKeys = stockList
-        .filter((item) => item.isActive === "True")
-        .map((item) => getStockLineKey(item));
-      // Add to existing selected items (don't replace, in case user selected items from different pages/filters)
-      setSelectedItems((prev) => {
-        const newSet = new Set(prev);
-        allKeys.forEach((key) => newSet.add(key));
-        return newSet;
-      });
-    } else {
-      // Only unselect currently visible items
-      const visibleKeys = stockList
-        .filter((item) => item.isActive === "True")
-        .map((item) => getStockLineKey(item));
-      setSelectedItems((prev) => {
-        const newSet = new Set(prev);
-        visibleKeys.forEach((key) => newSet.delete(key));
-        return newSet;
-      });
-    }
   };
 
   // Handle transition from Step 1 to Step 2
@@ -1030,9 +1081,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         return {
           ...item,
           onHandQty: parseFloat(item.quantity) || 0,
-          countedQty: 0,
-          variance: 0,
-          confirmUpdate: false,
+          countedQty: "",
+          variance: null,
           batchBreakdown: null,
           hasBatchBreakdown: false,
           batchNo: "",
@@ -1043,6 +1093,20 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
       // Check if this is old format (multiple entries per item) or new format (one entry with ordMemo)
       const firstItem = existingItems[0];
+      if (isPendingSavedLine(firstItem)) {
+        return {
+          ...item,
+          onHandQty: parseFloat(item.quantity) || 0,
+          countedQty: "",
+          variance: null,
+          batchBreakdown: null,
+          hasBatchBreakdown: false,
+          batchNo: "",
+          expiryDate: null,
+          remarks: firstItem.itemRemark || item.remarks || "",
+          docId: firstItem.docId || null,
+        };
+      }
       const isNewFormat = firstItem.ordMemo1 === "specific" && firstItem.ordMemo2;
       const isOldFormat = existingItems.length > 1 || (!isNewFormat && firstItem.docBatchNo);
 
@@ -1104,12 +1168,12 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           onHandQty: parseFloat(item.quantity) || 0,
           countedQty: totalCountedQty,
           variance: calculateDisplayVariance(totalCountedQty, totalSystemQty),
-          confirmUpdate: true,
           batchBreakdown: batchBreakdown,
           hasBatchBreakdown: hasBatchBreakdown,
           batchNo: firstItem.docBatchNo || "",
           expiryDate: firstItem.docExpdate || null,
           remarks: firstItem.itemRemark || item.remarks || "",
+          docId: existingItems.length === 1 ? firstItem.docId || null : null,
         };
       });
 
@@ -1140,7 +1204,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       updated[index] = {
         ...updated[index],
         countedQty: newQty,
-        variance: calculateDisplayVariance(newQty, onHandQty),
+        variance: value === "" ? null : calculateDisplayVariance(newQty, onHandQty),
       };
       
       // If quantity changed significantly, clear batch breakdown (user needs to re-select)
@@ -1161,15 +1225,6 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         }
       }
       
-      return updated;
-    });
-  };
-
-  // Handle confirmation checkbox in Step 2
-  const handleConfirmCheckbox = (index, checked) => {
-    setStockTakeItems((prev) => {
-      const updated = [...prev];
-      updated[index].confirmUpdate = checked;
       return updated;
     });
   };
@@ -1195,27 +1250,37 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     toast.success("Item removed");
   };
 
-  // Convert confirmed items to cartData format for saving
-  const prepareCartDataFromConfirmedItems = () => {
-    const confirmedItems = stockTakeItems.filter((item) => item.confirmUpdate);
+  // Convert every selected row to a detail line. Blank counts are stored as pending.
+  // enforceBatch is used by Post. Save keeps a partial batch and does not block.
+  const prepareCartDataFromConfirmedItems = (enforceBatch = false) => {
+    const confirmedItems = stockTakeItems;
     
     if (confirmedItems.length === 0) {
-      toast.error("Please confirm at least one item to update");
+      toast.error("Select at least one item");
       return null;
     }
 
     for (const item of confirmedItems) {
       if (
-        item.countedQty !== "" &&
-        item.countedQty != null &&
+        !isBlankCountedQty(item.countedQty) &&
         !validateQtyForItemOrToast(item.countedQty, item, { toast })
       ) {
         return null;
       }
     }
 
+    if (enforceBatch) {
+      const uncounted = confirmedItems.find((item) => isBlankCountedQty(item.countedQty));
+      if (uncounted) {
+        toast.error(
+          `Enter a counted quantity for ${uncounted.stockCode || uncounted.itemcode}. Use 0 if the shelf is empty.`
+        );
+        return null;
+      }
+    }
+
     // Validate batch breakdown for items with batch functionality
-    if (getConfigValue("BATCH_NO") === "Yes") {
+    if (enforceBatch && getConfigValue("BATCH_NO") === "Yes") {
       for (const item of confirmedItems) {
         if (item.countedQty > 0) {
           // If batch functionality is enabled and item has counted quantity,
@@ -1290,6 +1355,19 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         ordMemo4: "",
       };
 
+      if (isBlankCountedQty(item.countedQty)) {
+        const existingPending = cartData.find((cartItem) =>
+          matchesCartStockLine(cartItem, item)
+        );
+        newCartData.push({
+          ...baseItem,
+          id: cartItemIndex++,
+          ...buildPendingDetailFields(item, existingPending),
+          itemRemark: item.remarks || "",
+        });
+        return;
+      }
+
       // Create ONE entry per item (following Stock Adjustment pattern)
       // Batch breakdown is stored in ordMemo fields, not as separate entries
       // This matches the pattern used in Stock Adjustment for consistency
@@ -1311,7 +1389,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       const existingItem = cartData.find((cartItem) =>
         matchesCartStockLine(cartItem, item)
       );
-      const docId = existingItem?.docId || null; // Preserve docId if updating
+      const docId = item.docId || existingItem?.docId || null; // Preserve docId if updating
 
       // If updating existing item, preserve original docTtlqty from saved document
       // This ensures the system quantity at time of stock take is preserved, not recalculated
@@ -1672,7 +1750,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     debouncedSearchValue,
   ]);
 
-  // Filter stockTakeItems for Step 2 (apply filters to selected items only)
+  // Step 2 shows the saved sheet. Department, brand, and range belong to Step 1.
+  // A reopened line has no department, so those filters must not hide it.
   const filteredStockTakeItems = useMemo(() => {
     if (workflowStep !== 2 || !stockTakeItems || stockTakeItems.length === 0) {
       return stockTakeItems;
@@ -1680,38 +1759,6 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
     let filtered = [...stockTakeItems];
 
-    // Department filter
-    if (itemFilter.whereArray.department.length > 0) {
-      filtered = filtered.filter((item) => {
-        const itemDepartment = item.Department || item.department;
-        return itemFilter.whereArray.department.includes(itemDepartment);
-      });
-    }
-
-    // Brand filter
-    if (itemFilter.whereArray.brand.length > 0) {
-      filtered = filtered.filter((item) => {
-        const itemBrand = item.Brand || item.brand;
-        const itemBrandCode = item.BrandCode || item.brandCode;
-        return itemFilter.whereArray.brand.some(
-          (brand) => brand === itemBrand || brand === itemBrandCode
-        );
-      });
-    }
-
-    // Range filter
-    if (itemFilter.whereArray.range.length > 0) {
-      filtered = filtered.filter((item) => {
-        const itemRange = item.Range || item.range;
-        const itemRangeCode = item.RangeCode || item.rangeCode;
-        return itemFilter.whereArray.range.some(
-          (range) => range === itemRange || range === itemRangeCode
-        );
-      });
-    }
-
-    // Search filter - apply to stockTakeItems
-    // Use searchValue instead of debouncedSearchValue for immediate effect when transitioning
     if (searchValue && searchValue.trim()) {
       const searchLower = searchValue.toLowerCase().trim();
       filtered = filtered.filter((item) => {
@@ -1740,17 +1787,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     }
 
     return filtered;
-  }, [
-    workflowStep,
-    stockTakeItems,
-    itemFilter.whereArray.department.length,
-    itemFilter.whereArray.department.join(","),
-    itemFilter.whereArray.brand.length,
-    itemFilter.whereArray.brand.join(","),
-    itemFilter.whereArray.range.length,
-    itemFilter.whereArray.range.join(","),
-    searchValue, // Changed from debouncedSearchValue for immediate effect when transitioning
-  ]);
+  }, [workflowStep, stockTakeItems, searchValue]);
 
   // Add apply filters function
   const handleApplyFilters = () => {
@@ -1845,21 +1882,22 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     }
   }, [filteredStockList, originalStockList.length, initial]);
 
-  // Load existing document into Step 2 when editing
+  // Load an Open document into Step 2 once. Back stays on step 1 so more items can be added.
   useEffect(() => {
-    if (
-      urlDocNo &&
-      cartData.length > 0 &&
-      stockList.length > 0 &&
-      stockHdrs.docStatus === 0 &&
-      workflowStep === 1
-    ) {
+    if (didRestoreSheet.current) return;
+    const docIsOpen = stockHdrs.docStatus === 0 || stockHdrs.docStatus === "0";
+    if (!urlDocNo || initial || !docIsOpen || cartData.length === 0) {
+      return;
+    }
+    didRestoreSheet.current = true;
+    {
+      const stockPool = originalStockList.length > 0 ? originalStockList : stockList;
       // Set selected items from existing cartData
       const existingItemKeys = new Set(cartData.map((item) => getStockLineKey(item)));
       setSelectedItems(existingItemKeys);
 
-      // Filter stockList to only include selected items
-      const selectedStockList = stockList.filter((item) =>
+      // Match saved lines to the full stock list, not the filtered page.
+      const selectedStockList = stockPool.filter((item) =>
         existingItemKeys.has(getStockLineKey(item))
       );
 
@@ -1875,9 +1913,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           return {
             ...item,
             onHandQty: parseFloat(item.quantity) || 0,
-            countedQty: 0,
-            variance: 0,
-            confirmUpdate: false,
+            countedQty: "",
+            variance: null,
             batchBreakdown: null,
             hasBatchBreakdown: false,
             batchNo: "",
@@ -1888,6 +1925,20 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
         // Check if this is old format (multiple entries per item) or new format (one entry with ordMemo)
         const firstItem = existingItems[0];
+        if (isPendingSavedLine(firstItem)) {
+          return {
+            ...item,
+            onHandQty: parseFloat(item.quantity) || 0,
+            countedQty: "",
+            variance: null,
+            batchBreakdown: null,
+            hasBatchBreakdown: false,
+            batchNo: "",
+            expiryDate: null,
+            remarks: firstItem.itemRemark || item.remarks || "",
+            docId: firstItem.docId || null,
+          };
+        }
         const isNewFormat = firstItem.ordMemo1 === "specific" && firstItem.ordMemo2;
         const isOldFormat = existingItems.length > 1 || (!isNewFormat && firstItem.docBatchNo);
 
@@ -1960,19 +2011,28 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           onHandQty: parseFloat(item.quantity) || 0,
           countedQty: totalCountedQty,
           variance: calculateDisplayVariance(totalCountedQty, totalSystemQty),
-          confirmUpdate: true,
           batchBreakdown: batchBreakdown,
           hasBatchBreakdown: hasBatchBreakdown,
           batchNo: firstItem.docBatchNo || "",
           expiryDate: firstItem.docExpdate || null,
           remarks: firstItem.itemRemark || item.remarks || "",
+          docId: existingItems.length === 1 ? firstItem.docId || null : null,
         };
+      });
+
+      const coveredKeys = new Set(itemsForEntry.map((item) => getStockLineKey(item)));
+      cartData.forEach((line) => {
+        const key = getStockLineKey(line);
+        if (!coveredKeys.has(key)) {
+          itemsForEntry.push(sheetRowFromDocumentLine(line));
+          coveredKeys.add(key);
+        }
       });
 
       setStockTakeItems(itemsForEntry);
       setWorkflowStep(2);
     }
-  }, [urlDocNo, cartData, stockList, stockHdrs.docStatus, workflowStep]);
+  }, [urlDocNo, cartData, stockList, originalStockList, stockHdrs.docStatus, initial]);
 
   // Adjust pagination when items are deleted in Step 2
   useEffect(() => {
@@ -2774,14 +2834,18 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         )}`
       );
 
-      if (!stockTakeDetailsResponse || stockTakeDetailsResponse.length === 0) {
-        throw new Error("No stock take details found");
+      const countableDetails = (stockTakeDetailsResponse || []).filter(
+        (item) => !isPendingSavedLine(item)
+      );
+
+      if (countableDetails.length === 0) {
+        throw new Error("No counted stock take lines found");
       }
 
       // Step 2: First, check if we have old format (multiple entries per item) or new format (one entry with ordMemo)
-      // Group by itemcode to detect format
+      // Group by itemcode to detect format. Pending rows are not counted and must not change stock.
       const itemsByItemcode = new Map();
-      stockTakeDetailsResponse.forEach((item) => {
+      countableDetails.forEach((item) => {
         const trimmedItemCode = item.itemcode.replace(/0000$/, "");
         const key = `${trimmedItemCode}|${item.docUom || item.itemUom || ""}`;
         if (!itemsByItemcode.has(key)) {
@@ -3513,13 +3577,17 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
     // Additional validation for submission
     if (type === "submit") {
-      // Ensure all items have proper quantities
+      // A blank count is stored as pending with docQty 0. A typed 0 is a real count.
       cart.forEach((item, index) => {
-        if (!item.docQty || item.docQty <= 0) {
+        if (isPendingSavedLine(item)) {
           errors.push(
-            `Quantity must be greater than 0 for item ${index + 1} (${
-              item.itemcode
-            })`
+            `Enter a counted quantity for item ${index + 1} (${item.itemcode}). Use 0 if the shelf is empty.`
+          );
+          return;
+        }
+        if (item.docQty == null || item.docQty === "" || Number.isNaN(Number(item.docQty))) {
+          errors.push(
+            `Counted quantity is required for item ${index + 1} (${item.itemcode})`
           );
         }
       });
@@ -3686,15 +3754,32 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     addItemToCart(newCartItem, index);
   };
 
+  const syncSavedStockTakeLines = async (savedDocNo) => {
+    const response = await apiService.get(
+      `StkMovdocDtls${buildFilterQuery({ where: { docNo: savedDocNo } })}`
+    );
+    const lines = Array.isArray(response) ? response : [];
+    setCartItems(lines);
+    setCartData(lines);
+    setStockTakeItems((prev) =>
+      prev.map((row) => {
+        const match = lines.find((line) => matchesCartStockLine(line, row));
+        if (!match?.docId) return row;
+        return { ...row, docId: match.docId };
+      })
+    );
+    return lines;
+  };
+
   const onSubmit = async (e, type) => {
     e?.preventDefault();
     console.log(stockHdrs, "stockHdrs");
     console.log(cartData, "cartData");
     
-    // If in Step 2, prepare cartData from confirmed items
+    // Step 2 saves every selected row. Post also requires a quantity on each row.
     let preparedCartData = null;
     if (workflowStep === 2) {
-      preparedCartData = prepareCartDataFromConfirmedItems();
+      preparedCartData = prepareCartDataFromConfirmedItems(type === "submit");
       if (!preparedCartData) {
         return; // Validation failed
       }
@@ -3713,9 +3798,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       let hdr = stockHdrs;
       // Use prepared cartData if available (from Step 2), otherwise use existing cartData
       let details = preparedCartData || cartData;
+      const knownDocNo = persistedDocNoRef.current || urlDocNo || null;
   
       // Get new docNo for both new creations and direct submissions
-      if ((type === "save" || type === "submit") && !urlDocNo) {
+      if ((type === "save" || type === "submit") && !knownDocNo) {
         const result = await getDocNo();
         console.log(result, "redd");
         if (!result) {
@@ -3727,7 +3813,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         controlData = result.controlData;
   
         // Update states with new docNo
-        hdr = { ...stockHdrs, docNo }; // Create new hdr with docNo
+        hdr = { ...stockHdrs, docNo, docStatus: stockHdrs.docStatus ?? 0 };
         // Map details to include docNo (use preparedCartData if available)
         details = details.map((item, index) => ({
           ...item,
@@ -3747,7 +3833,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         }
       } else {
         // Use existing docNo for updates and submissions
-        docNo = urlDocNo || stockHdrs.docNo;
+        docNo = knownDocNo || stockHdrs.docNo;
   
         // Validate for updates and submissions
         if (!validateForm(hdr, details, type)) {
@@ -3771,11 +3857,11 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         docQty: totalCart.totalQty,
         docAmt: totalCart.totalAmt,
         docRemk1: hdr.docRemk1,
-        createUser: urlDocNo
+        createUser: knownDocNo
           ? hdr.createUser
           : (userDetails?.username || userDetails?.usercode || ""),
         postDate: type === "submit" ? new Date().toISOString() : "",
-        createDate: urlDocNo ? hdr.createDate : new Date().toISOString(),
+        createDate: knownDocNo ? hdr.createDate : new Date().toISOString(),
         staffNo: userDetails.usercode || userDetails.username,
       };
   
@@ -3788,7 +3874,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         // Save functionality - status stays as Open (0)
         data.docStatus = 0;
         
-        if (!urlDocNo) {
+        if (!knownDocNo) {
           // Creating new document - claim the number BEFORE the header insert.
           const claimedDocNo = await addNewControlNumber(controlData, docNo);
           if (claimedDocNo && claimedDocNo !== docNo) {
@@ -3803,6 +3889,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
             setStockHdrs(hdr);
           }
           await postStockHdr(data, "create");
+          persistedDocNoRef.current = docNo;
+          sessionStorage.setItem(STOCK_TAKE_RESUME_KEY, docNo);
           await postStockDetails(details);
           message = "Stock Take saved successfully";
         } else {
@@ -3817,7 +3905,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         data.postDate = new Date().toISOString();
         data.postedBy = userDetails?.username;
   
-        if (!urlDocNo) {
+        if (!knownDocNo) {
           // Direct post without saving first - claim the number BEFORE the
           // header insert.
           const claimedDocNo = await addNewControlNumber(controlData, docNo);
@@ -3833,6 +3921,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
             setStockHdrs(hdr);
           }
           await postStockHdr(data, "create");
+          persistedDocNoRef.current = docNo;
+          sessionStorage.setItem(STOCK_TAKE_RESUME_KEY, docNo);
           await postStockDetails(details);
           
           // Update stock quantities when posted
@@ -3871,16 +3961,35 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       }
   
       toast.success(message);
-  
-      // Refresh the page data after status change
-      if (urlDocNo) {
-        navigate("/stock-take?tab=all");
+
+      if (type === "save") {
+        try {
+          await syncSavedStockTakeLines(docNo);
+        } catch (syncError) {
+          console.error("Failed to reload saved stock take lines:", syncError);
+        }
+        // Stay on this count. The first save moves the address to the Open document
+        // so a later reload restores every selected row.
+        if (!urlDocNo) {
+          navigate(`/stock-take/edit/${encodeURIComponent(docNo)}`, {
+            replace: true,
+          });
+        }
       } else {
+        sessionStorage.removeItem(STOCK_TAKE_RESUME_KEY);
         navigate("/stock-take?tab=all");
       }
     } catch (error) {
       console.error("Submit error:", error);
       toast.error("Failed to process Stock Take");
+      const recoveryDocNo = persistedDocNoRef.current || urlDocNo;
+      if (recoveryDocNo) {
+        try {
+          await syncSavedStockTakeLines(recoveryDocNo);
+        } catch (syncError) {
+          console.error("Failed to recover saved stock take lines:", syncError);
+        }
+      }
     } finally {
       // Always reset loading states
       setSaveLoading(false);
@@ -3916,8 +4025,14 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
   };
 
   const isSubmitting = saveLoading || postLoading;
+  const hasUncountedItems = stockTakeItems.some((item) =>
+    isBlankCountedQty(item.countedQty)
+  );
   const showActionButtons =
-    (workflowStep === 2 && (!stockHdrs.docNo || stockHdrs.docStatus === 0)) ||
+    (workflowStep === 2 &&
+      (!stockHdrs.docNo ||
+        stockHdrs.docStatus === 0 ||
+        stockHdrs.docStatus === "0")) ||
     isSubmitting;
 
   return (
@@ -3984,12 +4099,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                       onClick={(e) => {
                         onSubmit(e, "save");
                       }}
-                      disabled={
-                        isSubmitting ||
-                        stockTakeItems.filter(
-                          (item) => item.confirmUpdate
-                        ).length === 0
-                      }
+                      disabled={isSubmitting || stockTakeItems.length === 0}
                       className="cursor-pointer hover:bg-blue-600 transition-colors duration-150"
                     >
                       {saveLoading ? (
@@ -4008,9 +4118,13 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                       }}
                       disabled={
                         isSubmitting ||
-                        stockTakeItems.filter(
-                          (item) => item.confirmUpdate
-                        ).length === 0
+                        stockTakeItems.length === 0 ||
+                        hasUncountedItems
+                      }
+                      title={
+                        hasUncountedItems
+                          ? "Enter a quantity for every item before posting. Use 0 if the shelf is empty."
+                          : undefined
                       }
                       className="cursor-pointer hover:bg-green-600 hover:text-white transition-colors duration-150"
                     >
@@ -4274,8 +4388,17 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                           </div>
                           <div className="flex items-center gap-3">
                             <div className="text-sm text-gray-600">
-                              Selected: {selectedItems.size} / {stockList.filter(item => item.isActive === "True").length}
+                              Selected: {selectedItems.size} / {activeStockItems.length}
                             </div>
+                            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                              <Checkbox
+                                checked={allItemsSelected}
+                                onCheckedChange={handleSelectAllItems}
+                                disabled={activeStockItems.length === 0}
+                                aria-label="Select all items"
+                              />
+                              Select all items
+                            </label>
                             
                             {/* Print buttons */}
                             <div className="flex gap-2">
@@ -4308,11 +4431,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                               <TableRow>
                                 <TableHead className="w-12">
                                   <Checkbox
-                                    checked={
-                                      stockList.filter(item => item.isActive === "True").length > 0 &&
-                                      stockList.filter(item => item.isActive === "True").every(item => selectedItems.has(getStockLineKey(item)))
-                                    }
-                                    onCheckedChange={handleSelectAll}
+                                    checked={pageAllSelected}
+                                    onCheckedChange={handleSelectPage}
+                                    aria-label="Select all items on this page"
+                                    title="Select this page"
                                   />
                                 </TableHead>
                                 <TableHead
@@ -4456,12 +4578,13 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                             Step 2: Enter Quantities
                           </h3>
                           <div className="text-sm text-gray-600">
-                            Confirmed:{" "}
+                            Entered:{" "}
                             {
-                              filteredStockTakeItems.filter((item) => item.confirmUpdate)
-                                .length
+                              stockTakeItems.filter(
+                                (item) => !isBlankCountedQty(item.countedQty)
+                              ).length
                             }{" "}
-                            / {filteredStockTakeItems.length}
+                            / {stockTakeItems.length}
                           </div>
                         </div>
                         <div className="rounded-md border shadow-sm">
@@ -4481,18 +4604,17 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                 {getConfigValue("BATCH_NO") === "Yes" && (
                                   <TableHead>Batch</TableHead>
                                 )}
-                                <TableHead>Confirm Update</TableHead>
                                 <TableHead>Remarks</TableHead>
                                 <TableHead>Actions</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {loading ? (
-                                <TableSpinner colSpan={getConfigValue("BATCH_NO") === "Yes" ? 10 : 9} message="Loading..." />
+                                <TableSpinner colSpan={getConfigValue("BATCH_NO") === "Yes" ? 9 : 8} message="Loading..." />
                               ) : stockTakeItems.length === 0 ? (
                                 <TableRow>
                                   <TableCell
-                                    colSpan={getConfigValue("BATCH_NO") === "Yes" ? 10 : 9}
+                                    colSpan={getConfigValue("BATCH_NO") === "Yes" ? 9 : 8}
                                     className="text-center py-10"
                                   >
                                     <div className="flex flex-col items-center gap-2 text-gray-500">
@@ -4504,12 +4626,12 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                               ) : filteredStockTakeItems.length === 0 ? (
                                 <TableRow>
                                   <TableCell
-                                    colSpan={getConfigValue("BATCH_NO") === "Yes" ? 10 : 9}
+                                    colSpan={getConfigValue("BATCH_NO") === "Yes" ? 9 : 8}
                                     className="text-center py-10"
                                   >
                                     <div className="flex flex-col items-center gap-2 text-gray-500">
                                       <FileText size={40} />
-                                      <p>No itemsoooo match the current filters.</p>
+                                      <p>No items match the search.</p>
                                     </div>
                                   </TableCell>
                                 </TableRow>
@@ -4525,7 +4647,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                       stockTakeItems,
                                       item
                                     );
-                                    const variance = item.variance || 0;
+                                    const blankCount = isBlankCountedQty(item.countedQty);
+                                    const variance = blankCount ? null : item.variance || 0;
                                     const varianceStyle =
                                       variance > 0
                                         ? "text-green-600"
@@ -4536,7 +4659,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                       <TableRow
                                         key={getStockLineKey(item)}
                                         className={
-                                          variance !== 0
+                                          !blankCount && variance !== 0
                                             ? "bg-yellow-50"
                                             : "hover:bg-gray-50"
                                         }
@@ -4556,7 +4679,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                           <QtyInput
                                             item={item}
                                             className="w-20 text-right"
-                                            value={item.countedQty || ""}
+                                            value={displayCountedQty(item.countedQty)}
                                             onChange={(e) =>
                                               handleCountedQtyChange(
                                                 actualIndex,
@@ -4573,8 +4696,9 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                         <TableCell
                                           className={`font-semibold ${varianceStyle}`}
                                         >
-                                          {variance > 0 ? "+" : ""}
-                                          {variance.toFixed(2)}
+                                          {blankCount || variance == null
+                                            ? ""
+                                            : `${variance > 0 ? "+" : ""}${Number(variance).toFixed(2)}`}
                                         </TableCell>
                                         {getConfigValue("BATCH_NO") === "Yes" && (
                                           <TableCell>
@@ -4597,18 +4721,6 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                             )}
                                           </TableCell>
                                         )}
-                                        <TableCell>
-                                          <Checkbox
-                                            checked={item.confirmUpdate || false}
-                                            onCheckedChange={(checked) =>
-                                              handleConfirmCheckbox(
-                                                actualIndex,
-                                                checked
-                                              )
-                                            }
-                                            disabled={!canEdit()}
-                                          />
-                                        </TableCell>
                                         <TableCell>
                                           <Input
                                             className="w-32"
