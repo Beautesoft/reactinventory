@@ -354,7 +354,16 @@ const StockBalanceReports = () => {
     setHasGeneratedReport(false);
   };
 
-  // Column configuration for the report - updated headers as requested
+  // Cost Price and Total Cost are visible only for ADMINISTRATOR.
+  // Screen, print, and Excel all use this list.
+  let canViewCost = false;
+  try {
+    const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+    canViewCost = String(userDetails?.role || "").trim().toUpperCase() === "ADMINISTRATOR";
+  } catch {
+    canViewCost = false;
+  }
+
   const columns = [
     { key: 'Outlet', header: 'Site', printHeader: 'Site', align: 'left', width: '7%' },
     { key: 'Dept', header: 'Dept', align: 'left', width: '8%' },
@@ -365,8 +374,12 @@ const StockBalanceReports = () => {
     { key: 'ItemName', header: 'Item Name', printHeader: 'Item', align: 'left', width: '16%' },
     { key: 'UOM', header: 'UOM', align: 'left', width: '6%' },
     { key: 'Qty', header: 'Qty', align: 'right', width: '6%', type: 'number', render: (value) => Number(value).toLocaleString() },
-    { key: 'Cost', header: 'Cost Price', printHeader: 'Cost', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) },
-    { key: 'TotalCost', header: 'Total Cost', printHeader: 'Total', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) },
+    ...(canViewCost
+      ? [
+          { key: 'Cost', header: 'Cost Price', printHeader: 'Cost', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) },
+          { key: 'TotalCost', header: 'Total Cost', printHeader: 'Total', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) },
+        ]
+      : []),
     { key: 'Price', header: 'Selling Price', printHeader: 'Price', align: 'right', width: '6%', type: 'number', render: (value) => Number(value).toFixed(2) },
     { key: 'TotalAmount', header: 'Total Amount', printHeader: 'Amount', align: 'right', width: '7%', type: 'number', render: (value) => Number(value).toFixed(2) }
   ];

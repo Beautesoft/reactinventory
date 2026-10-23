@@ -14,6 +14,7 @@ import {
   roundBatchUnitCost,
   weightedInventoryUnitCostFromTransferItem,
 } from "@/utils/itemOnQtyBalance";
+import { pickItemBatch } from "@/utils/itemBatchMatch";
 
 const trimItemCode = (itemcode) => String(itemcode || "").replace(/0000$/, "");
 
@@ -492,7 +493,6 @@ async function applyDestinationBatchTransfer(
         { uom: stktrnItem.itemUom },
         { siteCode: destSite },
         { batchNo: stktrnItem.itemBatch },
-        ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []),
       ],
     },
   };
@@ -501,7 +501,12 @@ async function applyDestinationBatchTransfer(
     .get(
       `ItemBatches?filter=${encodeURIComponent(JSON.stringify(specificBatchFilter))}`
     )
-    .then((r) => r[0])
+    .then((r) =>
+      pickItemBatch(r, {
+        batchNo: stktrnItem.itemBatch,
+        expDate: normalizedExpDate,
+      })
+    )
     .catch(() => null);
 
   if (!existingBatch) {

@@ -73,6 +73,7 @@ import {
   buildLinkCodeLookup,
   lookupLinkCode,
 } from "@/utils/utils";
+import { pickItemBatch } from "@/utils/itemBatchMatch";
 import {
   applyItemBatchCostFromItemOnQty,
   applyRunningBalanceFromItemOnQty,
@@ -3508,7 +3509,6 @@ function AddGti({ docData }) {
         const destQty = Number(fb.quantity || 0);
         if (destQty <= 0) continue;
 
-        // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
         const normalizedExpDate = normalizeExpDate(fb.expDate || stktrnItem?.docExpdate);
         const filter = {
           where: {
@@ -3517,7 +3517,6 @@ function AddGti({ docData }) {
               { uom: stktrnItem.itemUom },
               { siteCode: stockHdrs.tstoreNo },
               { batchNo: destBatchNo },
-              ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
             ],
           },
         };
@@ -3525,7 +3524,9 @@ function AddGti({ docData }) {
         const url = `ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`;
         const existing = await apiService
           .get(url)
-          .then((resp) => resp[0])
+          .then((resp) =>
+            pickItemBatch(resp, { batchNo: destBatchNo, expDate: normalizedExpDate })
+          )
           .catch((error) => {
             console.error("Error fetching destination batch:", error);
             return null;
@@ -3623,7 +3624,6 @@ function AddGti({ docData }) {
           });
       }
     } else {
-      // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
       const normalizedExpDate = normalizeExpDate(stktrnItem?.docExpdate);
       const specificBatchFilter = {
         where: {
@@ -3632,7 +3632,6 @@ function AddGti({ docData }) {
             { uom: stktrnItem.itemUom },
             { siteCode: stockHdrs.tstoreNo },
             { batchNo: stktrnItem.itemBatch },
-            ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
           ],
         },
       };
@@ -3640,7 +3639,12 @@ function AddGti({ docData }) {
       const specificBatchUrl = `ItemBatches?filter=${encodeURIComponent(JSON.stringify(specificBatchFilter))}`;
       let existingBatch = await apiService
         .get(specificBatchUrl)
-        .then((resp) => resp[0])
+        .then((resp) =>
+          pickItemBatch(resp, {
+            batchNo: stktrnItem.itemBatch,
+            expDate: normalizedExpDate,
+          })
+        )
         .catch((error) => {
           console.error("Error fetching destination batch:", error);
           return null;
@@ -4041,7 +4045,6 @@ function AddGti({ docData }) {
     } else {
       // Handle specific batch transfer to destination store
       // First, check if the specific batch exists in destination store
-      // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
       const normalizedExpDate = normalizeExpDate(stktrnItem?.docExpdate);
       const specificBatchFilter = {
         where: {
@@ -4049,8 +4052,7 @@ function AddGti({ docData }) {
             { itemCode: trimmedItemCode },
             { uom: stktrnItem.itemUom },
             { siteCode: stktrnItem.storeNo },
-            { batchNo: stktrnItem.itemBatch }, // Filter by specific batch
-            ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
+            { batchNo: stktrnItem.itemBatch },
           ],
         },
       };
@@ -4060,7 +4062,12 @@ function AddGti({ docData }) {
       )}`;
       let existingBatch = await apiService
         .get(specificBatchUrl)
-        .then((resp) => resp[0])
+        .then((resp) =>
+          pickItemBatch(resp, {
+            batchNo: stktrnItem.itemBatch,
+            expDate: normalizedExpDate,
+          })
+        )
         .catch((error) => {
           console.error("Error fetching destination batch:", error);
           return null;

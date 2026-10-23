@@ -497,12 +497,16 @@ export const getAppConfig = () => {
   // Get user details from localStorage
   const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
   
+  // Batch and expiry are one switch. A login with batch on always
+  // carries expiry, even when the user record leaves expiryDate off.
+  const batchOn = userDetails.batchNo === "True" ? "Yes" : "No";
+
   // Create config with user-specific overrides for settings only
   const dynamicConfig = {
     ...baseConfig, // Keep all existing config (API URLs, etc.)
     // Override only the user-specific settings
-    BATCH_NO: userDetails.batchNo === "True" ? "Yes" : "No",
-    EXPIRY_DATE: userDetails.expiryDate === "True" ? "Yes" : "No", 
+    BATCH_NO: batchOn,
+    EXPIRY_DATE: batchOn, 
     AUTO_POST: userDetails.autoPost === "True" ? "Yes" : "No",
     DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays) || baseConfig.DEFAULT_EXPIRY_DAYS || 365,
     ManualBatchSelection: userDetails.manualBatchSelection === "True",

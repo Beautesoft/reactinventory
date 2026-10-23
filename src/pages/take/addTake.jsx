@@ -63,6 +63,7 @@ import {
   formatOrdMemo4FromBatches,
   formatOrdMemo4Pair,
 } from "@/utils/utils";
+import { pickItemBatch, storedExpiryDay } from "@/utils/itemBatchMatch";
 import {
   enrichStockItemsWithDecimalFlag,
   validateQtyForItemOrToast,
@@ -3390,30 +3391,30 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                     batch.batchNo
                       ? { batchNo: batch.batchNo }
                       : { or: [{ batchNo: "" }, { batchNo: null }] },
-                    // Only include expDate if it's not null AND expiry tracking is enabled
-                    ...(normalizedExpDate && getConfigValue('EXPIRY_DATE') === "Yes" 
-                      ? [{ expDate: normalizedExpDate }] 
-                      : []),
                   ],
                 },
               };
 
               try {
-                const existingBatch = await apiService.get(
+                const existingBatchCheck = await apiService.get(
                   `ItemBatches?filter=${encodeURIComponent(JSON.stringify(batchCheckFilter))}`
                 );
+                const existingBatch = pickItemBatch(existingBatchCheck, {
+                  batchNo: batch.batchNo || "",
+                  expDate: normalizedExpDate,
+                });
 
-                if (existingBatch && existingBatch.length > 0) {
-                  // Update existing batch - use variance (can be positive or negative)
+                if (existingBatch) {
+                  const storedExpDate = storedExpiryDay(existingBatch);
                   const batchUpdate = {
-                    itemcode: group.trimmedItemCode, // lowercase for update
+                    itemcode: group.trimmedItemCode,
                     sitecode: userDetails.siteCode,
                     uom: group.itemUom,
-                    qty: Number(batch.variance), // Signed variance (positive = increase, negative = decrease)
-                    batchcost: 0, // Set to 0 for updates, cost is managed separately
+                    qty: Number(batch.variance),
+                    batchcost: 0,
                     batchno: batch.batchNo || "",
-                    ...(normalizedExpDate && getConfigValue('EXPIRY_DATE') === "Yes" 
-                      ? { expDate: normalizedExpDate } 
+                    ...(storedExpDate && getConfigValue('EXPIRY_DATE') === "Yes"
+                      ? { expDate: storedExpDate }
                       : {}),
                   };
 

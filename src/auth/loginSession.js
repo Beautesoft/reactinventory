@@ -256,7 +256,7 @@ export function buildSessionUserDetails(
     isSettingViewPrice: payload.isSettingViewPrice,
     isSettingPostedChangePrice: payload.isSettingPostedChangePrice,
     batchNo: payload.batchNo,
-    expiryDate: payload.expiryDate,
+    expiryDate: payload.batchNo === "True" ? "True" : payload.expiryDate,
     manualBatchSelection: payload.manualBatchSelection,
     batchSNo: payload.batchSNo,
     defaultExpiryDays: payload.defaultExpiryDays,

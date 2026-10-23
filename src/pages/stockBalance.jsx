@@ -32,6 +32,31 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { getConfigValue } from "@/utils/utils";
+
+function toDateInputValue(expDate) {
+  if (expDate == null || expDate === "") return "";
+  const raw = String(expDate).trim();
+  if (!raw || raw.startsWith("1900-01-01")) return "";
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1] === "1900-01-01" ? "" : match[1];
+  const parsed = new Date(expDate);
+  if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() <= 1900) return "";
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${parsed.getFullYear()}-${month}-${day}`;
+}
+
+function localDateString(date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function batchLabel(batchNo) {
+  return batchNo ? batchNo : "No Batch";
+}
 
 function StockBalance() {
   const navigate = useNavigate();
@@ -63,6 +88,8 @@ function StockBalance() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [batchData, setBatchData] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  const [savingBatchId, setSavingBatchId] = useState(null);
+  const [renameConfirm, setRenameConfirm] = useState(null);
 
   // Loading states for search and filter operations
   const [isSearching, setIsSearching] = useState(false);
@@ -248,24 +275,31 @@ function StockBalance() {
       console.log(`📦 Found ${response?.length || 0} batch records for ${item.stockCode}`);
       
       if (response && response.length > 0) {
-        const batchInfo = response.map(batch => ({
-          batchNo: batch.batchNo || "No Batch",
-          uom: batch.uom || item.uomDescription || "N/A",
-          qty: Number(batch.qty) || 0,
-          batchCost: Number(batch.batchCost) || 0,
-          expDate: batch.expDate,
-          formattedExpDate: batch.expDate ? 
-            new Date(batch.expDate).toLocaleDateString() : 
-            "N/A",
-          siteCode: batch.siteCode
-        }));
+        const batchInfo = response.map((batch) => {
+          const originalBatchNo = (batch.batchNo || "").trim();
+          const expDateInput = toDateInputValue(batch.expDate);
+          return {
+            id: batch.id,
+            itemCode: batch.itemCode,
+            siteCode: batch.siteCode,
+            batchNo: originalBatchNo,
+            originalBatchNo,
+            uom: batch.uom || item.uomDescription || "N/A",
+            qty: Number(batch.qty) || 0,
+            rawQty: batch.qty,
+            batchCost: Number(batch.batchCost) || 0,
+            rawBatchCost: batch.batchCost,
+            expDateInput,
+            originalExpDate: expDateInput,
+          };
+        });
 
         // Sort by expiry date (FEFO) - earliest expiry first
         batchInfo.sort((a, b) => {
-          if (!a.expDate && !b.expDate) return 0;
-          if (!a.expDate) return 1; // No expiry goes to end
-          if (!b.expDate) return -1; // No expiry goes to end
-          return new Date(a.expDate) - new Date(b.expDate);
+          if (!a.expDateInput && !b.expDateInput) return 0;
+          if (!a.expDateInput) return 1;
+          if (!b.expDateInput) return -1;
+          return a.expDateInput.localeCompare(b.expDateInput);
         });
 
         setBatchData(batchInfo);
@@ -283,9 +317,118 @@ function StockBalance() {
   };
 
   const handleBatchClick = (item) => {
+    setRenameConfirm(null);
     setSelectedItem(item);
     setShowBatchModal(true);
     getBatchDetails(item);
+  };
+
+  const updateBatchField = (id, field, value) => {
+    setBatchData((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const applyBatchUpdate = async (batch, nextBatchNo, nextExpDate) => {
+    setSavingBatchId(batch.id);
+    try {
+      await apiService.patch(`ItemBatches/${batch.id}`, {
+        itemCode: batch.itemCode,
+        siteCode: batch.siteCode,
+        uom: batch.uom,
+        qty: batch.rawQty,
+        batchCost: batch.rawBatchCost,
+        batchNo: nextBatchNo,
+        expDate: nextExpDate,
+      });
+      const renamed = nextBatchNo !== batch.originalBatchNo;
+      const expiryChanged = (nextExpDate || "") !== batch.originalExpDate;
+      toast.success(
+        renamed && expiryChanged
+          ? "Batch number and expiry updated"
+          : renamed
+            ? "Batch number updated"
+            : "Expiry date updated"
+      );
+      if (selectedItem) await getBatchDetails(selectedItem);
+    } catch (error) {
+      console.error("Error updating batch details:", error);
+      toast.error("Failed to update the batch number and expiry.");
+    } finally {
+      setSavingBatchId(null);
+      setRenameConfirm(null);
+    }
+  };
+
+  const handleBatchUpdate = async (batch) => {
+    const nextBatchNo = batch.batchNo.trim();
+    const nextExpDate = batch.expDateInput || "";
+    const originalBatchNo = batch.originalBatchNo.trim();
+    const renamed = nextBatchNo !== originalBatchNo;
+    const expiryChanged = nextExpDate !== batch.originalExpDate;
+
+    if (!batch.id) {
+      toast.error("This batch row cannot be updated.");
+      return;
+    }
+    if (!renamed && !expiryChanged) return;
+    if (!nextBatchNo && originalBatchNo) {
+      toast.error("Enter a batch number.");
+      return;
+    }
+    if (getConfigValue("EXPIRY_DATE") === "Yes" && !nextExpDate) {
+      toast.error("Enter an expiry date.");
+      return;
+    }
+
+    const duplicateInView = batchData.some((row) => {
+      if (row.id === batch.id) return false;
+      const other = row.batchNo.trim().toLowerCase();
+      return nextBatchNo !== "" && other === nextBatchNo.toLowerCase();
+    });
+    if (duplicateInView) {
+      toast.error(`Batch ${nextBatchNo} is already listed for this item.`);
+      return;
+    }
+
+    if (nextBatchNo) {
+      const filter = {
+        where: {
+          and: [
+            { itemCode: batch.itemCode },
+            { siteCode: batch.siteCode },
+            { uom: batch.uom },
+            { batchNo: nextBatchNo },
+          ],
+        },
+      };
+      try {
+        const existing = await apiService.get(
+          `ItemBatches?filter=${encodeURIComponent(JSON.stringify(filter))}`
+        );
+        const clash = (Array.isArray(existing) ? existing : []).some(
+          (row) => row.id !== batch.id
+        );
+        if (clash) {
+          toast.error(`Batch ${nextBatchNo} already exists for this item and UOM.`);
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking existing batches:", error);
+        toast.error("Could not check existing batches. Nothing was saved.");
+        return;
+      }
+    }
+
+    setRenameConfirm({
+      id: batch.id,
+      renamed,
+      fromLabel: batchLabel(originalBatchNo),
+      toLabel: batchLabel(nextBatchNo),
+      batchNo: nextBatchNo,
+      expDate: nextExpDate || null,
+      toExpiry: nextExpDate,
+    });
   };
 
   useEffect(() => {
@@ -457,8 +600,22 @@ function StockBalance() {
       )}
 
       {/* Batch Details Modal */}
-      <Dialog open={showBatchModal} onOpenChange={setShowBatchModal}>
-        <DialogContent className="!max-w-[900px] !w-[95vw] max-h-[80vh] overflow-y-auto">
+      <Dialog
+        open={showBatchModal}
+        onOpenChange={(open) => {
+          setShowBatchModal(open);
+          if (!open) setRenameConfirm(null);
+        }}
+      >
+        <DialogContent
+          className="!max-w-[1040px] !w-[95vw] max-h-[80vh] overflow-y-auto"
+          onEscapeKeyDown={(event) => {
+            if (renameConfirm) {
+              event.preventDefault();
+              if (savingBatchId == null) setRenameConfirm(null);
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <span>Batch Details</span>
@@ -515,36 +672,62 @@ function StockBalance() {
                         <TableHead className="font-semibold text-right">Batch Cost</TableHead>
                         <TableHead className="font-semibold">Expiry Date</TableHead>
                         <TableHead className="font-semibold">Status</TableHead>
+                        <TableHead className="font-semibold"> </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {batchData.map((batch, index) => {
-                        const isExpired = batch.expDate && new Date(batch.expDate) < new Date();
-                        const isExpiringSoon = batch.expDate && 
-                          new Date(batch.expDate) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && 
-                          !isExpired;
-                        
+                        const today = localDateString(new Date());
+                        const soon = new Date();
+                        soon.setDate(soon.getDate() + 30);
+                        const soonDate = localDateString(soon);
+                        const isExpired = batch.expDateInput && batch.expDateInput < today;
+                        const isExpiringSoon =
+                          batch.expDateInput &&
+                          batch.expDateInput >= today &&
+                          batch.expDateInput <= soonDate;
+                        const dirty =
+                          batch.batchNo.trim() !== batch.originalBatchNo ||
+                          batch.expDateInput !== batch.originalExpDate;
+                        const saving = savingBatchId === batch.id;
+
                         return (
-                          <TableRow key={index} className={isExpired ? "bg-red-50" : isExpiringSoon ? "bg-yellow-50" : ""}>
+                          <TableRow key={batch.id ?? index} className={isExpired ? "bg-red-50" : isExpiringSoon ? "bg-yellow-50" : ""}>
                             <TableCell className="font-medium">{index + 1}</TableCell>
                             <TableCell className="font-medium">
-                              {batch.batchNo === "No Batch" ? (
-                                <Badge variant="outline" className="text-gray-600">No Batch</Badge>
-                              ) : (
-                                <Badge variant="secondary" className="bg-gray-100">{batch.batchNo}</Badge>
-                              )}
+                              <Input
+                                value={batch.batchNo}
+                                aria-label={`Batch number ${index + 1}`}
+                                placeholder="Batch number"
+                                disabled={saving}
+                                onChange={(e) =>
+                                  updateBatchField(batch.id, "batchNo", e.target.value)
+                                }
+                                className="h-8 w-[140px]"
+                              />
                             </TableCell>
                             <TableCell>{batch.uom}</TableCell>
                             <TableCell className="text-right font-medium">{batch.qty.toLocaleString()}</TableCell>
                             <TableCell className="text-right">{batch.batchCost.toFixed(2)}</TableCell>
                             <TableCell>
-                              {batch.formattedExpDate}
-                              {isExpired && (
-                                <Badge variant="destructive" className="ml-2 text-xs">Expired</Badge>
-                              )}
-                              {isExpiringSoon && !isExpired && (
-                                <Badge variant="outline" className="ml-2 text-xs border-yellow-500 text-yellow-700">Expiring Soon</Badge>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="date"
+                                  value={batch.expDateInput}
+                                  aria-label={`Expiry date ${index + 1}`}
+                                  disabled={saving}
+                                  onChange={(e) =>
+                                    updateBatchField(batch.id, "expDateInput", e.target.value)
+                                  }
+                                  className="h-8 w-[150px]"
+                                />
+                                {isExpired && (
+                                  <Badge variant="destructive" className="text-xs">Expired</Badge>
+                                )}
+                                {isExpiringSoon && (
+                                  <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-700">Expiring Soon</Badge>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell>
                               {batch.qty > 0 ? (
@@ -552,6 +735,21 @@ function StockBalance() {
                               ) : (
                                 <Badge variant="destructive">Out of Stock</Badge>
                               )}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={!dirty || saving || savingBatchId != null}
+                                onClick={() => handleBatchUpdate(batch)}
+                              >
+                                {saving ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  "Update"
+                                )}
+                              </Button>
                             </TableCell>
                           </TableRow>
                         );
@@ -562,6 +760,60 @@ function StockBalance() {
               </div>
             )}
           </div>
+          {renameConfirm && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-6">
+              <div
+                role="alertdialog"
+                aria-labelledby="batch-update-title"
+                className="w-full max-w-lg rounded-lg border bg-white p-6 shadow-lg"
+              >
+                <h2 id="batch-update-title" className="text-lg font-semibold">
+                  {renameConfirm.renamed
+                    ? `Change batch ${renameConfirm.fromLabel} to ${renameConfirm.toLabel}?`
+                    : `Update expiry for batch ${renameConfirm.fromLabel}?`}
+                </h2>
+                <p className="mt-2 text-sm text-gray-600">
+                  {renameConfirm.renamed ? (
+                    <>
+                      Stock still on hand will use {renameConfirm.toLabel} from now on.
+                      Documents already posted stay as {renameConfirm.fromLabel}. A
+                      transfer or stock take that was saved but not posted may still say{" "}
+                      {renameConfirm.fromLabel} and will no longer match this stock.
+                    </>
+                  ) : (
+                    <>
+                      Stock still on hand will use{" "}
+                      {renameConfirm.toExpiry || "no expiry"} from now on. Documents
+                      already posted keep the previous expiry.
+                    </>
+                  )}
+                </p>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={savingBatchId != null}
+                    onClick={() => setRenameConfirm(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={savingBatchId != null}
+                    onClick={() => {
+                      const pending = renameConfirm;
+                      const batch = batchData.find((row) => row.id === pending?.id);
+                      if (batch && pending) {
+                        applyBatchUpdate(batch, pending.batchNo, pending.expDate);
+                      }
+                    }}
+                  >
+                    {savingBatchId != null ? "Updating..." : "Update batch"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

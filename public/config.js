@@ -31,6 +31,8 @@ window.APP_CONFIG = {
 
 
     API_BASE_URL: "https://zenthtrain.beautecloud.com/lb/api",
+    // API_BASE_URL: "https://zenth.beautecloud.com/lb/api",
+
     // API_BASE_URL: "https://dragonhealth.beautecloud.com/lb/api",
     // API_BASE_URL: "https://inyeon.beautecloud.com/lb/api",
     // API_BASE_URL: "https://syy.beautecloud.com/lb/api",
@@ -54,6 +56,8 @@ window.APP_CONFIG = {
 
     // API_BE_BASE_URL: "https://hairdreams.beautecloud.com/be/api",
     API_BE_BASE_URL: "https://zenthtrain.beautecloud.com/be",
+    // API_BE_BASE_URL: "https://zenth.beautecloud.com/be",
+
 
 
 
@@ -83,19 +87,19 @@ window.APP_CONFIG = {
   // Feature flags and settings
 
 
-  AUTO_POST: "Yes",
+  // AUTO_POST: "Yes",
   // BATCH_SNO: "Yes",
-    BATCH_SNO: "No",
+    // BATCH_SNO: "No",
     // BATCH_NO:"Yes",
-    BATCH_NO:"No",
+    // BATCH_NO:"No",
     // EXPIRY_DATE: "Yes",
     // EXPIRY_DATE: "Yes",
-    ManualBatchSelection : false,
-  EXPIRY_DATE: "No",
-  NOTIFICATION_MAIL_SEND:'NO',
-  DEFAULT_EXPIRY_DAYS: 365,
-  NOTIFICATION_MAIL1:'yoonustaji@gmail.com',
-  NOTIFICATION_MAIL2:'muthu98wic@gmail.com'
+  //   ManualBatchSelection : false,
+  // EXPIRY_DATE: "No",
+  // NOTIFICATION_MAIL_SEND:'NO',
+  // DEFAULT_EXPIRY_DAYS: 365,
+  // NOTIFICATION_MAIL1:'yoonustaji@gmail.com',
+  // NOTIFICATION_MAIL2:'muthu98wic@gmail.com'
   // Add other configuration values here
 };
 

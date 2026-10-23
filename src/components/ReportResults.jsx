@@ -15,6 +15,11 @@ import { formatCurrentDate } from "@/utils/utils";
 import { displayItemCode } from "@/utils/itemMaster/itemCodeHelpers";
 import moment from "moment";
 
+/** Stock balance rows use Qty plus a price or cost column. Cost may be hidden by role. */
+const isStockBalanceColumns = (columns) =>
+  columns.some((col) => col.key === "Qty") &&
+  columns.some((col) => col.key === "Cost" || col.key === "Price" || col.key === "TotalAmount");
+
 // Print-specific CSS styles
 const printStyles = `
   @media print {
@@ -270,8 +275,8 @@ const ReportResults = ({
   const calculateOutletTotals = (outletData) => {
     return outletData.reduce((totals, item) => {
       // Handle different column structures for different reports
-      if (columns.some(col => col.key === 'Qty') && columns.some(col => col.key === 'Cost')) {
-        // Stock Balance report structure - updated for new data structure
+      if (isStockBalanceColumns(columns)) {
+        // Stock Balance report. Cost columns are omitted for non-administrators.
         totals.qty += Number(item.Qty || 0);
         totals.cost += Number(item.Cost || 0);
         totals.totalCost += Number(item.TotalCost || 0);
@@ -307,8 +312,8 @@ const ReportResults = ({
   const calculateGrandTotals = (data) => {
     return data.reduce((totals, item) => {
       // Handle different column structures for different reports
-      if (columns.some(col => col.key === 'Qty') && columns.some(col => col.key === 'Cost')) {
-        // Stock Balance report structure - updated for new data structure
+      if (isStockBalanceColumns(columns)) {
+        // Stock Balance report. Cost columns are omitted for non-administrators.
         totals.qty += Number(item.Qty || 0);
         totals.cost += Number(item.Cost || 0);
         totals.totalCost += Number(item.TotalCost || 0);

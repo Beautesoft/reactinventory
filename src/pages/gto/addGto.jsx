@@ -70,6 +70,7 @@ import {
   buildLinkCodeLookup,
   lookupLinkCode,
 } from "@/utils/utils";
+import { pickItemBatch } from "@/utils/itemBatchMatch";
 import {
   applyItemBatchCostFromItemOnQty,
   applyRunningBalanceFromItemOnQty,
@@ -3063,7 +3064,7 @@ function AddGto({ docData }) {
                       }
                     } else {
                       // Handle specific batch in destination store
-                      // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+                      // Match by batch number. A different expiry still uses this row.
                       console.log("🔍 Processing FEFO batch for destination:", {
                         batchNo: fefoBatch.batchNo,
                         expDate: fefoBatch.expDate,
@@ -3087,19 +3088,6 @@ function AddGto({ docData }) {
                         { siteCode: stockHdrs.tstoreNo },
                         { batchNo: fefoBatch.batchNo },
                       ];
-
-                      // Only add expDate condition if we have a normalized date
-                      if (normalizedExpDate) {
-                        filterConditions.push({ expDate: normalizedExpDate });
-                        console.log(
-                          "🔍 Added expDate to filter:",
-                          normalizedExpDate,
-                        );
-                      } else {
-                        console.log(
-                          "🔍 No expDate added to filter (normalizedExpDate is null/undefined)",
-                        );
-                      }
 
                       const specificBatchFilter = {
                         where: {
@@ -3187,7 +3175,10 @@ function AddGto({ docData }) {
                             );
                           }
 
-                          return resp[0];
+                          return pickItemBatch(resp, {
+                            batchNo: fefoBatch.batchNo,
+                            expDate: normalizedExpDate,
+                          });
                         })
                         .catch((error) => {
                           console.error(
@@ -4402,7 +4393,7 @@ function AddGto({ docData }) {
         );
 
         // First, check if the specific batch exists in destination store
-        // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+        // Match by batch number. A different expiry still uses the existing row.
         const normalizedExpDate = normalizeExpDate(batchDetail.expDate);
         const filterConditions = [
           { itemCode: trimmedItemCode },
@@ -4410,11 +4401,6 @@ function AddGto({ docData }) {
           { siteCode: stktrnItem.storeNo }, // Destination store
           { batchNo: batchDetail.batchNo }, // Filter by specific batch
         ];
-
-        // Only add expDate condition if we have a normalized date
-        if (normalizedExpDate) {
-          filterConditions.push({ expDate: normalizedExpDate });
-        }
 
         const specificBatchFilter = {
           where: {
@@ -4427,7 +4413,12 @@ function AddGto({ docData }) {
         )}`;
         let existingBatch = await apiService
           .get(specificBatchUrl)
-          .then((resp) => resp[0])
+          .then((resp) =>
+            pickItemBatch(resp, {
+              batchNo: batchDetail.batchNo,
+              expDate: normalizedExpDate,
+            })
+          )
           .catch((error) => {
             console.error("Error fetching destination batch:", error);
             return null;
@@ -4740,7 +4731,7 @@ function AddGto({ docData }) {
     // Execute destination store updates in batch with existence checks
     for (const update of destinationUpdates) {
       // Check if batch exists in destination store before updating
-      // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+      // Match by batch number. A different expiry still uses the existing row.
       // Note: For consolidated transfers, expiry date may not be available in update object, so we check stktrnItem
       const normalizedExpDate =
         update.batchno && stktrnItem?.docExpdate
@@ -4753,11 +4744,6 @@ function AddGto({ docData }) {
         update.batchno ? { batchNo: update.batchno } : { batchNo: "" }, // Handle both specific batch and "No Batch"
       ];
 
-      // Only add expDate condition if we have a normalized date
-      if (normalizedExpDate) {
-        filterConditions.push({ expDate: normalizedExpDate });
-      }
-
       const batchFilter = {
         where: {
           and: filterConditions,
@@ -4769,7 +4755,12 @@ function AddGto({ docData }) {
       )}`;
       let existingBatch = await apiService
         .get(batchUrl)
-        .then((resp) => resp[0])
+        .then((resp) =>
+          pickItemBatch(resp, {
+            batchNo: update.batchno || "",
+            expDate: normalizedExpDate,
+          })
+        )
         .catch((error) => {
           console.error("Error fetching destination batch:", error);
           return null;
@@ -4877,7 +4868,7 @@ function AddGto({ docData }) {
     } else {
       // Handle specific batch transfer to destination store
       // First, check if the specific batch exists in destination store
-      // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+      // Match by batch number. A different expiry still uses the existing row.
       console.log("🔍 handleDestinationBatchTransfer - processing batch:", {
         batchNo: stktrnItem.itemBatch,
         expDate: stktrnItem?.docExpdate,
@@ -4897,11 +4888,6 @@ function AddGto({ docData }) {
         { batchNo: stktrnItem.itemBatch }, // Filter by specific batch
       ];
 
-      // Only add expDate condition if we have a normalized date
-      if (normalizedExpDate) {
-        filterConditions.push({ expDate: normalizedExpDate });
-      }
-
       const specificBatchFilter = {
         where: {
           and: filterConditions,
@@ -4918,7 +4904,12 @@ function AddGto({ docData }) {
       )}`;
       let existingBatch = await apiService
         .get(specificBatchUrl)
-        .then((resp) => resp[0])
+        .then((resp) =>
+          pickItemBatch(resp, {
+            batchNo: stktrnItem.itemBatch,
+            expDate: normalizedExpDate,
+          })
+        )
         .catch((error) => {
           console.error("Error fetching destination batch:", error);
           return null;
@@ -5030,7 +5021,7 @@ function AddGto({ docData }) {
     } else {
       // Handle specific batch transfer to destination store
       // First, check if the specific batch exists in destination store
-      // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
+      // Match by batch number. A different expiry still uses the existing row.
       console.log("🔍 handleDestinationFefoTransfer - processing batch:", {
         batchNo: stktrnItem.itemBatch,
         expDate: stktrnItem?.docExpdate,
@@ -5050,11 +5041,6 @@ function AddGto({ docData }) {
         { batchNo: stktrnItem.itemBatch }, // Filter by specific batch
       ];
 
-      // Only add expDate condition if we have a normalized date
-      if (normalizedExpDate) {
-        filterConditions.push({ expDate: normalizedExpDate });
-      }
-
       const specificBatchFilter = {
         where: {
           and: filterConditions,
@@ -5071,7 +5057,12 @@ function AddGto({ docData }) {
       )}`;
       let existingBatch = await apiService
         .get(specificBatchUrl)
-        .then((resp) => resp[0])
+        .then((resp) =>
+          pickItemBatch(resp, {
+            batchNo: stktrnItem.itemBatch,
+            expDate: normalizedExpDate,
+          })
+        )
         .catch((error) => {
           console.error("Error fetching destination batch:", error);
           return null;

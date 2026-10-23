@@ -436,7 +436,7 @@ New batch:                                       POST ItemBatches
                           ↑ camelCase keys
 ```
 
-`Itemonqties` is the per `itemcode + sitecode + uom` projection the client reads for balances. **No client flow ever writes it** — every screen reads it and assumes the backend maintains it. Decide whether it is a maintained table or a view over `Stktrns` (§13 Q9).
+`Itemonqties` is the per `itemcode + sitecode + uom` balance the client reads. **No client flow ever writes it.** On Zenth it is the view `dbo.ITEMONQTY`: one row per `ITEM_BATCH`, with `TRN_BALQTY` / `TRN_BALCST` copied from the latest `Stktrn` (`TRN_POST`, `POST_TIME`, `id`). It is not the sum of `ITEM_BATCH.QTY`. Definition, the normal post chain, and the `float` quantity columns are in `docs/itemonqty-and-decimal-qty.md`.
 
 ---
 

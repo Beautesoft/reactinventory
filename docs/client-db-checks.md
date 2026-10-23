@@ -47,9 +47,38 @@ The same batch string is written again on post. A 20-character `DOC_BATCH_NO` is
 
 ---
 
+## 2. Quantity and cost columns must be `decimal`, not `float`
+
+Stock usage accepts a fractional quantity on the primary UOM (`ItemUomprices.itemUompriceSeq = 1`), for example `0.2` or `0.5`. Whole numbers are exact in `float`. Fractions are not.
+
+On Zenth train, 22 Oct 2026, usage of `0.2` for item `11600049` at `ZEHQ` reduced batch `A01` from 5 to what should be 4.8. The column stored `4.80000019073486`. The ledger balance stored `16.7999992370605` instead of 16.8. `BATCH_COST` already had the same noise in 2023 (`731.400024414063` on batch id `611`). Rounding in the React app does not fix this: `ItemBatches/updateqty` adds the delta in `float`.
+
+`decimal(18,4)` means 18 digits in total, 4 of them after the decimal point. `0.2` is stored as `0.2000`, `4.8` as `4.8000`.
+
+```sql
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME IN ('ITEM_BATCH', 'Stktrn')
+  AND COLUMN_NAME IN ('QTY', 'TRN_QTY', 'TRN_BALQTY', 'TRN_BALCST', 'BATCH_COST');
+```
+
+Zenth train result (all `float(53)`): `ITEM_BATCH.QTY`, `ITEM_BATCH.BATCH_COST`, `Stktrn.TRN_QTY`, `Stktrn.TRN_BALQTY`, `Stktrn.TRN_BALCST`.
+
+Change the quantity columns first. Change the cost columns in the same pass if money must stay exact. `ITEMONQTY` is a view; it needs no alter. Round existing rows as part of the type change so `4.80000019073486` becomes `4.8000`.
+
+How `ITEMONQTY` is built, and when a fractional usage is allowed, is in `docs/itemonqty-and-decimal-qty.md`.
+
+| Check | Pass |
+|---|---|
+| `ITEM_BATCH.QTY`, `Stktrn.TRN_QTY`, `Stktrn.TRN_BALQTY` | `decimal` with scale **≥ 4** |
+| `ITEM_BATCH.BATCH_COST`, `Stktrn.TRN_BALCST` | `decimal` with scale **≥ 2** (4 if changed with the quantity columns) |
+
+---
+
 ## Sign-off
 
 Client: _______________  
 Date: _______________
 
 - [ ] 1. Batch number columns hold 20 characters, and memo / `itemBatch` columns hold the joined values
+- [ ] 2. Quantity columns are `decimal` with scale at least 4, not `float`

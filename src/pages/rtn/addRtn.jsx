@@ -63,6 +63,7 @@ import {
   buildLinkCodeLookup,
   lookupLinkCode,
 } from "@/utils/utils";
+import { pickItemBatch } from "@/utils/itemBatchMatch";
 import {
   enrichStockItemsWithDecimalFlag,
   validateQtyForItemOrToast,
@@ -3219,7 +3220,6 @@ function AddRtn({ docData }) {
               // WITH BATCH NUMBERS: Find and update specific batch record
               console.log(`Processing ItemBatch update with BATCH_NO=Yes for ${item.itemcode}`);
               
-              // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
               const normalizedExpDate = normalizeExpDate(item.docExpdate);
               const specificBatchFilter = {
                 where: {
@@ -3230,18 +3230,20 @@ function AddRtn({ docData }) {
                     item.docBatchNo
                       ? { batchNo: item.docBatchNo }
                       : { or: [{ batchNo: "" }, { batchNo: null }] },
-                    ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
                   ]
                 }
               };
               
               try {
-                const existingBatch = await apiService.get(
+                const existingRows = await apiService.get(
                   `ItemBatches?filter=${encodeURIComponent(JSON.stringify(specificBatchFilter))}`
                 );
-                
-                if (existingBatch && existingBatch.length > 0) {
-                  const batchRecord = existingBatch[0];
+                const batchRecord = pickItemBatch(existingRows, {
+                  batchNo: item.docBatchNo || "",
+                  expDate: normalizedExpDate,
+                });
+
+                if (batchRecord) {
                   
                   // Update the existing batch record - batchCost remains static
                   const batchUpdate = {

@@ -64,6 +64,7 @@ import {
   buildLinkCodeLookup,
   lookupLinkCode,
 } from "@/utils/utils";
+import { pickItemBatch, storedExpiryDay } from "@/utils/itemBatchMatch";
 import {
   enrichStockItemsWithDecimalFlag,
   validateQtyForItemOrToast,
@@ -281,10 +282,22 @@ const EditDialog = memo(
 
       // Validate batch number only if batch functionality is enabled
       if (getConfigValue('BATCH_NO') === "Yes") {
-        if (useExistingBatch && !selectedBatch?.value) {
+        if (isLoadingBatches) {
+          errors.push("Batch list is still loading. Wait and try again.");
+        } else if (useExistingBatch && !selectedBatch?.value) {
           errors.push("Please select an existing batch");
         } else if (!useExistingBatch && !newBatchNo.trim()) {
           errors.push("Please enter a new batch number");
+        } else if (!useExistingBatch) {
+          const typed = newBatchNo.trim().toLowerCase();
+          const existing = batchOptions.find(
+            (opt) => (opt.value || "").trim().toLowerCase() === typed
+          );
+          if (existing) {
+            errors.push(
+              `Batch ${existing.value} already exists. Use Existing Batch.`
+            );
+          }
         }
 
         // Note: Expiry date is now optional - if not provided, it will be auto-calculated
@@ -1915,9 +1928,8 @@ function AddGrn({ docData }) {
 
         // Process each batch separately
         for (const batch of batchDetails) {
-          // Check if this specific batch already exists
-          // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
-          const normalizedExpDate = normalizeExpDate(batch.expDate);
+          // One batch number has one expiry. Match the existing row by batch number
+          // and add quantity there. Do not create a second row for a different date.
           const batchCheckFilter = {
             where: {
               and: [
@@ -1925,7 +1937,6 @@ function AddGrn({ docData }) {
                 { siteCode: userDetails.siteCode },
                 { uom: d.itemUom },
                 { batchNo: batch.batchNo },
-                ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
               ],
             },
           };
@@ -1937,20 +1948,24 @@ function AddGrn({ docData }) {
               )}`
             );
 
-            const batchExists = existingBatchCheck && existingBatchCheck.length > 0;
+            const existingBatch = pickItemBatch(existingBatchCheck, {
+              batchNo: batch.batchNo,
+              expDate: batch.expDate,
+            });
 
-            if (batchExists) {
-              // For existing batches, use updateqty
+            if (existingBatch) {
+              // Keep the stored expiry. batchcost 0 tells updateqty not to replace it.
+              const storedExpDate = storedExpiryDay(existingBatch);
               const batchUpdate = {
                 itemcode: trimmedItemCode,
                 sitecode: userDetails.siteCode,
                 uom: d.itemUom,
                 qty: Number(batch.quantity),
                 batchcost: 0,
-                batchno: batch.batchNo,
-                ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                  expDate: batch.expDate || calculateDefaultExpiryDate(),
-                }),
+                batchno: existingBatch.batchNo || batch.batchNo,
+                ...(getConfigValue('EXPIRY_DATE') === "Yes" && storedExpDate
+                  ? { expDate: storedExpDate }
+                  : {}),
               };
 
               await apiService

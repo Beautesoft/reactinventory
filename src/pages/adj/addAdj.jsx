@@ -54,6 +54,7 @@ import {
   buildLinkCodeLookup,
   lookupLinkCode,
 } from "@/utils/utils";
+import { pickItemBatch, storedExpiryDay } from "@/utils/itemBatchMatch";
 import {
   enrichStockItemsWithDecimalFlag,
   validateQtyForItemOrToast,
@@ -2537,8 +2538,6 @@ function AddAdj({ docData }) {
             batchNoLength: batch.batchNo ? batch.batchNo.length : 'null/undefined'
           });
 
-          // Check if this specific batch already exists
-          // Include expiry date in filter to ensure batches with same batch number but different expiry dates are treated separately
           const normalizedExpDate = normalizeExpDate(batch.expDate);
           const batchCheckFilter = {
             where: {
@@ -2547,7 +2546,6 @@ function AddAdj({ docData }) {
                 { siteCode: userDetails.siteCode },
                 { uom: processedItem.docUom },
                 { batchNo: batch.batchNo },
-                ...(normalizedExpDate ? [{ expDate: normalizedExpDate }] : []), // Include expiry date if available
               ],
             },
           };
@@ -2570,7 +2568,11 @@ function AddAdj({ docData }) {
             console.log(`🔍 Existing batch check result:`, existingBatchCheck);
             console.log(`🔍 Batch existence check completed for batch:`, batch.batchNo || "No Batch");
 
-            const batchExists = existingBatchCheck && existingBatchCheck.length > 0;
+            const existingBatch = pickItemBatch(existingBatchCheck, {
+              batchNo: batch.batchNo || "",
+              expDate: normalizedExpDate,
+            });
+            const batchExists = !!existingBatch;
 
             console.log(`🔍 Batch exists check:`, {
               batchNo: batch.batchNo,
@@ -2579,8 +2581,9 @@ function AddAdj({ docData }) {
             });
 
             if (batchExists) {
-              // For existing batches, use updateqty
+              // For existing batches, use updateqty and keep the stored expiry
               console.log(`✅ Updating existing batch: ${batch.batchNo || 'No Batch'}`);
+              const storedExpDate = storedExpiryDay(existingBatch);
               const batchUpdate = {
                 itemcode: trimmedItemCode,
                 sitecode: userDetails.siteCode,
@@ -2588,9 +2591,9 @@ function AddAdj({ docData }) {
                 qty: Number(batch.quantity),
                 batchcost: 0,
                 batchno: batch.batchNo,
-                ...(getConfigValue('EXPIRY_DATE') === "Yes" && {
-                  expDate: batch.expDate || calculateDefaultExpiryDate(),
-                }),
+                ...(getConfigValue('EXPIRY_DATE') === "Yes" && storedExpDate
+                  ? { expDate: storedExpDate }
+                  : {}),
               };
 
               console.log(`🔍 Batch update payload:`, batchUpdate);
