@@ -191,6 +191,35 @@ const calculateDisplayVariance = (countedQty, onHandQty) => {
   return onHand < 0 ? counted : counted - onHand;
 };
 
+// Step 1 shows one row per link code (retail AVDR-0047 and salon R-AVD000036).
+// Selection and the table key must include that code. Saved lines and posting
+// still match item + UOM only, so those paths keep getStockLineKey.
+function getStockTakeListKey(item) {
+  const linkCode = String(item?.linkCode || item?.LinkCode || "").trim();
+  return `${getStockLineKey(item)}|${linkCode}`;
+}
+
+function oneRowPerStockLine(rows) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of rows) {
+    const lineKey = getStockLineKey(item);
+    if (seen.has(lineKey)) continue;
+    seen.add(lineKey);
+    unique.push(item);
+  }
+  return unique;
+}
+
+function withoutStockLineSelection(selected, item) {
+  const lineKey = getStockLineKey(item);
+  const next = new Set(selected);
+  for (const key of selected) {
+    if (key === lineKey || key.startsWith(`${lineKey}|`)) next.delete(key);
+  }
+  return next;
+}
+
 const getStockTakeBatchKey = (batch) =>
   `${batch.batchNo || ""}_${batch.expDate || ""}`;
 
@@ -979,11 +1008,11 @@ function AddTake({ docData }) {
   const pageAllSelected =
     currentPageStockItems.length > 0 &&
     currentPageStockItems.every((item) =>
-      selectedItems.has(getStockLineKey(item))
+      selectedItems.has(getStockTakeListKey(item))
     );
   const allItemsSelected =
     activeStockItems.length > 0 &&
-    activeStockItems.every((item) => selectedItems.has(getStockLineKey(item)));
+    activeStockItems.every((item) => selectedItems.has(getStockTakeListKey(item)));
 
   const setStockKeysSelected = (keys, checked) => {
     setSelectedItems((prev) => {
@@ -999,7 +1028,7 @@ function AddTake({ docData }) {
   // Header checkbox: this page only. Other pages stay as they are.
   const handleSelectPage = (checked) => {
     setStockKeysSelected(
-      currentPageStockItems.map((item) => getStockLineKey(item)),
+      currentPageStockItems.map((item) => getStockTakeListKey(item)),
       checked === true
     );
   };
@@ -1007,14 +1036,14 @@ function AddTake({ docData }) {
   // Selects every active item in the current filtered list, on every page.
   const handleSelectAllItems = (checked) => {
     setStockKeysSelected(
-      activeStockItems.map((item) => getStockLineKey(item)),
+      activeStockItems.map((item) => getStockTakeListKey(item)),
       checked === true
     );
   };
 
   // Handle item selection in Step 1
   const handleItemSelection = (item, checked) => {
-    const key = getStockLineKey(item);
+    const key = getStockTakeListKey(item);
     setSelectedItems((prev) => {
       const newSet = new Set(prev);
       if (checked) {
@@ -1046,8 +1075,12 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
 
       // Filter originalStockList to only include selected items (not filtered stockList)
       // This ensures all selected items are included even if they're filtered out by search/filters
-      const selectedStockList = originalStockList.filter(
-        (item) => item.isActive === "True" && selectedItems.has(getStockLineKey(item))
+      // Both link-code rows can be selected. Step 2 still counts one line per item + UOM.
+      const selectedStockList = oneRowPerStockLine(
+        originalStockList.filter(
+          (item) =>
+            item.isActive === "True" && selectedItems.has(getStockTakeListKey(item))
+        )
       );
       console.log(selectedStockList, "selectedStockList1");
 
@@ -1236,11 +1269,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     const itemToRemove = stockTakeItems[index];
     if (itemToRemove && itemToRemove.stockCode) {
       // Remove from selectedItems Set in Step 1
-      setSelectedItems((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(getStockLineKey(itemToRemove));
-        return newSet;
-      });
+      setSelectedItems((prev) => withoutStockLineSelection(prev, itemToRemove));
     }
     
     // Remove from stockTakeItems
@@ -1893,13 +1922,20 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     didRestoreSheet.current = true;
     {
       const stockPool = originalStockList.length > 0 ? originalStockList : stockList;
-      // Set selected items from existing cartData
-      const existingItemKeys = new Set(cartData.map((item) => getStockLineKey(item)));
+      // Saved lines have no link code. Check every catalog row for that item + UOM.
+      const savedLineKeys = new Set(cartData.map((item) => getStockLineKey(item)));
+      const existingItemKeys = new Set();
+      stockPool.forEach((item) => {
+        if (item.isActive === "True" && savedLineKeys.has(getStockLineKey(item))) {
+          existingItemKeys.add(getStockTakeListKey(item));
+        }
+      });
       setSelectedItems(existingItemKeys);
 
       // Match saved lines to the full stock list, not the filtered page.
-      const selectedStockList = stockPool.filter((item) =>
-        existingItemKeys.has(getStockLineKey(item))
+      // One sheet row per item + UOM, even when retail and salon link codes both match.
+      const selectedStockList = oneRowPerStockLine(
+        stockPool.filter((item) => savedLineKeys.has(getStockLineKey(item)))
       );
 
       // Convert selected items to stockTakeItems format with existing cartData
@@ -4018,7 +4054,8 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
     const itemsToPrint = printAll
       ? stockList.filter((item) => item.isActive === "True")
       : stockList.filter(
-          (item) => item.isActive === "True" && selectedItems.has(getStockLineKey(item))
+          (item) =>
+            item.isActive === "True" && selectedItems.has(getStockTakeListKey(item))
         );
 
     // Use the imported print function
@@ -4517,12 +4554,12 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                   )
                                   .map((item, index) => (
                                     <TableRow
-                                      key={getStockLineKey(item)}
+                                      key={getStockTakeListKey(item)}
                                       className="hover:bg-gray-50 transition-colors duration-150"
                                     >
                                       <TableCell>
                                         <Checkbox
-                                          checked={selectedItems.has(getStockLineKey(item))}
+                                          checked={selectedItems.has(getStockTakeListKey(item))}
                                           onCheckedChange={(checked) =>
                                             handleItemSelection(item, checked)
                                           }

@@ -19,8 +19,45 @@ import {
   MENU_AUTH_MAPPING,
 } from "@/utils/utils";
 import { Link } from "react-router-dom";
+import { resolveExpiryNotifyMonths } from "@/auth/loginSession";
 
 const catalogItemCode = (code) => String(code || "").trim().replace(/0000$/, "");
+
+function mapExpiringBatches(rows, stockItems) {
+  const nameByCode = new Map();
+  for (const item of stockItems || []) {
+    const raw = String(item.stockCode || item.itemcode || "").trim();
+    if (!raw) continue;
+    const meta = {
+      name: item.stockName || item.itemName || "",
+      uom: item.uomDescription || item.uom || "",
+    };
+    nameByCode.set(raw, meta);
+    const shortCode = catalogItemCode(raw);
+    if (shortCode && !nameByCode.has(shortCode)) nameByCode.set(shortCode, meta);
+  }
+
+  const now = Date.now();
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => row?.expDate && Number(row.qty) > 0)
+    .slice(0, 5)
+    .map((row) => {
+      const code = String(row.itemCode || "").trim();
+      const meta =
+        nameByCode.get(code) || nameByCode.get(catalogItemCode(code)) || {};
+      const exp = new Date(row.expDate);
+      const expired = !Number.isNaN(exp.getTime()) && exp.getTime() < now;
+      return {
+        itemCode: code,
+        stockName: meta.name || "",
+        batchNo: String(row.batchNo || "").trim() || "No Batch",
+        qty: Number(row.qty) || 0,
+        uom: row.uom || meta.uom || "",
+        expDate: row.expDate,
+        expired,
+      };
+    });
+}
 
 /** Same gate as sidebar "Replenishment Report" (F10017). */
 const canViewReplenishmentReport = () => {
@@ -33,6 +70,8 @@ const canViewReplenishmentReport = () => {
 };
 
 function DashBoard() {
+  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
+  const canViewReplenishment = canViewReplenishmentReport();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
     totalStockItems: 0,
@@ -42,7 +81,9 @@ function DashBoard() {
     lowStockItems: [],
     recentTransactions: [],
     stockBalance: [],
-    stockItems: []
+    stockItems: [],
+    expiringBatches: [],
+    expiryNotifyMonths: resolveExpiryNotifyMonths(userDetails.expiryNotifyMonths),
   });
 
   // Batch modal state
@@ -50,9 +91,6 @@ function DashBoard() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [batchData, setBatchData] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
-
-  const userDetails = JSON.parse(localStorage.getItem("userDetails") || "{}");
-  const canViewReplenishment = canViewReplenishmentReport();
 
   // Fetch dashboard data
   const fetchDashboardData = async () => {
@@ -66,11 +104,35 @@ function DashBoard() {
 
       // Fetch stock items (cards / top stock value); reorder data only if Replenishment Report is authorized
       const stockQuery = `?Site=${siteCode}`;
-      const [stockResponse, reorderStocks] = await Promise.all([
+      const notifyMonths = resolveExpiryNotifyMonths(userDetails.expiryNotifyMonths);
+      const expiryCutoff = new Date();
+      expiryCutoff.setMonth(expiryCutoff.getMonth() + notifyMonths);
+      expiryCutoff.setHours(23, 59, 59, 999);
+      const expiryFilter = {
+        where: {
+          and: [
+            { siteCode },
+            { qty: { gt: 0 } },
+            { expDate: { neq: null } },
+            { expDate: { lte: expiryCutoff.toISOString() } },
+          ],
+        },
+        order: "expDate ASC",
+        limit: 5,
+      };
+      const [stockResponse, reorderStocks, expiryRows] = await Promise.all([
         apiService1.get(`api/GetInvitems${stockQuery}`),
         canViewReplenishment
           ? itemMasterApi.getReorderActiveStocks()
           : Promise.resolve([]),
+        apiService
+          .get(
+            `ItemBatches?filter=${encodeURIComponent(JSON.stringify(expiryFilter))}`
+          )
+          .catch((error) => {
+            console.error("Error fetching expiring batches:", error);
+            return [];
+          }),
       ]);
       const stockItems = Array.isArray(stockResponse?.result) ? stockResponse.result : [];
 
@@ -187,6 +249,8 @@ function DashBoard() {
         recentTransactions: recentResponse || [],
         stockBalance: topStockItems,
         stockItems: stockItems,
+        expiringBatches: mapExpiringBatches(expiryRows, stockItems),
+        expiryNotifyMonths: notifyMonths,
       });
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
@@ -202,40 +266,44 @@ function DashBoard() {
 
   const stats = [
     {
-      title: "Total Stock Items",
-      value: dashboardData.totalStockItems.toLocaleString(),
-      icon: Package,
-      color: "text-blue-600",
-      borderColor: "border-blue-500",
-      bgColor: "bg-blue-500/10",
-      loading: loading
-    },
-    {
       title: "Pending Documents",
-      value: dashboardData.pendingDocuments.toString(),
+      value: dashboardData.pendingDocuments.toLocaleString(),
+      unit: "open docs",
       icon: ShoppingCart,
       color: "text-orange-600",
       borderColor: "border-orange-500",
       bgColor: "bg-orange-500/10",
-      loading: loading
-    },
-    {
-      title: "Last 30 Days Transactions",
-      value: dashboardData.last30DaysTransactions.toString(),
-      icon: TrendingUp,
-      color: "text-green-600",
-      borderColor: "border-green-500",
-      bgColor: "bg-green-500/10",
-      loading: loading
+      loading: loading,
     },
     {
       title: "Items In Stock",
-      value: dashboardData.inStockCount.toString(),
+      value: dashboardData.inStockCount.toLocaleString(),
+      unit: "items with qty",
       icon: Layers,
       color: "text-purple-600",
       borderColor: "border-purple-500",
       bgColor: "bg-purple-500/10",
-      loading: loading
+      loading: loading,
+    },
+    {
+      title: "Last 30 Days Transactions",
+      value: dashboardData.last30DaysTransactions.toLocaleString(),
+      unit: "stock postings",
+      icon: TrendingUp,
+      color: "text-green-600",
+      borderColor: "border-green-500",
+      bgColor: "bg-green-500/10",
+      loading: loading,
+    },
+    {
+      title: "Total Stock Items",
+      value: dashboardData.totalStockItems.toLocaleString(),
+      unit: "SKU lines",
+      icon: Package,
+      color: "text-blue-600",
+      borderColor: "border-blue-500",
+      bgColor: "bg-blue-500/10",
+      loading: loading,
     },
   ];
 
@@ -355,10 +423,13 @@ function DashBoard() {
                   <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 min-h-[2.5rem] line-clamp-2">
                     {stat.title}
                   </p>
-                  <div className="flex items-baseline mt-2">
-                    <p className="text-3xl font-bold text-gray-900">
+                  <div className="mt-2">
+                    <p className="text-3xl font-bold text-gray-900 leading-tight">
                       {stat.loading ? "..." : stat.value}
                     </p>
+                    {stat.unit ? (
+                      <p className="text-xs text-gray-500 mt-1 font-medium">{stat.unit}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className={`p-4 rounded-2xl ${stat.bgColor} shadow-inner shrink-0`}>
@@ -372,82 +443,67 @@ function DashBoard() {
 
       {/* Dashboard sections — two aligned columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        {/* Left column */}
+        {/* Left column — action alerts */}
         <div className="space-y-6">
-          {/* Recent Stock Transfers */}
           <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
-            <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-b px-6 py-4 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-rose-50 to-amber-50 border-b px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-white rounded-xl shadow-sm border border-slate-200">
-                  <Clock className="h-5 w-5 text-blue-500" />
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-rose-100">
+                  <AlertTriangle className="h-5 w-5 text-rose-500" />
                 </div>
-                <h2 className="text-lg font-bold text-gray-800">Recent Stock Transfers</h2>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Expiring Stock</h2>
+                  <p className="text-xs text-gray-500">
+                    Site {userDetails?.siteCode || "—"} · within {dashboardData.expiryNotifyMonths} months
+                  </p>
+                </div>
               </div>
             </div>
             <div className="p-6 space-y-3">
               {loading ? (
                 <div className="text-center py-4 text-gray-500">Loading...</div>
-              ) : dashboardData.recentTransactions.length > 0 ? (
-                dashboardData.recentTransactions.map((transaction, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-100">
-                    <div>
-                      <p className="font-medium text-sm">{transaction.trnDocno}</p>
-                      <p className="text-xs text-gray-500">{transaction.itemcode?.replace('0000', '')} - {format_Date(transaction.trnDate)}</p>
-                      <p className="text-xs text-gray-400">Amount: {getActiveCurrency()} {transaction.trnAmt || 0}</p>
+              ) : dashboardData.expiringBatches.length > 0 ? (
+                dashboardData.expiringBatches.map((batch, index) => {
+                  const uom = batch.uom ? ` ${batch.uom}` : "";
+                  return (
+                    <div
+                      key={`${batch.itemCode}-${batch.batchNo}-${index}`}
+                      className={`flex items-start justify-between gap-3 p-3 rounded-xl border-l-4 ${batch.expired ? "bg-red-50 border-red-400" : "bg-amber-50 border-amber-400"}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm">{batch.itemCode}</p>
+                        {batch.stockName ? (
+                          <p className="text-xs text-gray-600 truncate" title={batch.stockName}>
+                            {batch.stockName}
+                          </p>
+                        ) : null}
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Batch: {batch.batchNo}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold text-gray-800">
+                          {batch.qty.toLocaleString()}{uom}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">{format_Date(batch.expDate)}</p>
+                        <p className={`text-xs font-medium mt-0.5 ${batch.expired ? "text-red-600" : "text-amber-700"}`}>
+                          {batch.expired ? "Expired" : "Expiring"}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTrnTypeColor(transaction.trnType)}`}>
-                        {getTrnTypeText(transaction.trnType)}
-                      </span>
-                      <p className="text-xs text-gray-500 mt-1">Qty: {transaction.trnQty || 0}</p>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                <div className="text-center py-4 text-gray-500">No recent stock transfers</div>
-              )}
-            </div>
-          </Card>
-
-          {/* Top Stock Items by Value */}
-          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white rounded-xl shadow-sm border border-green-100">
-                  <DollarSign className="h-5 w-5 text-green-500" />
+                <div className="text-center py-8 bg-green-50 rounded-xl border border-green-100">
+                  <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                  <p className="font-medium text-green-700">
+                    No on-hand batches expiring within {dashboardData.expiryNotifyMonths} months
+                  </p>
                 </div>
-                <h2 className="text-lg font-bold text-gray-800">Top Stock Items by Value</h2>
-              </div>
-            </div>
-            <div className="p-6 space-y-3">
-              {loading ? (
-                <div className="text-center py-4 text-gray-500">Loading...</div>
-              ) : dashboardData.stockBalance.length > 0 ? (
-                dashboardData.stockBalance.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 hover:bg-green-100/50 transition-colors">
-                    <div>
-                      <p className="font-medium text-sm">{item.stockCode}</p>
-                      <p className="text-xs text-gray-600">{item.stockName}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-green-600">
-                        {item.quantity} {item.uomDescription}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Value: {getActiveCurrency()} {item.value.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-4 text-gray-500">No items currently in stock</div>
               )}
             </div>
           </Card>
-        </div>
 
-        {/* Right column */}
-        <div className="space-y-6">
           {canViewReplenishment && (
           <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
             <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b px-6 py-4 flex items-center justify-between">
@@ -516,6 +572,78 @@ function DashBoard() {
             </div>
           </Card>
           )}
+        </div>
+
+        {/* Right column — activity & overview */}
+        <div className="space-y-6">
+          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
+            <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-b px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-slate-200">
+                  <Clock className="h-5 w-5 text-blue-500" />
+                </div>
+                <h2 className="text-lg font-bold text-gray-800">Recent Stock Transfers</h2>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : dashboardData.recentTransactions.length > 0 ? (
+                dashboardData.recentTransactions.map((transaction, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors border border-slate-100">
+                    <div>
+                      <p className="font-medium text-sm">{transaction.trnDocno}</p>
+                      <p className="text-xs text-gray-500">{transaction.itemcode?.replace("0000", "")} - {format_Date(transaction.trnDate)}</p>
+                      <p className="text-xs text-gray-400">Amount: {getActiveCurrency()} {transaction.trnAmt || 0}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTrnTypeColor(transaction.trnType)}`}>
+                        {getTrnTypeText(transaction.trnType)}
+                      </span>
+                      <p className="text-xs text-gray-500 mt-1">Qty: {transaction.trnQty || 0}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">No recent stock transfers</div>
+              )}
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-b px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white rounded-xl shadow-sm border border-green-100">
+                  <DollarSign className="h-5 w-5 text-green-500" />
+                </div>
+                <h2 className="text-lg font-bold text-gray-800">Top Stock Items by Value</h2>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading...</div>
+              ) : dashboardData.stockBalance.length > 0 ? (
+                dashboardData.stockBalance.map((item, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 hover:bg-green-100/50 transition-colors">
+                    <div>
+                      <p className="font-medium text-sm">{item.stockCode}</p>
+                      <p className="text-xs text-gray-600">{item.stockName}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-green-600">
+                        {item.quantity} {item.uomDescription}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Value: {getActiveCurrency()} {item.value.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">No items currently in stock</div>
+              )}
+            </div>
+          </Card>
 
           {/* Stock Balance Mini View */}
           <Card className="overflow-hidden shadow-md border border-slate-200 p-0 gap-0">

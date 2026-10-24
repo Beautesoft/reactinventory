@@ -79,6 +79,17 @@ export function isAuthVerificationSuccessful(response, parsed) {
   return false;
 }
 
+export const DEFAULT_EXPIRY_NOTIFY_MONTHS = 6;
+
+/** Login sends expiryNotifyMonths as a string ("6"). Missing or invalid values use 6. */
+export function resolveExpiryNotifyMonths(value) {
+  const months = Number.parseInt(value, 10);
+  if (!Number.isFinite(months) || months <= 0) {
+    return DEFAULT_EXPIRY_NOTIFY_MONTHS;
+  }
+  return months;
+}
+
 export function extractLoginPayload(response, parsed) {
   const data = parsed.data ?? {};
   const inventory = data.inventory ?? {};
@@ -108,6 +119,9 @@ export function extractLoginPayload(response, parsed) {
     batchSNo: inventory.batchSNo ?? response.batchSNo,
     defaultExpiryDays:
       inventory.defaultExpiryDays ?? response.defaultExpiryDays,
+    expiryNotifyMonths: resolveExpiryNotifyMonths(
+      inventory.expiryNotifyMonths ?? response.expiryNotifyMonths
+    ),
     autoPost: inventory.autoPost ?? response.autoPost,
     prUseDeliveryOrder:
       inventory.prUseDeliveryOrder ??
@@ -260,6 +274,7 @@ export function buildSessionUserDetails(
     manualBatchSelection: payload.manualBatchSelection,
     batchSNo: payload.batchSNo,
     defaultExpiryDays: payload.defaultExpiryDays,
+    expiryNotifyMonths: resolveExpiryNotifyMonths(payload.expiryNotifyMonths),
     autoPost: payload.autoPost,
     prUseDeliveryOrder: payload.prUseDeliveryOrder,
     HQSiteCode: payload.HQSiteCode,
