@@ -1,3 +1,5 @@
+import { pickItemBatch, storedExpiryDay } from "@/utils/itemBatchMatch";
+
 /** Marker stored on StkMovdocDtls.ordMemo1 for a selected row with no count yet. */
 export const STOCK_TAKE_PENDING = "pending";
 
@@ -69,7 +71,7 @@ function batchBreakdownFromLine(line) {
     const batches = line.ordMemo2
       .split(",")
       .filter(Boolean)
-      .map((part) => {
+      .map((part, index) => {
         const splitAt = part.lastIndexOf(":");
         const batchNo = splitAt >= 0 ? part.slice(0, splitAt) : part;
         const countedQty = splitAt >= 0 ? Number(part.slice(splitAt + 1)) || 0 : 0;
@@ -77,7 +79,7 @@ function batchBreakdownFromLine(line) {
           batchNo,
           availableQty: Number(line.docTtlqty) || 0,
           countedQty,
-          expDate: null,
+          expDate: memoExpiryAt(line.ordMemo4, index),
         };
       });
     const noBatchQty = Number(line.ordMemo3) || 0;
@@ -218,11 +220,30 @@ function pricesForLine(line, priceRows) {
   };
 }
 
+function keptExpiry(value) {
+  return storedExpiryDay({ expDate: value }) || null;
+}
+
+/**
+ * Saved line expiry wins. A blank or 1900-01-01 date falls back to the
+ * current ItemBatches row for that item, UOM, and batch number.
+ */
+function expiryForPrintBatch(line, batchNo, saved, batchRows) {
+  const kept = keptExpiry(saved);
+  if (kept || !batchNo) return kept;
+  const code = String(line?.itemcode || "").replace(/0000$/, "");
+  const uom = line?.docUom || "";
+  const rows = (Array.isArray(batchRows) ? batchRows : []).filter(
+    (row) => row.itemCode === code && (!uom || row.uom === uom)
+  );
+  return keptExpiry(pickItemBatch(rows, { batchNo })?.expDate);
+}
+
 /**
  * One print row per batch. System quantity and variance stay on the first
  * row of the item. A pending line prints a blank count.
  */
-export function expandStockTakePrintRows(lines, priceRows = []) {
+export function expandStockTakePrintRows(lines, priceRows = [], batchRows = []) {
   const rows = [];
   let itemNo = 0;
 
@@ -255,7 +276,7 @@ export function expandStockTakePrintRows(lines, priceRows = []) {
         itemcode: line?.itemcode || "",
         itemdesc: line?.itemdesc || "",
         batchselect: batch.batchNo || "-",
-        expiry: batch.expDate || "",
+        expiry: expiryForPrintBatch(line, batch.batchNo, batch.expDate, batchRows) || "",
         docQty: pending ? "" : counted,
         systemQty: first ? systemQty : "",
         variance: first ? variance : "",

@@ -60,7 +60,6 @@ import {
   getConfigValue,
   isVoidDocStatus,
   resolveSiteName,
-  formatOrdMemo4FromBatches,
   formatOrdMemo4Pair,
 } from "@/utils/utils";
 import { pickItemBatch, storedExpiryDay } from "@/utils/itemBatchMatch";
@@ -108,6 +107,14 @@ import {
   buildPendingDetailFields,
   sheetRowFromDocumentLine,
 } from "./stockTakeDraft";
+import {
+  buildConfirmedStockTakeBatches,
+  reconcileStockTakePost,
+  stockTakeCountedMemo,
+  stockTakeQty,
+  stockTakeQtyIsZero,
+  stockTakeSystemQty,
+} from "./stockTakeBatchCount";
 
 const calculateTotals = (cartData) => {
   return cartData.reduce(
@@ -400,49 +407,41 @@ const StockTakeBatchSelectionDialog = memo(
     };
 
     const handleSubmit = () => {
-      if (!countedQty || countedQty === 0) {
+      if (isBlankCountedQty(countedQty)) {
         toast.error("Please enter counted quantity first");
         setShowBatchDialog(false);
         return;
       }
 
-      if (totalSelectedQty === 0) {
-        toast.error("Please select at least one batch or No Batch option");
+      const itemCounted = batchCountedNumber(countedQty);
+      // A count of 0 is a real count: every batch the dialog loaded is empty.
+      if (Math.abs(totalSelectedQty - itemCounted) > 0.01) {
+        toast.error(`Selected quantity (${totalSelectedQty.toFixed(2)}) must match counted quantity (${itemCounted.toFixed(2)}). Please adjust your selection.`);
         return;
       }
 
-      // Validate that selected quantity matches the counted quantity
-      if (Math.abs(totalSelectedQty - countedQty) > 0.01) { // Allow small floating point differences
-        toast.error(`Selected quantity (${totalSelectedQty.toFixed(2)}) must match counted quantity (${countedQty.toFixed(2)}). Please adjust your selection.`);
-        return;
-      }
-
-      // Filter out batches with 0 quantity
-      const batchesWithQuantity = selectedBatches.filter(
-        (batch) => {
+      const namedBatches = (batchBreakdown || [])
+        .filter((batch) => batch.batchNo)
+        .map((batch) => {
           const batchKey = getBatchKey(batch);
-          return batchCountedNumber(batchQuantities[batchKey]) > 0;
-        }
-      );
-
-      // Create batch breakdown data
-      const batchBreakdownData = [
-        ...batchesWithQuantity.map((batch) => {
-          const batchKey = getBatchKey(batch);
+          const isSelected = selectedBatches.some(
+            (selected) => getBatchKey(selected) === batchKey
+          );
           return {
             batchNo: batch.batchNo,
             availableQty: batch.availableQty || 0,
-            countedQty: batchCountedNumber(batchQuantities[batchKey]),
             expDate: batch.expDate || null,
+            countedQty: isSelected
+              ? batchCountedNumber(batchQuantities[batchKey])
+              : 0,
           };
-        }),
-        ...(noBatchSelected && batchCountedNumber(noBatchQuantity) > 0 ? [{
-          batchNo: "",
-          availableQty: noBatchQty || 0,
-          countedQty: batchCountedNumber(noBatchQuantity),
-          expDate: null,
-        }] : []),
-      ];
+        });
+
+      // Keep a counted 0 when that batch still has stock. Drop only 0 on 0.
+      const batchBreakdownData = buildConfirmedStockTakeBatches(namedBatches, {
+        availableQty: noBatchQty || 0,
+        countedQty: noBatchSelected ? batchCountedNumber(noBatchQuantity) : 0,
+      });
 
       onBatchSelectionSubmit(batchBreakdownData);
       setShowBatchDialog(false);
@@ -1403,17 +1402,6 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       // This matches the pattern used in Stock Adjustment for consistency
       const totalAmount = roundMoney(Number(item.countedQty) * Number(item.Price || 0));
       
-      // Calculate total system quantity from batch breakdown or use onHandQty
-      // IMPORTANT: For existing items, preserve the original docTtlqty from saved document
-      // This represents the system quantity at the time of stock take, not current quantity
-      let totalSystemQty = Number(item.onHandQty || 0);
-      if (item.batchBreakdown && item.batchBreakdown.length > 0) {
-        totalSystemQty = item.batchBreakdown.reduce(
-          (sum, batch) => sum + (Number(batch.availableQty) || 0),
-          0
-        );
-      }
-
       // Check if this item already exists in cartData (for updating existing documents)
       // If it exists, preserve the docId so we update instead of create+delete
       const existingItem = cartData.find((cartItem) =>
@@ -1421,9 +1409,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       );
       const docId = item.docId || existingItem?.docId || null; // Preserve docId if updating
 
-      // If updating existing item, preserve original docTtlqty from saved document
-      // This ensures the system quantity at time of stock take is preserved, not recalculated
-      // Only recalculate for new items (when existingItem is null)
+      // System quantity is the on-hand figure on the sheet, and at least the
+      // available qty of every batch being posted (including a batch counted as 0).
+      // An update keeps the snapshot stored on the document.
+      let totalSystemQty = stockTakeSystemQty(item.onHandQty, item.batchBreakdown);
       if (existingItem && existingItem.docTtlqty !== undefined && existingItem.docTtlqty !== null) {
         totalSystemQty = Number(existingItem.docTtlqty);
       }
@@ -1445,34 +1434,33 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
         const batchesWithBatchNo = item.batchBreakdown.filter((b) => b.batchNo && b.batchNo !== "");
         const noBatchItem = item.batchBreakdown.find((b) => !b.batchNo || b.batchNo === "");
 
-        if (batchesWithBatchNo.length > 0) {
-          // Store batch breakdown: "batchNo:qty,batchNo:qty"
+        if (batchesWithBatchNo.length > 0 || noBatchItem) {
           ordMemoFields.ordMemo1 = "specific";
-          ordMemoFields.ordMemo2 = batchesWithBatchNo
-            .map((batch) => `${batch.batchNo}:${batch.countedQty || 0}`)
-            .join(",");
-          
-          // Store expiry dates: "expDate:qty,expDate:qty" (if expiry tracking enabled)
-          // Normalize dates to YYYY-MM-DD format to avoid truncation errors
+        }
+
+        if (batchesWithBatchNo.length > 0) {
+          // Store batch breakdown, including an explicit 0 for a batch that was emptied.
+          ordMemoFields.ordMemo2 = stockTakeCountedMemo(batchesWithBatchNo);
+
+          // Keep one expiry slot per batch so a later 0-qty batch does not shift dates.
           if (getConfigValue("EXPIRY_DATE") === "Yes") {
-            ordMemoFields.ordMemo4 = formatOrdMemo4FromBatches(
-              batchesWithBatchNo.map((batch) => ({
-                expDate: batch.expDate,
-                quantity: batch.countedQty || 0,
-              }))
-            );
+            ordMemoFields.ordMemo4 = batchesWithBatchNo
+              .map(
+                (batch) =>
+                  formatOrdMemo4Pair(batch.expDate, stockTakeQty(batch.countedQty)) || ""
+              )
+              .join(",");
           }
 
-          // Set primary batch number (first batch or combined)
           docBatchNo = batchesWithBatchNo[0].batchNo || "";
-          docExpdate = getConfigValue("EXPIRY_DATE") === "Yes" 
-            ? (batchesWithBatchNo[0].expDate || "") 
+          docExpdate = getConfigValue("EXPIRY_DATE") === "Yes"
+            ? (batchesWithBatchNo[0].expDate || "")
             : "";
         }
 
-        // Handle "No Batch" quantity
-        if (noBatchItem && (noBatchItem.countedQty || 0) > 0) {
-          ordMemoFields.ordMemo3 = (noBatchItem.countedQty || 0).toString();
+        // No Batch counted as 0 is still a count when that row had stock.
+        if (noBatchItem) {
+          ordMemoFields.ordMemo3 = String(stockTakeQty(noBatchItem.countedQty));
         }
       } else if (getConfigValue("BATCH_NO") === "Yes" && item.batchNo) {
         // Single batch (backward compatibility)
@@ -1524,7 +1512,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
       return;
     }
 
-    if (!item.countedQty || item.countedQty === 0) {
+    if (isBlankCountedQty(item.countedQty)) {
       toast.error("Please enter counted quantity first");
       return;
     }
@@ -2921,213 +2909,112 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
           }
         }
         // Check if batch breakdown is stored in ordMemo fields (new format)
-        else if (item.ordMemo1 === "specific" && item.ordMemo2) {
-          // Parse batch breakdown from ordMemo2: "batchNo:qty,batchNo:qty"
-          // Use INDEX-based matching for ordMemo4 (like stock adjustment) to handle batches with same quantity
-          const batchParts = item.ordMemo2.split(",");
-          const expDateParts = item.ordMemo4 ? item.ordMemo4.split(",") : [];
-          
-          const batchBreakdown = batchParts.map((batch, index) => {
-            const [batchNo, quantity] = batch.split(":");
-            const parsedQuantity = Number(quantity) || 0;
-            
-            if (!batchNo || isNaN(parsedQuantity)) {
+        else if (item.ordMemo1 === "specific") {
+          const batchParts = item.ordMemo2
+            ? String(item.ordMemo2).split(",").filter(Boolean)
+            : [];
+          const expDateParts = item.ordMemo4 ? String(item.ordMemo4).split(",") : [];
+
+          const countedNamed = batchParts.map((batch, index) => {
+            const splitAt = batch.lastIndexOf(":");
+            const batchNo = splitAt >= 0 ? batch.slice(0, splitAt) : batch;
+            const parsedQuantity = splitAt >= 0 ? Number(batch.slice(splitAt + 1)) : 0;
+            if (!batchNo || !Number.isFinite(parsedQuantity) || parsedQuantity < 0) {
               return null;
             }
-            
-            // Get expiry date from ordMemo4 by INDEX (not by quantity!)
+
             let expDate = null;
             if (expDateParts[index]) {
-              // Split by ':' and take everything except the last part as date (handles ISO dates with colons)
               const parts = expDateParts[index].split(":");
               if (parts.length > 1) {
-                // Last part is quantity, everything before is the date
                 const expDateStr = parts.slice(0, -1).join(":");
-                // Handle null, empty string, or invalid dates
-                if (expDateStr && expDateStr !== "null" && expDateStr !== "" && expDateStr !== "undefined") {
+                if (
+                  expDateStr &&
+                  expDateStr !== "null" &&
+                  expDateStr !== "" &&
+                  expDateStr !== "undefined"
+                ) {
                   expDate = expDateStr;
                 }
               }
             }
-            
             return { batchNo, countedQty: parsedQuantity, expDate };
           }).filter(Boolean);
 
-          // Fetch ItemBatches to get system quantities for each batch
-          if (batchBreakdown.length > 0 && getConfigValue("BATCH_NO") === "Yes") {
-            try {
-              const batchNos = batchBreakdown.map((b) => b.batchNo).filter(Boolean);
-              if (batchNos.length > 0) {
-                const itemBatchesFilter = {
-                  where: {
-                    and: [
-                      { itemCode: trimmedItemCode },
-                      { siteCode: userDetails.siteCode },
-                      { uom: item.docUom || item.itemUom || "" },
-                      { or: batchNos.map((bn) => ({ batchNo: bn })) },
-                    ],
-                  },
-                };
-
-                const itemBatchesResponse = await apiService.get(
-                  `ItemBatches?filter=${encodeURIComponent(
-                    JSON.stringify(itemBatchesFilter)
-                  )}`
-                ).catch(() => []);
-
-                // Create batch details with fetched system quantities
-                batchDetails = batchBreakdown.map((batch) => {
-                  // Use expDate from batchBreakdown (already extracted by index)
-                  const normalizedBatchExpDate = normalizeExpDate(batch.expDate);
-                  
-                  console.log(`🔍 Matching batch ${batch.batchNo}:`, {
-                    batchNo: batch.batchNo,
-                    countedQty: batch.countedQty,
-                    batchExpDate: batch.expDate,
-                    normalizedBatchExpDate: normalizedBatchExpDate,
-                    itemBatchesCount: itemBatchesResponse.length,
-                    availableBatches: itemBatchesResponse.filter(ib => ib.batchNo === batch.batchNo).map(ib => ({
-                      batchNo: ib.batchNo,
-                      qty: ib.qty,
-                      expDate: ib.expDate
-                    }))
-                  });
-                  
-                  // Match batch by batchNo AND expiry date (if expiry tracking is enabled)
-                  const matchingBatch = itemBatchesResponse.find((ib) => {
-                    if (ib.batchNo !== batch.batchNo) return false;
-                    if (getConfigValue("EXPIRY_DATE") === "Yes" && normalizedBatchExpDate) {
-                      const normalizedIbExpDate = normalizeExpDate(ib.expDate);
-                      const matches = normalizedIbExpDate === normalizedBatchExpDate;
-                      console.log(`🔍 Expiry date match for ${batch.batchNo}:`, {
-                        batchExpDate: normalizedBatchExpDate,
-                        ibExpDate: normalizedIbExpDate,
-                        matches: matches
-                      });
-                      return matches;
-                    }
-                    return true; // If expiry tracking is disabled, match by batchNo only
-                  });
-                  
-                  const systemQty = matchingBatch?.qty || 0;
-                  const variance = batch.countedQty - systemQty;
-                  const hasVariance = Math.abs(variance) > 0.01;
-
-                  console.log(`🔍 Batch match result for ${batch.batchNo}:`, {
-                    matched: !!matchingBatch,
-                    matchingBatchQty: matchingBatch?.qty,
-                    matchingBatchExpDate: matchingBatch?.expDate,
-                    systemQty: systemQty,
-                    variance: variance,
-                    hasVariance: hasVariance
-                  });
-
-                  return {
-                    batchNo: batch.batchNo || "",
-                    expDate: normalizeExpDate(matchingBatch?.expDate || batch.expDate) || null,
-                    variance: variance,
-                    countedQty: batch.countedQty,
-                    systemQty: systemQty,
-                    hasVariance: hasVariance,
-                  };
-                });
-              }
-            } catch (error) {
-              console.error(`Error fetching ItemBatches for ${trimmedItemCode}:`, error);
-              // Fallback: use docTtlqty proportionally or as total
-              const totalSystemQty = parseFloat(item.docTtlqty) || 0;
-              batchDetails = batchBreakdown.map((batch) => {
-                const variance = batch.countedQty;
-                const hasVariance = Math.abs(variance) > 0.01;
-                // Distribute system qty proportionally (simplified approach)
-                const systemQty = batchBreakdown.length > 0 
-                  ? totalSystemQty / batchBreakdown.length 
-                  : 0;
-
-                return {
-                  batchNo: batch.batchNo || "",
-                  expDate: normalizeExpDate(batch.expDate || item.docExpdate) || null,
-                  variance: variance,
-                  countedQty: batch.countedQty,
-                  systemQty: systemQty,
-                  hasVariance: hasVariance,
-                };
-              });
+          if (getConfigValue("BATCH_NO") === "Yes") {
+            const itemBatchesFilter = {
+              where: {
+                and: [
+                  { itemCode: trimmedItemCode },
+                  { siteCode: userDetails.siteCode },
+                  { uom: item.docUom || item.itemUom || "" },
+                ],
+              },
+            };
+            const itemBatchesResponse = await apiService.get(
+              `ItemBatches?filter=${encodeURIComponent(JSON.stringify(itemBatchesFilter))}`
+            );
+            if (!Array.isArray(itemBatchesResponse)) {
+              throw new Error(`Could not load batches for ${trimmedItemCode}`);
             }
-
-            // Handle "No Batch" quantity from ordMemo3
-            const noBatchQty = Number(item.ordMemo3) || 0;
-            if (noBatchQty > 0) {
-              // Fetch existing "No Batch" entries to get actual systemQty
-              try {
-                const noBatchFilter = {
-                  where: {
-                    and: [
-                      { itemCode: trimmedItemCode },
-                      { siteCode: userDetails.siteCode },
-                      { uom: item.docUom || item.itemUom || "" },
-                      { or: [{ batchNo: "" }, { batchNo: null }] }, // "No Batch"
-                    ],
-                  },
-                };
-
-                const noBatchResponse = await apiService.get(
-                  `ItemBatches?filter=${encodeURIComponent(JSON.stringify(noBatchFilter))}`
-                ).catch(() => []);
-
-                // Sum all "No Batch" entries (there might be multiple)
-                const noBatchSystemQty = noBatchResponse.reduce((sum, batch) => sum + (Number(batch.qty) || 0), 0);
-                const variance = noBatchQty - noBatchSystemQty;
-                const hasVariance = Math.abs(variance) > 0.01;
-                
-                console.log(`🔍 Adding "No Batch" to batchDetails:`, {
-                  countedQty: noBatchQty,
-                  systemQty: noBatchSystemQty,
-                  variance: variance,
-                  hasVariance: hasVariance,
-                  existingEntries: noBatchResponse.length,
-                  existingEntriesDetails: noBatchResponse
-                });
-                
-                batchDetails.push({
-                  batchNo: "",
-                  expDate: null,
-                  variance: variance,
-                  countedQty: noBatchQty,
-                  systemQty: noBatchSystemQty,
-                  hasVariance: hasVariance,
-                });
-              } catch (error) {
-                console.error(`Error fetching "No Batch" ItemBatches for ${trimmedItemCode}:`, error);
-                // Fallback: assume no existing "No Batch" entries
-                const variance = noBatchQty;
-                batchDetails.push({
-                  batchNo: "",
-                  expDate: null,
-                  variance: variance,
-                  countedQty: noBatchQty,
-                  systemQty: 0,
-                  hasVariance: Math.abs(variance) > 0.01,
-                });
-              }
-            }
+            batchDetails = reconcileStockTakePost({
+              countedNamed,
+              noBatchCounted: Number(item.ordMemo3) || 0,
+              liveBatches: itemBatchesResponse,
+              expiryTracking: getConfigValue("EXPIRY_DATE") === "Yes",
+            });
+            console.log(`Stock take batch deltas for ${trimmedItemCode}:`, batchDetails);
           } else {
-            // No batches to fetch - create basic batch details
-            batchDetails = batchBreakdown.map((batch) => {
-              const variance = batch.countedQty;
-              const hasVariance = Math.abs(variance) > 0.01;
-
+            batchDetails = countedNamed.map((batch) => {
+              const variance = stockTakeQty(batch.countedQty);
               return {
                 batchNo: batch.batchNo || "",
-                expDate: normalizeExpDate(expiryMap.get(batch.countedQty) || item.docExpdate) || null,
-                variance: variance,
-                countedQty: batch.countedQty,
+                expDate: batch.expDate || null,
+                variance,
+                countedQty: stockTakeQty(batch.countedQty),
                 systemQty: 0,
-                hasVariance: hasVariance,
+                hasVariance: !stockTakeQtyIsZero(variance),
               };
             });
           }
-        } 
+        }
+        else if (
+          getConfigValue("BATCH_NO") === "Yes" &&
+          stockTakeQtyIsZero(parseFloat(item.docQty) || 0)
+        ) {
+          const itemBatchesFilter = {
+            where: {
+              and: [
+                { itemCode: trimmedItemCode },
+                { siteCode: userDetails.siteCode },
+                { uom: item.docUom || item.itemUom || "" },
+              ],
+            },
+          };
+          const itemBatchesResponse = await apiService.get(
+            `ItemBatches?filter=${encodeURIComponent(JSON.stringify(itemBatchesFilter))}`
+          );
+          if (!Array.isArray(itemBatchesResponse)) {
+            throw new Error(`Could not load batches for ${trimmedItemCode}`);
+          }
+          batchDetails = reconcileStockTakePost({
+            countedNamed: [],
+            noBatchCounted: 0,
+            liveBatches: itemBatchesResponse,
+            expiryTracking: getConfigValue("EXPIRY_DATE") === "Yes",
+          });
+          if (batchDetails.length === 0) {
+            const variance = (parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0);
+            batchDetails = [{
+              batchNo: item.docBatchNo || "",
+              expDate: item.docExpdate || null,
+              variance,
+              countedQty: parseFloat(item.docQty) || 0,
+              systemQty: parseFloat(item.docTtlqty) || 0,
+              hasVariance: !stockTakeQtyIsZero(variance),
+            }];
+          }
+        }
         // Fallback: Single batch from docBatchNo (backward compatibility or no batch breakdown)
         else {
           const variance = (parseFloat(item.docQty) || 0) - (parseFloat(item.docTtlqty) || 0);
@@ -3470,6 +3357,10 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                       );
                       throw err; // Re-throw to be caught by outer try-catch
                     });
+                } else if (stockTakeQtyIsZero(batch.countedQty)) {
+                  console.log(
+                    `Skipping ItemBatches create for batch ${batchNoForStktrnbatches} - counted quantity is 0 and no batch row exists`
+                  );
                 } else {
                   // Batch doesn't exist - create new batch entry
                   const newBatch = {
@@ -4744,7 +4635,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleOpenBatchDialog(item, actualIndex)}
-                                              disabled={!canEdit() || !item.countedQty || item.countedQty === 0}
+                                              disabled={!canEdit() || isBlankCountedQty(item.countedQty)}
                                               className="w-full"
                                               title="Mandatory"
                                             >
@@ -4754,7 +4645,7 @@ console.log(filteredStockTakeItems , "filteredStockTakeItems1");
                                             </Button>
                                             {item.hasBatchBreakdown && item.batchBreakdown && (
                                               <div className="text-xs text-gray-600 mt-1">
-                                                {item.batchBreakdown.filter(b => (b.countedQty || 0) > 0).length} batch(es)
+                                                {item.batchBreakdown.length} batch(es)
                                               </div>
                                             )}
                                           </TableCell>

@@ -506,7 +506,7 @@ export const getAppConfig = () => {
     ...baseConfig, // Keep all existing config (API URLs, etc.)
     // Override only the user-specific settings
     BATCH_NO: batchOn,
-    EXPIRY_DATE: !batchOn, 
+    EXPIRY_DATE: batchOn, 
     AUTO_POST: userDetails.autoPost === "True" ? "Yes" : "No",
     DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays, 10) || 365,
     ManualBatchSelection: userDetails.manualBatchSelection === "True",

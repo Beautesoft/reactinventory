@@ -610,6 +610,7 @@ function PrintPreview({
           ),
         ];
         let priceRows = [];
+        let batchRows = [];
         if (codes.length > 0) {
           try {
             const priceFilter = encodeURIComponent(
@@ -622,8 +623,26 @@ function PrintPreview({
           } catch (priceErr) {
             console.error("Failed to load item prices for stock take print:", priceErr);
           }
+          const siteCode = documentData?.storeNo || userDetails?.siteCode;
+          if (siteCode) {
+            try {
+              const batchFilter = encodeURIComponent(
+                JSON.stringify({
+                  where: {
+                    and: [{ itemCode: { inq: codes } }, { siteCode }],
+                  },
+                })
+              );
+              const batches = await apiService.get(
+                `ItemBatches?filter=${batchFilter}`
+              );
+              batchRows = Array.isArray(batches) ? batches : [];
+            } catch (batchErr) {
+              console.error("Failed to load batch expiry for stock take print:", batchErr);
+            }
+          }
         }
-        response = expandStockTakePrintRows(lines, priceRows);
+        response = expandStockTakePrintRows(lines, priceRows, batchRows);
       } else {
         // For other documents, use Stkprintlists
         response = await apiService.get(
