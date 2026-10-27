@@ -29,18 +29,34 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Users, Shield, RefreshCw, UserPlus, Save, Search } from "lucide-react";
+import { Users, Shield, UserPlus, Save, Search, Check } from "lucide-react";
 import { toast } from "sonner";
 import apiService1 from "@/services/apiService1";
+import { resolveExpiryNotifyMonths } from "@/auth/loginSession";
+
+function readStoredExpiryNotifyMonths() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("userDetails") || "{}");
+    return String(
+      resolveExpiryNotifyMonths(
+        stored.expirynotifymonths ?? stored.expiryNotifyMonths
+      )
+    );
+  } catch {
+    return String(resolveExpiryNotifyMonths(undefined));
+  }
+}
 
 const UserAuthorization = () => {
   const [userList, setUserList] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userSearch, setUserSearch] = useState("");
-  const [loading, setLoading] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [selectAllConfirm, setSelectAllConfirm] = useState(null);
+  const [notifyMonths, setNotifyMonths] = useState(readStoredExpiryNotifyMonths);
+  const [savedNotifyMonths, setSavedNotifyMonths] = useState(notifyMonths);
+  const [savingNotify, setSavingNotify] = useState(false);
+  const [notifyConfirmMonths, setNotifyConfirmMonths] = useState(null);
 
   // Authorization data from API
   const [userAuthorizations, setUserAuthorizations] = useState([]);
@@ -62,7 +78,6 @@ const UserAuthorization = () => {
   }, []);
 
   const fetchUserList = async () => {
-    setLoading(true);
     try {
       const response = await apiService1.get("api/User?siteCode=NIL");
       if (response && response.success === "1" && response.result) {
@@ -81,8 +96,6 @@ const UserAuthorization = () => {
         { itemCode: "U004", itemDesc: "Sarah Wilson" },
         { itemCode: "U005", itemDesc: "David Brown" },
       ]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -277,55 +290,96 @@ const UserAuthorization = () => {
     }
   };
 
-  // Refresh user list and current authorizations
-  const refreshUserList = async () => {
-    setLoading(true);
+  const requestExpiryNotifyUpdate = (rawValue) => {
+    const months = Number.parseInt(String(rawValue).trim(), 10);
+    if (!Number.isFinite(months) || months <= 0) {
+      toast.error("Enter a whole number of months greater than 0");
+      setNotifyMonths(savedNotifyMonths);
+      return;
+    }
+
+    const nextValue = String(months);
+    setNotifyMonths(nextValue);
+    if (nextValue === savedNotifyMonths) {
+      toast.info("Expiry notify months is already " + nextValue);
+      return;
+    }
+
+    setNotifyConfirmMonths(months);
+  };
+
+  const saveExpiryNotifyMonths = async (months) => {
+    if (!Number.isFinite(months) || months <= 0 || savingNotify) return;
+
+    const nextValue = String(months);
+    setSavingNotify(true);
     try {
-      await fetchUserList();
-      
-      // Get current logged-in user
-      const currentUser = getCurrentUser();
-      
-      if (currentUser) {
-        // Fetch current logged-in user's authorizations and update localStorage
-        const response = await apiService1.get(`api/getInventoryAuth?userCode=${currentUser.usercode||currentUser.username}`);
-        if (response && response.result) {
-          const authData = Array.isArray(response.result) ? response.result : [];
-          // Filter to show only required forms
-          const filteredData = filterRequiredForms(authData);
-          localStorage.setItem("userAuthorizations", JSON.stringify(filteredData));
-          toast.success("User list and current user authorizations refreshed successfully.");
-        }
-      } else {
-        toast.success("User list refreshed successfully.");
+      const response = await apiService1.post("api/systemsetup/update/", {
+        title: "expirynotifymonths",
+        value_name: "expirynotifymonths",
+        value_data: months,
+      });
+      if (
+        response &&
+        (response.success === "0" || response.success === 0 || response.error === true)
+      ) {
+        throw new Error(response.message || "Failed to update expiry notify months");
       }
+
+      const stored = JSON.parse(localStorage.getItem("userDetails") || "{}");
+      stored.expiryNotifyMonths = months;
+      stored.expirynotifymonths = months;
+      localStorage.setItem("userDetails", JSON.stringify(stored));
+      setSavedNotifyMonths(nextValue);
+      toast.success("Expiry notify months updated");
     } catch (error) {
-      console.error("Error refreshing data:", error);
-      toast.error("Failed to refresh data");
+      console.error("Error updating expiry notify months:", error);
+      toast.error("Failed to update expiry notify months");
+      setNotifyMonths(savedNotifyMonths);
     } finally {
-      setLoading(false);
+      setSavingNotify(false);
     }
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">User Authorization</h1>
-          <p className="text-gray-600 mt-2">Manage user access to system forms and features</p>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">User Authorization</h1>
+        <p className="text-gray-600 mt-2">Manage user access to system forms and features</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+        <span className="text-sm font-semibold text-gray-900">Notify setting:</span>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+          <span>Anything expiring within</span>
+          <Input
+            id="expiry-notify-months"
+            type="number"
+            min={1}
+            inputMode="numeric"
+            aria-label="Months before expiry to notify"
+            className="h-9 w-16 border-gray-200 bg-gray-50 text-center text-base font-semibold text-gray-900 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            value={notifyMonths}
+            disabled={savingNotify}
+            onChange={(e) => setNotifyMonths(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                requestExpiryNotifyUpdate(e.currentTarget.value);
+              }
+            }}
+          />
+          <span>months</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={refreshUserList}
-            disabled={loading}
-            className="cursor-pointer"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => requestExpiryNotifyUpdate(notifyMonths)}
+          disabled={savingNotify}
+          className="cursor-pointer px-4"
+        >
+          Update
+        </Button>
       </div>
 
       {/* User Selection Panel - Top */}
@@ -363,36 +417,32 @@ const UserAuthorization = () => {
                     <button
                       key={user.itemCode}
                       type="button"
+                      aria-pressed={isSelected}
                       onClick={() => handleUserSelect(user.itemCode)}
-                      className={`flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                        isSelected ? "bg-blue-50 text-blue-900" : ""
+                      className={`flex w-full cursor-pointer items-center justify-between border-l-2 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                        isSelected
+                          ? "border-l-blue-600 bg-blue-50 font-medium text-blue-900"
+                          : "border-l-transparent"
                       }`}
                     >
-                      <span>{user.itemDesc}</span>
-                      <span className="text-xs text-gray-500">{user.itemCode}</span>
+                      <span className="flex items-center gap-2">
+                        {isSelected ? (
+                          <Check className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+                        ) : null}
+                        <span>{user.itemDesc}</span>
+                        {getCurrentUser()?.username === user.itemCode ? (
+                          <span className="text-xs font-normal text-blue-600">Current user</span>
+                        ) : null}
+                      </span>
+                      <span className={`text-xs ${isSelected ? "text-blue-700" : "text-gray-500"}`}>
+                        {user.itemCode}
+                      </span>
                     </button>
                   );
                 })
               )}
             </div>
           </div>
-
-          {/* Selected User Info */}
-          {selectedUser && (
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-blue-900">{selectedUser.itemDesc}</h3>
-                  <p className="text-sm text-blue-700">{selectedUser.itemCode}</p>
-                  {/* Show indicator if this is the current logged-in user */}
-                  {getCurrentUser()?.username === selectedUser.itemCode && (
-                    <p className="text-xs text-blue-600 mt-1">(Current User)</p>
-                  )}
-                </div>
-                <Badge variant="outline" className="text-blue-600">Selected</Badge>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -413,21 +463,6 @@ const UserAuthorization = () => {
         <CardContent>
           {selectedUser ? (
             <div className="space-y-4">
-              {/* Selected User Info */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{selectedUser.itemDesc}</h3>
-                    <p className="text-sm text-gray-600">
-                      User Code: {selectedUser.itemCode}
-                    </p>
-                  </div>
-                  <Badge variant="outline">Active</Badge>
-                </div>
-              </div>
-
-              <Separator />
-
               {/* Authorization Table */}
               <div className="overflow-x-auto">
                 <Table>
@@ -527,6 +562,36 @@ const UserAuthorization = () => {
         </CardContent>
       </Card>
       */}
+
+      <AlertDialog
+        open={notifyConfirmMonths != null}
+        onOpenChange={(open) => {
+          if (!open && !savingNotify) setNotifyConfirmMonths(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update expiry notification?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Anything expiring within {notifyConfirmMonths} month
+              {notifyConfirmMonths === 1 ? "" : "s"} will be included in the notification.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingNotify}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingNotify}
+              onClick={(event) => {
+                event.preventDefault();
+                const months = notifyConfirmMonths;
+                saveExpiryNotifyMonths(months).finally(() => setNotifyConfirmMonths(null));
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={!!selectAllConfirm}

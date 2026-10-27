@@ -90,6 +90,28 @@ export function resolveExpiryNotifyMonths(value) {
   return months;
 }
 
+function readLoginExpiryNotifyMonths(data, inventory, response) {
+  const details =
+    data.userdetails ??
+    data.userDetails ??
+    inventory.userdetails ??
+    inventory.userDetails ??
+    response.userdetails ??
+    response.userDetails ??
+    {};
+
+  return (
+    details.expirynotifymonths ??
+    details.expiryNotifyMonths ??
+    inventory.expirynotifymonths ??
+    inventory.expiryNotifyMonths ??
+    data.expirynotifymonths ??
+    data.expiryNotifyMonths ??
+    response.expirynotifymonths ??
+    response.expiryNotifyMonths
+  );
+}
+
 export function extractLoginPayload(response, parsed) {
   const data = parsed.data ?? {};
   const inventory = data.inventory ?? {};
@@ -120,7 +142,7 @@ export function extractLoginPayload(response, parsed) {
     defaultExpiryDays:
       inventory.defaultExpiryDays ?? response.defaultExpiryDays,
     expiryNotifyMonths: resolveExpiryNotifyMonths(
-      inventory.expiryNotifyMonths ?? response.expiryNotifyMonths
+      readLoginExpiryNotifyMonths(data, inventory, response)
     ),
     autoPost: inventory.autoPost ?? response.autoPost,
     prUseDeliveryOrder:

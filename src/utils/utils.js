@@ -508,7 +508,7 @@ export const getAppConfig = () => {
     BATCH_NO: batchOn,
     EXPIRY_DATE: !batchOn, 
     AUTO_POST: userDetails.autoPost === "True" ? "Yes" : "No",
-    DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays) || baseConfig.DEFAULT_EXPIRY_DAYS || 365,
+    DEFAULT_EXPIRY_DAYS: parseInt(userDetails.defaultExpiryDays, 10) || 365,
     ManualBatchSelection: userDetails.manualBatchSelection === "True",
     BATCH_SNO: userDetails.batchSNo === "True" ? "Yes" : "No",
     PR_USE_DELIVERY_ORDER: userDetails.prUseDeliveryOrder === "True",

@@ -158,7 +158,7 @@ const ReportResults = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [filteredData, setFilteredData] = useState([]);
-  const [exportFormat, setExportFormat] = useState("");
+  const [exportFormat, setExportFormat] = useState("excel");
   const [zoom, setZoom] = useState("100");
   const [collapsedOutlets, setCollapsedOutlets] = useState(new Set());
   const [collapsedItems, setCollapsedItems] = useState(new Set());
@@ -765,9 +765,11 @@ const ReportResults = ({
 
             {showExport && (
               <div className="flex items-center gap-2">
-                <Select onValueChange={(value) => setExportFormat(value)}>
+                <Select value={exportFormat || "excel"} onValueChange={(value) => setExportFormat(value)}>
                   <SelectTrigger className="w-[100px]">
-                    <SelectValue placeholder="Export" />
+                    <SelectValue>
+                      {exportFormat === "pdf" ? "PDF" : exportFormat === "word" ? "Word" : "Excel"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="excel">Excel</SelectItem>
@@ -778,8 +780,7 @@ const ReportResults = ({
 
                 <Button
                   variant="outline"
-                  onClick={() => handleExport(exportFormat)}
-                  disabled={!exportFormat}
+                  onClick={() => handleExport(exportFormat || "excel")}
                   className="flex items-center gap-2"
                 >
                   <Download className="h-4 w-4" />

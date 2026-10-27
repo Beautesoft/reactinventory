@@ -350,7 +350,7 @@ function PrintPreview({
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState("100");
   const [filteredItems, setFilteredItems] = useState([]);
-  const [exportFormat, setExportFormat] = useState("");
+  const [exportFormat, setExportFormat] = useState("excel");
   const [selectedMode, setSelectedMode] = useState(isAdminMode ? 'admin' : 'user'); // Default to admin if user has admin permissions
   const [hasManuallySelectedMode, setHasManuallySelectedMode] = useState(false); // Track if user manually selected mode
   const [storeOptions, setStoreOptions] = useState([]); // Store store options
@@ -381,6 +381,7 @@ function PrintPreview({
           "Remarks",
         ],
         alignments: ["left", "left", "left", "left", "left", "right", "right", "right", "left"],
+        widths: [6, 16, 32, 14, 14, 12, 12, 12, 18],
         colSpan: 5,
       };
       return {
@@ -388,6 +389,7 @@ function PrintPreview({
         admin: {
           headers: [...user.headers, "Selling Price", "Cost Price"],
           alignments: [...user.alignments, "right", "right"],
+          widths: [6, 14, 28, 12, 12, 12, 12, 12, 16, 12, 12],
           colSpan: 5,
         },
       };
@@ -995,14 +997,21 @@ function PrintPreview({
     return baseHeaders;
   };
 
+  const money = (value) => {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+  };
+
   const handleExport = async (format) => {
+    const selectedFormat = format || "excel";
     const docNo = documentType === 'pr' ? (documentData?.reqNo || documentData?.docNo) : documentData?.docNo;
     const fileName = `${docNo || config.docType}_${
       new Date().toISOString().split("T")[0]
     }`;
 
-    switch (format) {
-      case "excel":
+    try {
+    switch (selectedFormat) {
+      case "excel": {
         const workbook = XLSX.utils.book_new();
 
         // Add header information
@@ -1053,10 +1062,10 @@ function PrintPreview({
            
            if (effectiveMode === 'admin') {
              row.push(
-               item.docPrice ? parseFloat(item.docPrice).toFixed(2) : "0.00",
-               item.docAmt ? parseFloat(item.docAmt).toFixed(2) : "0.00",
-               (item.itemCost || 0).toFixed(2),
-               ((item.docQty * item.itemCost) || 0).toFixed(2)
+               money(item.docPrice),
+               money(item.docAmt),
+               money(item.itemCost),
+               money((Number(item.docQty) || 0) * (Number(item.itemCost) || 0))
              );
            }
            
@@ -1086,7 +1095,7 @@ function PrintPreview({
            totalsRow.push(totalApprovedQty);
          }
          if (!isTke && effectiveMode === 'admin') {
-           totalsRow.push("", parseFloat(totalAmt).toFixed(2), "", "");
+           totalsRow.push("", money(totalAmt), "", "");
          }
         const totalsData = [totalsRow];
 
@@ -1115,13 +1124,26 @@ function PrintPreview({
 
         const worksheet = XLSX.utils.aoa_to_sheet(excelData);
 
-        // Set column widths based on current mode
-        const columnWidths = currentColumnConfig.widths.map(width => ({ wch: width }));
+        const columnWidths = (
+          currentColumnConfig.widths || currentColumnConfig.headers.map(() => 14)
+        ).map((width) => ({ wch: width }));
         worksheet["!cols"] = columnWidths;
 
-        XLSX.utils.book_append_sheet(workbook, worksheet, `${config.docType} Details`);
-        XLSX.writeFile(workbook, `${fileName}.xlsx`);
+        XLSX.utils.book_append_sheet(
+          workbook,
+          worksheet,
+          `${config.docType} Details`.slice(0, 31)
+        );
+        const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        saveAs(
+          new Blob([excelBuffer], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          }),
+          `${fileName}.xlsx`
+        );
+        toast.success("Excel downloaded");
         break;
+      }
 
       case "pdf":
         try {
@@ -1206,7 +1228,11 @@ function PrintPreview({
       }
 
       default:
-        console.error("Unsupported format:", format);
+        toast.error("Choose Excel, PDF, or Word");
+    }
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Download failed");
     }
   };
 
@@ -1277,9 +1303,11 @@ function PrintPreview({
             </Select>
 
             <div className="flex items-center gap-2">
-              <Select onValueChange={(value) => setExportFormat(value)}>
+              <Select value={exportFormat || "excel"} onValueChange={(value) => setExportFormat(value)}>
                 <SelectTrigger className="w-[100px]">
-                  <SelectValue placeholder="Export" />
+                  <SelectValue>
+                    {exportFormat === "pdf" ? "PDF" : exportFormat === "word" ? "Word" : "Excel"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="excel">Excel</SelectItem>
@@ -1290,8 +1318,7 @@ function PrintPreview({
 
               <Button
                 variant="outline"
-                onClick={() => handleExport(exportFormat)}
-                disabled={!exportFormat}
+                onClick={() => handleExport(exportFormat || "excel")}
                 className="flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
